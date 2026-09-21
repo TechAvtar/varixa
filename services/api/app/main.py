@@ -8,17 +8,24 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
 from app.config import Settings, get_settings
+from app.database import create_engine, create_session_factory
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
 
     @asynccontextmanager
-    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # Runs on server startup (not on import), so tooling/tests that import
-        # the module never create local directories as a side effect.
+        # the module never create local directories or DB connections as a side effect.
         settings.ensure_local_dirs()
-        yield
+        engine = create_engine(settings)
+        app.state.engine = engine
+        app.state.session_factory = create_session_factory(engine)
+        try:
+            yield
+        finally:
+            await engine.dispose()
 
     app = FastAPI(
         lifespan=lifespan,

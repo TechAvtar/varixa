@@ -12,6 +12,10 @@ api() {
   "$PY" -m ruff format --check .
   "$PY" -m mypy app tests
   VERIXA_ENVIRONMENT=test "$PY" -m pytest -q
+  tmp="$(mktemp -d)"
+  VERIXA_ENVIRONMENT=test VERIXA_DATA_DIR="$tmp" "$PY" -m alembic upgrade head
+  VERIXA_ENVIRONMENT=test VERIXA_DATA_DIR="$tmp" "$PY" -m alembic check
+  rm -rf "$tmp"
 }
 
 web() {

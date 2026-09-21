@@ -6,6 +6,7 @@ async def test_health_returns_ok(client: AsyncClient) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "ok"
+    assert body["database"] == "ok"
     assert body["service"] == "Verixa API"
     assert body["environment"] == "test"
     assert "version" in body
@@ -13,4 +14,4 @@ async def test_health_returns_ok(client: AsyncClient) -> None:
 
 async def test_health_does_not_leak_settings(client: AsyncClient) -> None:
     body = (await client.get("/api/v1/health")).json()
-    assert set(body) == {"status", "service", "version", "environment"}
+    assert set(body) == {"status", "service", "version", "environment", "database"}

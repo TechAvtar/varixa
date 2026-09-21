@@ -29,6 +29,8 @@ export default async function Home() {
             <dd>{health.data.version}</dd>
             <dt className="text-zinc-500">environment</dt>
             <dd>{health.data.environment}</dd>
+            <dt className="text-zinc-500">database</dt>
+            <dd>{health.data.database}</dd>
           </dl>
         ) : (
           <p className="text-amber-700 dark:text-amber-400">

@@ -19,6 +19,12 @@ function Check-Api {
     Invoke-Step "$py -m mypy app tests"
     $env:VERIXA_ENVIRONMENT = "test"
     Invoke-Step "$py -m pytest -q"
+    $tmp = Join-Path $env:TEMP ("verixa-" + [guid]::NewGuid())
+    $env:VERIXA_DATA_DIR = $tmp
+    Invoke-Step "$py -m alembic upgrade head"
+    Invoke-Step "$py -m alembic check"
+    Remove-Item -Recurse -Force $tmp
+    Remove-Item Env:VERIXA_DATA_DIR
   } finally { Pop-Location }
 }
 

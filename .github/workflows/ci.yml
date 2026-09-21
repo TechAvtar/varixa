@@ -45,6 +45,13 @@ jobs:
       - run: pytest -q
         env:
           VERIXA_ENVIRONMENT: test
+      - name: Migrations apply cleanly and match models
+        run: |
+          alembic upgrade head
+          alembic check
+        env:
+          VERIXA_ENVIRONMENT: test
+          VERIXA_DATA_DIR: ${{ runner.temp }}/verixa
 
   web:
     name: Web (lint, type, build)

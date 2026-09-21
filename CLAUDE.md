@@ -28,7 +28,8 @@ Every package's `__init__.py` carries a one-line responsibility docstring.
 ## Commands
 - Everything CI runs: `scripts/check.sh` or `scripts\check.ps1` (accepts `api` / `web`)
 - API: `cd services/api && .venv/Scripts/activate && uvicorn app.main:app --reload`
-- API checks: `cd services/api && ruff check . && ruff format --check . && mypy app && pytest`
+- API checks: `cd services/api && ruff check . && ruff format --check . && mypy app tests && pytest`
+- API migrations: `alembic revision --autogenerate -m "..."`, `alembic upgrade head`, `alembic check`
 - Web: `cd apps/web && npm run dev`
 - Web checks: `cd apps/web && npm run lint && npm run typecheck && npm run build`
 

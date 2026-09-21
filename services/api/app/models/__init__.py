@@ -1,1 +1,12 @@
-"""SQLAlchemy ORM models (persistence shape). Never returned directly from routes."""
+"""SQLAlchemy ORM models (persistence shape). Never returned directly from routes.
+
+Import this package to register every model on ``Base.metadata`` (needed by Alembic).
+"""
+
+from app.models.analysis import Analysis, AnalysisFile
+from app.models.base import Base
+from app.models.evidence import Evidence
+from app.models.provider_call import ProviderCall
+from app.models.user import User
+
+__all__ = ["Analysis", "AnalysisFile", "Base", "Evidence", "ProviderCall", "User"]

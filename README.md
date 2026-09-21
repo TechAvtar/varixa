@@ -35,8 +35,14 @@ python -m venv .venv
 .venv/Scripts/activate        # Windows; use `source .venv/bin/activate` elsewhere
 pip install -e ".[dev]"
 cp .env.example .env
+alembic upgrade head            # creates/migrates data/verixa.db (SQLite by default)
 uvicorn app.main:app --reload --port 8000
 ```
+
+Schema changes: edit `app/models/`, then `alembic revision --autogenerate -m "describe change"`,
+review the generated file in `alembic/versions/`, and run `alembic upgrade head`. `alembic check`
+fails if models and migrations have drifted. For PostgreSQL install the extra:
+`pip install -e ".[dev,postgres]"`.
 
 Health check: <http://localhost:8000/api/v1/health> Â· OpenAPI docs: <http://localhost:8000/docs>
 
@@ -54,7 +60,7 @@ Open <http://localhost:3000>. The home page shows live API status (or an explici
 
 | Target | Command |
 | ------ | ------- |
-| API    | `cd services/api && ruff check . && ruff format --check . && mypy app && pytest` |
+| API    | `cd services/api && ruff check . && ruff format --check . && mypy app tests && pytest` |
 | Web    | `npm run lint && npm run format:check && npm run typecheck && npm run build` |
 
 Or run everything at once: `scripts/check.sh` (bash) / `scripts\check.ps1` (PowerShell), optionally
