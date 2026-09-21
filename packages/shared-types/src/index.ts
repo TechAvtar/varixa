@@ -3,4 +3,13 @@
  * Keep these in sync with the Pydantic schemas in `services/api/app/schemas/`.
  */
 
+export type {
+  LoginRequest,
+  RefreshRequest,
+  RegisterRequest,
+  TokenPair,
+  UserResponse,
+  UserRole,
+} from "./auth";
+export type { ApiErrorBody } from "./errors";
 export type { HealthResponse } from "./health";

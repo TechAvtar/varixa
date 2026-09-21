@@ -56,5 +56,5 @@ async def client(migrated_settings: Settings) -> AsyncIterator[AsyncClient]:
     # engine/session factory exist exactly as they would under uvicorn.
     async with app.router.lifespan_context(app):
         transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://testserver") as c:
+        async with AsyncClient(transport=transport, base_url="http://testserver/api/v1") as c:
             yield c

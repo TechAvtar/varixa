@@ -9,6 +9,7 @@ from app.models.enums import UserRole
 
 if TYPE_CHECKING:
     from app.models.analysis import Analysis
+    from app.models.user_session import UserSession
 
 
 class User(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
@@ -23,3 +24,6 @@ class User(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     )
 
     analyses: Mapped[list["Analysis"]] = relationship(back_populates="user")
+    sessions: Mapped[list["UserSession"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )

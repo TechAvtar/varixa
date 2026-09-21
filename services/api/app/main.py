@@ -6,9 +6,11 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.errors import register_error_handlers
 from app.api.v1.router import api_router
 from app.config import Settings, get_settings
 from app.database import create_engine, create_session_factory
+from app.utils.request_id import RequestIdMiddleware
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -36,6 +38,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         redoc_url=None,
     )
 
+    # Middleware order: the last added runs first, so the request id exists
+    # before CORS and before any handler.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
@@ -44,6 +48,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["Authorization", "Content-Type"],
     )
 
+    app.add_middleware(RequestIdMiddleware)
+
+    register_error_handlers(app)
     app.include_router(api_router, prefix="/api/v1")
 
     # Make the settings object used to build the app the one routes receive,

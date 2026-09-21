@@ -33,6 +33,12 @@ Every package's `__init__.py` carries a one-line responsibility docstring.
 - Web: `cd apps/web && npm run dev`
 - Web checks: `cd apps/web && npm run lint && npm run typecheck && npm run build`
 
+## Conventions
+- Services raise `app.utils.errors.*` (`NotFoundError`, `UnauthorizedError`, ...); the API layer
+  renders the `{"error": {code, message, request_id}}` envelope. Never raise HTTPException in services.
+- Routes get the user via `app.api.deps.CurrentUser`; ownership via
+  `app.services.authorization.assert_owns_analysis` (404 for foreign resources, never 403).
+
 ## Non-negotiables
 - Routes → Services → Repositories/Providers. No provider calls from routes.
 - Every schema change ships with an Alembic migration.

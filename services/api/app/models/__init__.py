@@ -8,5 +8,14 @@ from app.models.base import Base
 from app.models.evidence import Evidence
 from app.models.provider_call import ProviderCall
 from app.models.user import User
+from app.models.user_session import UserSession
 
-__all__ = ["Analysis", "AnalysisFile", "Base", "Evidence", "ProviderCall", "User"]
+__all__ = [
+    "Analysis",
+    "AnalysisFile",
+    "Base",
+    "Evidence",
+    "ProviderCall",
+    "User",
+    "UserSession",
+]

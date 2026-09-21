@@ -69,6 +69,25 @@ with `api` or `web` to limit scope.
 CI (`.github/workflows/ci.yml`) runs the same checks plus a gitleaks secret scan on every push and
 pull request. Dependabot keeps Actions, npm, and pip dependencies current.
 
+## Authentication
+
+Email + password. Passwords are stored as Argon2id hashes. Login returns a short-lived JWT access
+token and an opaque refresh token; refresh tokens are stored hashed, rotated on every use and
+revocable, so logout takes effect immediately.
+
+| Endpoint | Purpose |
+| -------- | ------- |
+| `POST /api/v1/auth/register` | Create an account (`email`, `password` 10–128 chars, optional `name`) |
+| `POST /api/v1/auth/login` | Returns `{access_token, refresh_token, token_type, expires_in}` |
+| `POST /api/v1/auth/refresh` | Rotate a refresh token; the old one stops working |
+| `POST /api/v1/auth/logout` | Revoke the current session (Bearer) |
+| `GET /api/v1/auth/me` | Current user (Bearer) |
+
+Every error uses one envelope: `{"error": {"code", "message", "request_id"}}`; the id is also
+returned in the `X-Request-ID` response header. Analysis endpoints must call
+`services.authorization.assert_owns_analysis`, which answers 404 for both missing and foreign
+resources.
+
 ## Configuration
 
 All configuration is via environment variables; see the `.env.example` files. Never commit `.env`.
@@ -78,6 +97,9 @@ All configuration is via environment variables; see the `.env.example` files. Ne
 | `VERIXA_ENVIRONMENT` | API | `development` \| `test` \| `production` (production disables `/docs`) |
 | `VERIXA_DEBUG` | API | FastAPI debug mode |
 | `VERIXA_CORS_ORIGINS` | API | JSON list of allowed browser origins |
+| `VERIXA_SECRET_KEY` | API | Signs access tokens. Random, 32+ chars; the built-in dev default is refused in production |
+| `VERIXA_ACCESS_TOKEN_TTL_MINUTES` | API | Access-token lifetime (default 30) |
+| `VERIXA_REFRESH_TOKEN_TTL_DAYS` | API | Refresh-token lifetime (default 14) |
 | `VERIXA_DATA_DIR` | API | Root for local runtime data (default `./data`, git-ignored) |
 | `VERIXA_DATABASE_URL` | API | SQLAlchemy URL. Default: SQLite at `${VERIXA_DATA_DIR}/verixa.db`. Use `postgresql+asyncpg://…` for PostgreSQL |
 | `VERIXA_STORAGE_BACKEND` | API | `local` (default, files under `${VERIXA_DATA_DIR}/storage`) or `s3` |

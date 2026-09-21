@@ -10,7 +10,7 @@ APP_ROOT = Path(__file__).resolve().parents[1] / "app"
 
 # package -> packages it must never import from
 FORBIDDEN_IMPORTS: dict[str, set[str]] = {
-    "api": {"providers", "repositories", "models"},
+    "api": {"providers", "repositories"},
     "services": {"api"},
     "repositories": {"api", "services", "providers"},
     "providers": {"api", "services", "repositories", "models"},

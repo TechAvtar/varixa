@@ -12,3 +12,4 @@ Implementation tasks live in `../TASKS/`.
 | T003 Repository structure | done | Package responsibility docstrings; layering rules enforced by `tests/test_architecture.py`; web structure documented in `CLAUDE.md` |
 | T004 CI | done | Secret scan (gitleaks) + API + web jobs; Dependabot; `scripts/check.{sh,ps1}` mirror CI locally |
 | T005 Database | done | Async SQLAlchemy 2 engine/session; models users, analyses, analysis_files, evidence, provider_calls; Alembic (SQLite batch mode, PG JSONB variant); `/health` reports DB readiness |
+| T006 Authentication | done | Argon2id passwords; JWT access + rotating hashed refresh tokens (`user_sessions`); `/auth/*` routes; `CurrentUser` dependency; ownership helper; error envelope + request ids |

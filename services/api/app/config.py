@@ -16,6 +16,7 @@ from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 StorageBackend = Literal["local", "s3"]
+_DEV_SECRET = "dev-only-insecure-secret-change-me"
 
 
 class Settings(BaseSettings):
@@ -33,6 +34,11 @@ class Settings(BaseSettings):
 
     # Comma-separated list of allowed browser origins.
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
+
+    # Signs access tokens. Must be a long random value outside development.
+    secret_key: SecretStr = SecretStr(_DEV_SECRET)
+    access_token_ttl_minutes: int = Field(default=30, ge=1, le=24 * 60)
+    refresh_token_ttl_days: int = Field(default=14, ge=1, le=365)
 
     # Root directory for all local, non-versioned runtime data (DB file, uploads).
     data_dir: Path = Path("./data")
@@ -58,6 +64,15 @@ class Settings(BaseSettings):
             self.database_url = f"sqlite+aiosqlite:///{db_path}"
         if self.storage_local_path is None:
             self.storage_local_path = self.data_dir / "storage"
+        return self
+
+    @model_validator(mode="after")
+    def _require_real_secret_outside_dev(self) -> "Settings":
+        secret = self.secret_key.get_secret_value()
+        if self.environment == "production" and (secret == _DEV_SECRET or len(secret) < 32):
+            raise ValueError(
+                "VERIXA_SECRET_KEY must be a random value of at least 32 characters in production"
+            )
         return self
 
     @model_validator(mode="after")
