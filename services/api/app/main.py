@@ -10,6 +10,7 @@ from app.api.errors import register_error_handlers
 from app.api.v1.router import api_router
 from app.config import Settings, get_settings
 from app.database import create_engine, create_session_factory
+from app.providers.storage import build_storage
 from app.utils.request_id import RequestIdMiddleware
 
 
@@ -24,6 +25,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         engine = create_engine(settings)
         app.state.engine = engine
         app.state.session_factory = create_session_factory(engine)
+        app.state.storage = build_storage(settings)
         try:
             yield
         finally:

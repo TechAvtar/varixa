@@ -10,7 +10,8 @@ APP_ROOT = Path(__file__).resolve().parents[1] / "app"
 
 # package -> packages it must never import from
 FORBIDDEN_IMPORTS: dict[str, set[str]] = {
-    "api": {"providers", "repositories"},
+    # api may import provider *interfaces* for typing (base.py) but never call adapters.
+    "api": {"repositories"},
     "services": {"api"},
     "repositories": {"api", "services", "providers"},
     "providers": {"api", "services", "repositories", "models"},

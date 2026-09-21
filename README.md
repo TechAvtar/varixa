@@ -88,6 +88,19 @@ returned in the `X-Request-ID` response header. Analysis endpoints must call
 `services.authorization.assert_owns_analysis`, which answers 404 for both missing and foreign
 resources.
 
+## Object storage
+
+All uploads, derived artifacts and reports go through `app.providers.storage.ObjectStorage`
+(`put`, `get`, `exists`, `delete`, `signed_url`). Keys are internal and validated against path
+traversal; they are never returned to clients. Reads happen only via short-lived signed URLs:
+
+- `local` backend: files under `${VERIXA_DATA_DIR}/storage`, served by
+  `GET /api/v1/files/{key}?exp=&sig=` after HMAC verification.
+- `s3` backend (`pip install -e ".[s3]"`): private bucket, presigned `get_object` URLs.
+
+Key layout (`app/services/storage_keys.py`): `uploads/{user}/{analysis}/{sha256}.{ext}`,
+`artifacts/{user}/{analysis}/{name}`, `reports/{user}/{analysis}/{report}.{fmt}`.
+
 ## Configuration
 
 All configuration is via environment variables; see the `.env.example` files. Never commit `.env`.
@@ -104,6 +117,8 @@ All configuration is via environment variables; see the `.env.example` files. Ne
 | `VERIXA_DATABASE_URL` | API | SQLAlchemy URL. Default: SQLite at `${VERIXA_DATA_DIR}/verixa.db`. Use `postgresql+asyncpg://…` for PostgreSQL |
 | `VERIXA_STORAGE_BACKEND` | API | `local` (default, files under `${VERIXA_DATA_DIR}/storage`) or `s3` |
 | `VERIXA_STORAGE_LOCAL_PATH` | API | Override the local storage directory |
+| `VERIXA_API_PUBLIC_URL` | API | Public origin of the API; local-storage signed URLs point here |
+| `VERIXA_SIGNED_URL_TTL_SECONDS` | API | Lifetime of signed download links (default 300) |
 | `VERIXA_S3_ENDPOINT_URL`, `VERIXA_S3_REGION`, `VERIXA_S3_BUCKET`, `VERIXA_S3_ACCESS_KEY_ID`, `VERIXA_S3_SECRET_ACCESS_KEY` | API | Required only when `VERIXA_STORAGE_BACKEND=s3`; the bucket must be private |
 | `NEXT_PUBLIC_API_BASE_URL` | Web | API origin used by the web app |
 

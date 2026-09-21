@@ -40,6 +40,11 @@ class Settings(BaseSettings):
     access_token_ttl_minutes: int = Field(default=30, ge=1, le=24 * 60)
     refresh_token_ttl_days: int = Field(default=14, ge=1, le=365)
 
+    # Public origin of this API, used to build signed download URLs for local storage.
+    api_public_url: str = "http://localhost:8000"
+    # Lifetime of signed download URLs.
+    signed_url_ttl_seconds: int = Field(default=300, ge=10, le=3600)
+
     # Root directory for all local, non-versioned runtime data (DB file, uploads).
     data_dir: Path = Path("./data")
 

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import Settings, get_settings
 from app.database import get_session
 from app.models import User
+from app.providers.storage.base import ObjectStorage
 from app.services.auth import AuthService
 from app.utils import security
 from app.utils.errors import UnauthorizedError
@@ -18,6 +19,14 @@ _bearer = HTTPBearer(auto_error=False)
 
 DbSession = Annotated[AsyncSession, Depends(get_session)]
 AppSettings = Annotated[Settings, Depends(get_settings)]
+
+
+def get_storage(request: Request) -> ObjectStorage:
+    storage: ObjectStorage = request.app.state.storage
+    return storage
+
+
+Storage = Annotated[ObjectStorage, Depends(get_storage)]
 
 
 def get_auth_service(session: DbSession, settings: AppSettings) -> AuthService:
