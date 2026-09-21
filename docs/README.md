@@ -9,3 +9,4 @@ Implementation tasks live in `../TASKS/`.
 | ---- | ------ | ----- |
 | T001 Bootstrap | done | Monorepo, FastAPI `/api/v1/health`, Next.js home page with API status, lint/type/test/build tooling, GitHub Actions CI |
 | T002 Dev environment | done | Env-driven config; SQLite + local-dir storage by default (no Docker); PostgreSQL/S3 opt-in; `.env.example`; portability rules in `infra/README.md` |
+| T003 Repository structure | done | Package responsibility docstrings; layering rules enforced by `tests/test_architecture.py`; web structure documented in `CLAUDE.md` |

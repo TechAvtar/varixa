@@ -11,6 +11,20 @@ Execute work in the order defined by `TASKS/00-MASTER-EXECUTION.md`.
 - `docs` — product and engineering specifications (numbered 01–12)
 - `TASKS` — sequential implementation tasks (T001…T043)
 
+## API layering (enforced by `services/api/tests/test_architecture.py`)
+```
+api/v1 (routes)  ->  services/*  ->  repositories (models)  |  providers (external)
+schemas: API contract only.   utils: pure helpers only.   workers: job execution.
+```
+Routes never import providers/repositories/models. Providers never import services.
+Every package's `__init__.py` carries a one-line responsibility docstring.
+
+## Web structure (`apps/web/src`)
+- `app/` — App Router routes/layouts only; no data-fetching logic inline beyond calling `lib/`
+- `components/` — reusable UI (`components/ui` reserved for shadcn/ui, added when first needed)
+- `lib/` — API client, env, formatting helpers
+- Types come from `@verixa/shared-types`; do not redeclare API shapes locally.
+
 ## Commands
 - API: `cd services/api && .venv/Scripts/activate && uvicorn app.main:app --reload`
 - API checks: `cd services/api && ruff check . && ruff format --check . && mypy app && pytest`
