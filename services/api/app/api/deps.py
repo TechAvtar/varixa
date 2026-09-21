@@ -11,6 +11,7 @@ from app.config import Settings, get_settings
 from app.database import get_session
 from app.models import User
 from app.providers.storage.base import ObjectStorage
+from app.services.analysis import AnalysisService
 from app.services.auth import AuthService
 from app.utils import security
 from app.utils.errors import UnauthorizedError
@@ -34,6 +35,13 @@ def get_auth_service(session: DbSession, settings: AppSettings) -> AuthService:
 
 
 AuthSvc = Annotated[AuthService, Depends(get_auth_service)]
+
+
+def get_analysis_service(session: DbSession, storage: Storage) -> AnalysisService:
+    return AnalysisService(session, storage)
+
+
+AnalysisSvc = Annotated[AnalysisService, Depends(get_analysis_service)]
 
 
 def _bearer_token(

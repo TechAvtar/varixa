@@ -4,6 +4,13 @@
  */
 
 export type {
+  AnalysisCounts,
+  AnalysisListResponse,
+  AnalysisResponse,
+  AnalysisStatus,
+  AnalysisType,
+} from "./analysis";
+export type {
   LoginRequest,
   RefreshRequest,
   RegisterRequest,

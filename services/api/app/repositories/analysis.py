@@ -1,0 +1,56 @@
+import uuid
+from collections.abc import Sequence
+
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from app.models import Analysis, AnalysisFile
+
+
+class AnalysisRepository:
+    """Persistence for analyses. Soft-deleted rows are invisible to every read."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get(self, analysis_id: uuid.UUID) -> Analysis | None:
+        stmt = (
+            select(Analysis)
+            .where(Analysis.id == analysis_id, Analysis.deleted_at.is_(None))
+            .options(selectinload(Analysis.files))
+        )
+        return (await self._session.execute(stmt)).scalar_one_or_none()
+
+    async def list_for_user(
+        self, user_id: uuid.UUID, *, offset: int, limit: int
+    ) -> tuple[Sequence[Analysis], int]:
+        base = select(Analysis).where(Analysis.user_id == user_id, Analysis.deleted_at.is_(None))
+        total = (
+            await self._session.execute(select(func.count()).select_from(base.subquery()))
+        ).scalar_one()
+        stmt = (
+            base.order_by(Analysis.created_at.desc(), Analysis.id.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        rows = (await self._session.execute(stmt)).scalars().all()
+        return rows, total
+
+    async def count_by_type_for_user(self, user_id: uuid.UUID) -> dict[str, int]:
+        stmt = (
+            select(Analysis.type, func.count())
+            .where(Analysis.user_id == user_id, Analysis.deleted_at.is_(None))
+            .group_by(Analysis.type)
+        )
+        return {row[0]: row[1] for row in (await self._session.execute(stmt)).all()}
+
+    async def add(self, analysis: Analysis) -> Analysis:
+        self._session.add(analysis)
+        await self._session.flush()
+        return analysis
+
+    async def add_file(self, file: AnalysisFile) -> AnalysisFile:
+        self._session.add(file)
+        await self._session.flush()
+        return file
