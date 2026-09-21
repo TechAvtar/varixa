@@ -20,6 +20,8 @@ Execute work in the order defined by `TASKS/00-MASTER-EXECUTION.md`.
 ## Non-negotiables
 - Routes → Services → Repositories/Providers. No provider calls from routes.
 - Every schema change ships with an Alembic migration.
+- Local dev uses SQLite + local-dir storage; production uses PostgreSQL + S3. Models and
+  migrations must work on both — see `infra/README.md` portability rules.
 - Never log secrets or raw uploaded content.
 - Evidence levels: VERIFIED, STRONG, PROBABLE, POSSIBLE, UNKNOWN. Never overstate.
 - MVP scope is image + text only. No video/audio/mobile/extension/proprietary detector.

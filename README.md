@@ -21,7 +21,9 @@ TASKS/                  Sequential implementation tasks (T001â€“T043)
 
 - Node.js 22+ (see `.nvmrc`)
 - Python 3.12+
-- PostgreSQL (from T005 onward)
+- No database or storage service needed locally: the API defaults to SQLite and a local
+  storage directory under `services/api/data/`. PostgreSQL and S3-compatible storage are
+  opt-in via environment variables (see below).
 
 ## Local development
 
@@ -66,6 +68,11 @@ All configuration is via environment variables; see the `.env.example` files. Ne
 | `VERIXA_ENVIRONMENT` | API | `development` \| `test` \| `production` (production disables `/docs`) |
 | `VERIXA_DEBUG` | API | FastAPI debug mode |
 | `VERIXA_CORS_ORIGINS` | API | JSON list of allowed browser origins |
+| `VERIXA_DATA_DIR` | API | Root for local runtime data (default `./data`, git-ignored) |
+| `VERIXA_DATABASE_URL` | API | SQLAlchemy URL. Default: SQLite at `${VERIXA_DATA_DIR}/verixa.db`. Use `postgresql+asyncpg://…` for PostgreSQL |
+| `VERIXA_STORAGE_BACKEND` | API | `local` (default, files under `${VERIXA_DATA_DIR}/storage`) or `s3` |
+| `VERIXA_STORAGE_LOCAL_PATH` | API | Override the local storage directory |
+| `VERIXA_S3_ENDPOINT_URL`, `VERIXA_S3_REGION`, `VERIXA_S3_BUCKET`, `VERIXA_S3_ACCESS_KEY_ID`, `VERIXA_S3_SECRET_ACCESS_KEY` | API | Required only when `VERIXA_STORAGE_BACKEND=s3`; the bucket must be private |
 | `NEXT_PUBLIC_API_BASE_URL` | Web | API origin used by the web app |
 
 ## Working with Claude Code
