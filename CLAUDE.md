@@ -1,0 +1,25 @@
+# Verixa — Claude Code project instructions
+
+Read `README.md` first, then `docs/CLAUDE-MASTER-PROMPT.md` and `docs/12-CLAUDE-CODE-RULES.md`.
+Execute work in the order defined by `TASKS/00-MASTER-EXECUTION.md`.
+
+## Layout
+- `apps/web` — Next.js + TypeScript + Tailwind (App Router)
+- `services/api` — FastAPI + SQLAlchemy 2 + Alembic (Python 3.12+)
+- `packages/shared-types` — TypeScript types mirrored from the API Pydantic schemas
+- `infra` — local/dev infrastructure (docker-compose, deployment config)
+- `docs` — product and engineering specifications (numbered 01–12)
+- `TASKS` — sequential implementation tasks (T001…T043)
+
+## Commands
+- API: `cd services/api && .venv/Scripts/activate && uvicorn app.main:app --reload`
+- API checks: `cd services/api && ruff check . && ruff format --check . && mypy app && pytest`
+- Web: `cd apps/web && npm run dev`
+- Web checks: `cd apps/web && npm run lint && npm run typecheck && npm run build`
+
+## Non-negotiables
+- Routes → Services → Repositories/Providers. No provider calls from routes.
+- Every schema change ships with an Alembic migration.
+- Never log secrets or raw uploaded content.
+- Evidence levels: VERIFIED, STRONG, PROBABLE, POSSIBLE, UNKNOWN. Never overstate.
+- MVP scope is image + text only. No video/audio/mobile/extension/proprietary detector.

@@ -1,0 +1,13 @@
+{
+  "name": "verixa",
+  "private": true,
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "dev:web": "npm run dev --workspace @verixa/web",
+    "lint": "npm run lint --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "build": "npm run build --workspace @verixa/web",
+    "format:check": "npm run format:check --workspaces --if-present"
+  },
+  "engines": { "node": ">=22" }
+}

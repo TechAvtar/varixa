@@ -1,0 +1,44 @@
+# Source planning material (kept locally, not versioned here)
+Verixa-Claude-Code-MD-Pack/
+*.zip
+*.docx
+
+# Secrets / env
+.env
+.env.*
+!.env.example
+
+# Node
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+npm-debug.log*
+.pnpm-store/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+*.egg-info/
+dist/
+build/
+
+# Local data
+*.db
+*.sqlite
+/data/
+uploads/
+storage/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
