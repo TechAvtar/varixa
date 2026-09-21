@@ -13,8 +13,8 @@ apps/web/               Next.js 16 + TypeScript + Tailwind (App Router)
 services/api/           FastAPI + Pydantic + SQLAlchemy 2 + Alembic
 packages/shared-types/  TypeScript types mirrored from API schemas
 infra/                  Local/dev infrastructure and deployment config
-docs/                   Product + engineering specifications (01–12)
-TASKS/                  Sequential implementation tasks (T001–T043)
+docs/                   Product + engineering specifications (01â€“12)
+TASKS/                  Sequential implementation tasks (T001â€“T043)
 ```
 
 ## Prerequisites
@@ -38,7 +38,7 @@ cp .env.example .env
 uvicorn app.main:app --reload --port 8000
 ```
 
-Health check: <http://localhost:8000/api/v1/health> · OpenAPI docs: <http://localhost:8000/docs>
+Health check: <http://localhost:8000/api/v1/health> Â· OpenAPI docs: <http://localhost:8000/docs>
 
 ### Web
 
@@ -57,7 +57,11 @@ Open <http://localhost:3000>. The home page shows live API status (or an explici
 | API    | `cd services/api && ruff check . && ruff format --check . && mypy app && pytest` |
 | Web    | `npm run lint && npm run format:check && npm run typecheck && npm run build` |
 
-CI runs the same checks on every push and pull request (`.github/workflows/ci.yml`).
+Or run everything at once: `scripts/check.sh` (bash) / `scripts\check.ps1` (PowerShell), optionally
+with `api` or `web` to limit scope.
+
+CI (`.github/workflows/ci.yml`) runs the same checks plus a gitleaks secret scan on every push and
+pull request. Dependabot keeps Actions, npm, and pip dependencies current.
 
 ## Configuration
 
@@ -69,7 +73,7 @@ All configuration is via environment variables; see the `.env.example` files. Ne
 | `VERIXA_DEBUG` | API | FastAPI debug mode |
 | `VERIXA_CORS_ORIGINS` | API | JSON list of allowed browser origins |
 | `VERIXA_DATA_DIR` | API | Root for local runtime data (default `./data`, git-ignored) |
-| `VERIXA_DATABASE_URL` | API | SQLAlchemy URL. Default: SQLite at `${VERIXA_DATA_DIR}/verixa.db`. Use `postgresql+asyncpg://�` for PostgreSQL |
+| `VERIXA_DATABASE_URL` | API | SQLAlchemy URL. Default: SQLite at `${VERIXA_DATA_DIR}/verixa.db`. Use `postgresql+asyncpg://…` for PostgreSQL |
 | `VERIXA_STORAGE_BACKEND` | API | `local` (default, files under `${VERIXA_DATA_DIR}/storage`) or `s3` |
 | `VERIXA_STORAGE_LOCAL_PATH` | API | Override the local storage directory |
 | `VERIXA_S3_ENDPOINT_URL`, `VERIXA_S3_REGION`, `VERIXA_S3_BUCKET`, `VERIXA_S3_ACCESS_KEY_ID`, `VERIXA_S3_SECRET_ACCESS_KEY` | API | Required only when `VERIXA_STORAGE_BACKEND=s3`; the bucket must be private |

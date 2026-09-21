@@ -26,6 +26,7 @@ Every package's `__init__.py` carries a one-line responsibility docstring.
 - Types come from `@verixa/shared-types`; do not redeclare API shapes locally.
 
 ## Commands
+- Everything CI runs: `scripts/check.sh` or `scripts\check.ps1` (accepts `api` / `web`)
 - API: `cd services/api && .venv/Scripts/activate && uvicorn app.main:app --reload`
 - API checks: `cd services/api && ruff check . && ruff format --check . && mypy app && pytest`
 - Web: `cd apps/web && npm run dev`
