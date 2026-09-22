@@ -46,6 +46,7 @@ class MockAIDetector:
             calibrated=False,
             raw={"mock": True, "derived_from": "sha256(content)", "bytes": len(data)},
             latency_ms=0,
+            estimated_cost=0.0,
             limitations=[
                 "This is a MOCK detector: the score is derived from the content hash and "
                 "carries no information about AI generation.",

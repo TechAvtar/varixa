@@ -35,6 +35,8 @@ class DetectionResult:
     latency_ms: int | None = None
     request_id: str | None = None
     cached: bool = False
+    # Estimated provider cost in USD for this call (None when unknown). Cached hits cost 0.
+    estimated_cost: float | None = None
     limitations: list[str] = field(default_factory=list)
 
 

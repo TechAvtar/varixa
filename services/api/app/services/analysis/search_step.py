@@ -6,7 +6,7 @@ search is reported as UNKNOWN rather than as "no sources found".
 
 from typing import Any
 
-from app.enums import AnalysisType
+from app.enums import AnalysisType, ProviderCallStatus
 from app.models import SourceMatch, SourceSearchRun
 from app.providers.search import (
     ImageSourceSearch,
@@ -18,6 +18,7 @@ from app.providers.search import (
 )
 from app.repositories.analysis import AnalysisRepository
 from app.services.analysis.pipeline import PipelineContext, StepFailedError, StepOutcome
+from app.services.provider_calls import ProviderCallRecorder, request_hash
 from app.services.text.phrases import select_distinctive_phrases
 
 MAX_MATCHES = 50
@@ -89,7 +90,15 @@ class SourceSearchStep:
             raise StepFailedError("NO_VERIFIED_IMAGE", "Validation did not publish an image.")
         metadata: dict[str, Any] = {"mime_type": image.mime_type, "sha256": image.sha256}
         try:
-            return await provider.search_image(image.data, metadata=metadata)
+            async with ProviderCallRecorder(ctx.session).track(
+                analysis_id=ctx.analysis.id,
+                provider=provider.name,
+                operation="search.image",
+                request_hash=image.sha256,
+            ) as call:
+                result = await provider.search_image(image.data, metadata=metadata)
+                _fill_call(call, result)
+                return result
         except SourceSearchError as exc:
             raise StepFailedError("SEARCH_PROVIDER_FAILED", str(exc)[:300]) from exc
 
@@ -117,6 +126,27 @@ class SourceSearchStep:
                 limitations=["The text was too short to extract a distinctive phrase to search."],
             )
         try:
-            return await provider.search_text(text.normalized, phrases=phrases)
+            async with ProviderCallRecorder(ctx.session).track(
+                analysis_id=ctx.analysis.id,
+                provider=provider.name,
+                operation="search.text",
+                request_hash=request_hash("\n".join(phrases)),
+            ) as call:
+                result = await provider.search_text(text.normalized, phrases=phrases)
+                _fill_call(call, result)
+                return result
         except SourceSearchError as exc:
             raise StepFailedError("SEARCH_PROVIDER_FAILED", str(exc)[:300]) from exc
+
+
+def _fill_call(call: Any, result: SearchResult) -> None:
+    call.model_version = result.provider_version
+    call.request_id = result.request_id
+    call.estimated_cost = result.estimated_cost
+    if result.cached:
+        call.status = ProviderCallStatus.CACHED
+    call.response = {
+        "match_count": len(result.matches),
+        "queried_phrases": len(result.queried_phrases),
+        "cached": result.cached,
+    }

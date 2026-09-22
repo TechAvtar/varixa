@@ -49,5 +49,6 @@ export type {
 } from "./metadata";
 export type { HealthResponse } from "./health";
 export type { SourceKind, SourceMatch, SourceMatchesResponse } from "./matches";
+export type { ProviderCall, ProviderCallsResponse, ProviderCallStatus } from "./provider-calls";
 export type { LanguageGuess, TextAnalysisCreate, TextAnalysisResponse } from "./text";
 export { TEXT_INPUT } from "./text";

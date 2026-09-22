@@ -117,6 +117,7 @@ resources.
 | `GET /api/v1/analysis/{id}/provenance` | C2PA summary, manifests, validation status, limitations |
 | `GET /api/v1/analysis/{id}/ai` | AI-detector signal with provider/model/version, thresholds, evidence level, raw response |
 | `GET /api/v1/analysis/{id}/matches` | External source / reverse-image matches with queried phrases and limitations |
+| `GET /api/v1/analysis/{id}/provider-calls` | Audit trail: provider, operation, model/version, status, latency, request hash, estimated cost, bounded response/error |
 | `GET /api/v1/analysis/{id}/fingerprints` | Hashes plus exact/near duplicates among the caller's analyses |
 | `DELETE /api/v1/analysis/{id}` | Soft delete (record kept for audit) and remove stored files |
 
@@ -135,6 +136,16 @@ The filename and client MIME type are never trusted. An upload is accepted only 
 Only then is the original stored (private key `uploads/{user}/{analysis}/{sha256}.{ext}`) and the
 analysis row committed; a rejected file leaves no record. `GET /analysis/{id}` returns a `file`
 block with the detected type, size, dimensions and SHA-256.
+
+### Provider call audit
+
+Every engine or provider invocation made by a pipeline step is wrapped in
+`ProviderCallRecorder.track()` (`app/services/provider_calls.py`) and persisted to
+`provider_calls`: provider, operation (`ai.detect`, `search.image`, `search.text`,
+`metadata.extract`, `provenance.inspect`), model/version, status
+(`success | cached | failed | timeout | skipped`), latency, SHA-256 request hash (never the
+content), estimated USD cost, request id, and a size-bounded response or error summary. Failures
+are recorded and re-raised; cached hits are recorded with zero latency and cost.
 
 ### Processing pipeline
 

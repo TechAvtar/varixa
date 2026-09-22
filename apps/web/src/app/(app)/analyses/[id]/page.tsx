@@ -4,6 +4,7 @@ import type {
   ImageFingerprintsResponse,
   ImageMetadataResponse,
   ImageProvenanceResponse,
+  ProviderCallsResponse,
   SourceMatchesResponse,
   TextAnalysisResponse,
   TextFingerprintsResponse,
@@ -18,6 +19,7 @@ import { FingerprintsCard } from "@/components/analyses/fingerprints-card";
 import { MetadataCard } from "@/components/analyses/metadata-card";
 import { NotAvailable } from "@/components/analyses/not-available";
 import { ProcessingSteps } from "@/components/analyses/processing-steps";
+import { ProviderCallsCard } from "@/components/analyses/provider-calls-card";
 import { ProvenanceCard } from "@/components/analyses/provenance-card";
 import { RawJson } from "@/components/analyses/raw-json";
 import { SourceMatchesCard } from "@/components/analyses/source-matches-card";
@@ -77,6 +79,7 @@ export default async function AnalysisPage({
     textFpResult,
     aiResult,
     matchesResult,
+    callsResult,
   ] = await Promise.all([
     isImage ? authedRequest<ImageMetadataResponse>(`/analysis/${id}/metadata`) : null,
     isImage ? authedRequest<ImageProvenanceResponse>(`/analysis/${id}/provenance`) : null,
@@ -85,6 +88,7 @@ export default async function AnalysisPage({
     isImage ? null : authedRequest<TextFingerprintsResponse>(`/analysis/${id}/fingerprints`),
     authedRequest<AIDetectionResponse>(`/analysis/${id}/ai`),
     authedRequest<SourceMatchesResponse>(`/analysis/${id}/matches`),
+    authedRequest<ProviderCallsResponse>(`/analysis/${id}/provider-calls`),
   ]);
   const md = metadataResult?.ok ? metadataResult.data : null;
   const prov = provenanceResult?.ok ? provenanceResult.data : null;
@@ -93,6 +97,7 @@ export default async function AnalysisPage({
   const tfp = textFpResult?.ok ? textFpResult.data : null;
   const ai = aiResult.ok ? aiResult.data : null;
   const sources = matchesResult.ok ? matchesResult.data : null;
+  const calls = callsResult.ok ? callsResult.data : null;
 
   const evidence = deriveEvidence(a, md, prov, fp, txt, tfp, ai, sources);
   const counts = summarise(evidence);
@@ -163,7 +168,7 @@ export default async function AnalysisPage({
 
       <section role="tabpanel" aria-label={active} className="space-y-6">
         {active === "overview" ? (
-          <Overview a={a} evidence={evidence} text={txt} />
+          <Overview a={a} evidence={evidence} text={txt} calls={calls} />
         ) : active === "ai" ? (
           <>
             <EvidenceList
@@ -253,10 +258,12 @@ function Overview({
   a,
   evidence,
   text,
+  calls,
 }: {
   a: AnalysisResponse;
   evidence: EvidenceItem[];
   text: TextAnalysisResponse | null;
+  calls: ProviderCallsResponse | null;
 }) {
   const facts = evidence.filter((e) => e.kind === "fact");
   const signals = evidence.filter((e) => e.kind === "signal");
@@ -292,6 +299,7 @@ function Overview({
       <div className="space-y-6">
         <ProcessingSteps steps={a.steps ?? []} />
         {a.type === "text" ? <TextStatsCard data={text} /> : null}
+        <ProviderCallsCard data={calls} />
         <Card>
           <CardHeader>
             <CardTitle>File</CardTitle>

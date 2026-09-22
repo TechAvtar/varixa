@@ -18,6 +18,7 @@ from app.models import (
     ImageFingerprints,
     ImageMetadata,
     ImageProvenance,
+    ProviderCall,
     SourceMatch,
     SourceSearchRun,
     TextAnalysis,
@@ -26,6 +27,7 @@ from app.models import (
 )
 from app.providers.storage.base import ObjectStorage
 from app.repositories.analysis import AnalysisRepository
+from app.repositories.provider_calls import ProviderCallRepository
 from app.services import storage_keys
 from app.services.authorization import assert_owns_analysis
 from app.services.image import validate_image
@@ -245,6 +247,16 @@ class AnalysisService:
     ) -> tuple[SourceSearchRun | None, Sequence[SourceMatch]]:
         await self.get_owned(user, analysis_id)
         return await self._analyses.get_source_search(analysis_id)
+
+    async def list_provider_calls(
+        self, user: User, analysis_id: uuid.UUID
+    ) -> tuple[Sequence[ProviderCall], float]:
+        await self.get_owned(user, analysis_id)
+        repo = ProviderCallRepository(self._db)
+        return (
+            await repo.list_for_analysis(analysis_id),
+            await repo.total_cost_for_analysis(analysis_id),
+        )
 
     async def get_provenance(self, user: User, analysis_id: uuid.UUID) -> ImageProvenance | None:
         await self.get_owned(user, analysis_id)

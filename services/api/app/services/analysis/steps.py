@@ -25,6 +25,7 @@ from app.services.image import validate_image
 from app.services.image.hashing import compute_hashes
 from app.services.image.metadata import normalize_metadata, to_utc_or_none
 from app.services.image.provenance import normalize_provenance
+from app.services.provider_calls import ProviderCallRecorder
 
 HASH_ALGORITHM_VERSION = "v1"  # bump if any hash definition changes
 
@@ -128,7 +129,16 @@ class ExtractMetadataStep:
             ctx.settings
         )
         try:
-            raw = await extractor.extract(image.data)
+            async with ProviderCallRecorder(ctx.session).track(
+                analysis_id=ctx.analysis.id,
+                provider=extractor.name,
+                operation="metadata.extract",
+                request_hash=image.sha256,
+            ) as call:
+                raw = await extractor.extract(image.data)
+                call.model_version = raw.engine_version
+                call.estimated_cost = 0.0
+                call.response = {"groups": {g: len(t) for g, t in raw.groups.items()}}
         except MetadataExtractionError as exc:
             raise StepFailedError("METADATA_ENGINE_FAILED", str(exc)) from exc
 
@@ -182,7 +192,16 @@ class InspectProvenanceStep:
             "provenance"
         ) or build_provenance_inspector(ctx.settings)
         try:
-            raw = await inspector.inspect(image.data, extension=image.extension)
+            async with ProviderCallRecorder(ctx.session).track(
+                analysis_id=ctx.analysis.id,
+                provider=inspector.name,
+                operation="provenance.inspect",
+                request_hash=image.sha256,
+            ) as call:
+                raw = await inspector.inspect(image.data, extension=image.extension)
+                call.model_version = raw.engine_version
+                call.estimated_cost = 0.0
+                call.response = {"present": raw.present, "warnings": len(raw.warnings)}
         except ProvenanceInspectionError as exc:
             raise StepFailedError("PROVENANCE_ENGINE_FAILED", str(exc)) from exc
 

@@ -36,6 +36,7 @@ class EvidenceLevel(StrEnum):
 
 class ProviderCallStatus(StrEnum):
     SUCCESS = "success"
+    CACHED = "cached"
     FAILED = "failed"
     TIMEOUT = "timeout"
     SKIPPED = "skipped"

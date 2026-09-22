@@ -7,7 +7,7 @@ persisted, so the report keeps saying UNKNOWN rather than inventing a result.
 
 from typing import Any
 
-from app.enums import AnalysisType
+from app.enums import AnalysisType, ProviderCallStatus
 from app.models import AIDetection
 from app.providers.ai import (
     AIDetector,
@@ -17,6 +17,7 @@ from app.providers.ai import (
 )
 from app.repositories.analysis import AnalysisRepository
 from app.services.analysis.pipeline import PipelineContext, StepFailedError, StepOutcome
+from app.services.provider_calls import ProviderCallRecorder, request_hash
 
 
 class AIDetectionStep:
@@ -50,8 +51,26 @@ class AIDetectionStep:
         if modality not in detector.modalities:
             return StepOutcome.skipped(f"provider {detector.name} does not support {modality}")
 
+        recorder = ProviderCallRecorder(ctx.session)
         try:
-            result = await detector.detect(content, modality=modality, metadata=metadata)
+            async with recorder.track(
+                analysis_id=ctx.analysis.id,
+                provider=detector.name,
+                operation="ai.detect",
+                request_hash=request_hash(content),
+            ) as call:
+                result = await detector.detect(content, modality=modality, metadata=metadata)
+                call.model_version = f"{result.model}@{result.model_version}"
+                call.request_id = result.request_id
+                call.estimated_cost = result.estimated_cost
+                call.status = ProviderCallStatus.CACHED if result.cached else call.status
+                call.response = {
+                    "score": result.score,
+                    "label": result.label,
+                    "calibrated": result.calibrated,
+                    "cached": result.cached,
+                    "raw": result.raw,
+                }
         except AIDetectorError as exc:
             raise StepFailedError("AI_PROVIDER_FAILED", str(exc)[:300]) from exc
 

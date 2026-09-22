@@ -49,6 +49,7 @@ class MockImageSourceSearch:
             modality="image",
             matches=matches,
             latency_ms=0,
+            estimated_cost=0.0,
             limitations=[_MOCK_NOTE, *GENERIC_LIMITATIONS],
         )
 
@@ -84,5 +85,6 @@ class MockTextSourceSearch:
             matches=matches,
             queried_phrases=list(phrases),
             latency_ms=0,
+            estimated_cost=0.0,
             limitations=[_MOCK_NOTE, *GENERIC_LIMITATIONS],
         )

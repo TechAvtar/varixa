@@ -70,7 +70,7 @@ class CachedAIDetector:
         )
         hit = await self._cache.get(key)
         if hit is not None:
-            return replace(hit, cached=True, latency_ms=0)
+            return replace(hit, cached=True, latency_ms=0, estimated_cost=0.0)
         result = await self._inner.detect(content, modality=modality, metadata=metadata)
         await self._cache.set(key, result)
         return result

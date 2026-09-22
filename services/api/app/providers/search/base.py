@@ -44,6 +44,7 @@ class SearchResult:
     latency_ms: int | None = None
     request_id: str | None = None
     cached: bool = False
+    estimated_cost: float | None = None
     limitations: list[str] = field(default_factory=list)
 
 

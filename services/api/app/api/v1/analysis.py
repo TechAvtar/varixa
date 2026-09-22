@@ -28,6 +28,7 @@ from app.schemas.fingerprints import (
 from app.schemas.matches import SourceMatchesResponse, SourceMatchResponse
 from app.schemas.metadata import ImageMetadataResponse, NormalizedMetadataResponse
 from app.schemas.provenance import ImageProvenanceResponse, NormalizedProvenanceResponse
+from app.schemas.provider_calls import ProviderCallResponse, ProviderCallsResponse
 from app.schemas.text import LanguageResponse, TextAnalysisCreate, TextAnalysisResponse
 from app.services.image import ImageTooLargeError
 from app.services.image.provenance import NormalizedProvenance, provenance_limitations
@@ -313,6 +314,18 @@ async def get_analysis_matches(
             for m in matches
         ],
         limitations=[str(x) for x in (run.limitations_json or [])],
+    )
+
+
+@router.get("/{analysis_id}/provider-calls", response_model=ProviderCallsResponse)
+async def get_analysis_provider_calls(
+    analysis_id: uuid.UUID, user: CurrentUser, analyses: AnalysisSvc
+) -> ProviderCallsResponse:
+    """Audit trail of engine/provider calls for one analysis (owner only)."""
+    calls, total = await analyses.list_provider_calls(user, analysis_id)
+    return ProviderCallsResponse(
+        calls=[ProviderCallResponse.model_validate(c) for c in calls],
+        total_estimated_cost=round(total, 6),
     )
 
 
