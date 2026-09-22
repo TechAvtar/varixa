@@ -18,7 +18,12 @@ export const dynamic = "force-dynamic";
 
 const RECENT_LIMIT = 10;
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ deleted?: string }>;
+}) {
+  const { deleted } = await searchParams;
   const [counts, recent, usage] = await Promise.all([
     authedRequest<AnalysisCounts>("/analysis/counts"),
     authedRequest<AnalysisListResponse>(`/analysis?page=1&page_size=${RECENT_LIMIT}`),
@@ -38,6 +43,16 @@ export default async function DashboardPage() {
           New analysis
         </Button>
       </div>
+
+      {deleted === "1" ? (
+        <Alert role="status">
+          <AlertTitle>Analysis deleted</AlertTitle>
+          <AlertDescription>
+            The record is marked deleted and its stored content is being removed under the retention
+            policy.
+          </AlertDescription>
+        </Alert>
+      ) : null}
 
       <section aria-labelledby="stats-heading" className="space-y-3">
         <h2 id="stats-heading" className="sr-only">

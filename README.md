@@ -84,6 +84,24 @@ with `api` or `web` to limit scope.
 CI (`.github/workflows/ci.yml`) runs the same checks plus a gitleaks secret scan on every push and
 pull request. Dependabot keeps Actions, npm, and pip dependencies current.
 
+### End-to-end tests (Playwright)
+
+```bash
+cd apps/web
+npx playwright install chromium      # once
+npm run test:e2e                      # or: npm run test:e2e -- --ui
+```
+
+`apps/web/playwright.config.ts` starts its own API (SQLite + local storage in a scratch
+directory under the OS temp dir, mock providers, throttling off, port 8100) and a production
+build of the web app (`.next-e2e`, port 3100), so a running `npm run dev` and its data are never
+touched. Specs live in `apps/web/e2e/`: auth (guest redirect, register, sign out, wrong
+password, duplicate email), image upload (pipeline to completion, tabs, rejected non-image),
+text analysis, PDF export (signed link, tampered signature refused) and deletion/ownership
+(another account gets "not found"). Set `E2E_API_URL` / `E2E_WEB_URL` to run against servers
+you started yourself. Specs run on one worker because the single-process API's pipeline is
+CPU-bound. CI runs the suite after the API and web jobs and uploads the report on failure.
+
 ## Authentication
 
 Email + password. Passwords are stored as Argon2id hashes. Login returns a short-lived JWT access

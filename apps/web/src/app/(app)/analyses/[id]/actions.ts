@@ -12,6 +12,16 @@ export async function setKeep(analysisId: string, keep: boolean): Promise<void> 
   redirect(`/analyses/${analysisId}?tab=overview`);
 }
 
+/** Soft-delete the analysis (the API sweeps its stored content) and return to the dashboard. */
+export async function deleteAnalysis(analysisId: string): Promise<void> {
+  const result = await authedRequest<unknown>(`/analysis/${analysisId}`, { method: "DELETE" });
+  if (!result.ok) {
+    const params = new URLSearchParams({ tab: "overview", message: result.message.slice(0, 200) });
+    redirect(`/analyses/${analysisId}?${params.toString()}`);
+  }
+  redirect("/dashboard?deleted=1");
+}
+
 /** Ask the API to render a report, then return to the overview with the outcome in the URL. */
 export async function createReport(analysisId: string, formData: FormData): Promise<void> {
   const format = String(formData.get("format") ?? "pdf");

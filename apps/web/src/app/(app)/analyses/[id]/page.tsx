@@ -22,6 +22,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AICard } from "@/components/analyses/ai-card";
 import { AnalysisStatusBadge } from "@/components/analyses/analysis-status-badge";
+import { DeleteAnalysisButton } from "@/components/analyses/delete-analysis-button";
 import { CompressionCard } from "@/components/analyses/compression-card";
 import { CopyMoveCard } from "@/components/analyses/copy-move-card";
 import { ELACard } from "@/components/analyses/ela-card";
@@ -59,7 +60,7 @@ import {
   summarise,
 } from "@/lib/evidence";
 import { formatBytes, formatDateTime, formatType } from "@/lib/format";
-import { createReport, setKeep } from "./actions";
+import { createReport, deleteAnalysis, setKeep } from "./actions";
 
 export const metadata: Metadata = { title: "Analysis · Verixa" };
 export const dynamic = "force-dynamic";
@@ -165,6 +166,10 @@ export default async function AnalysisPage({
     "use server";
     await setKeep(a.id, String(formData.get("keep")) === "1");
   };
+  const deleteAction = async () => {
+    "use server";
+    await deleteAnalysis(a.id);
+  };
 
   return (
     <div className="space-y-6">
@@ -182,6 +187,7 @@ export default async function AnalysisPage({
           </div>
           <div className="flex items-center gap-3">
             <AnalysisStatusBadge status={a.status} />
+            <DeleteAnalysisButton title={a.title ?? "Untitled"} action={deleteAction} />
             <Button
               variant="outline"
               size="sm"

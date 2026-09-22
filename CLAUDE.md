@@ -76,6 +76,15 @@ Every package's `__init__.py` carries a one-line responsibility docstring.
 - Timeline events come only from recorded times (`services/evidence/timeline.py`), never from
   inference; keep `raw_time` and `tz_known`, and leave `event_time` null when parsing fails.
 
+## E2E (T040)
+- Specs in `apps/web/e2e/*.spec.ts`, shared flows in `e2e/helpers.ts` (register, sign out, pick
+  image, paste text, wait for completion). Use `formAlert()` for Verixa alerts (Next adds an empty
+  `role=alert` announcer) and `untilReflected`-style helpers for client forms.
+- `playwright.config.ts` owns the servers (API :8100 with a scratch data dir, web :3100 built into
+  `.next-e2e`); never point specs at the dev servers. New user-facing flows get a spec.
+- Client components must format numbers with a fixed locale (`Intl.NumberFormat("en-US")`), or
+  server and client HTML differ and hydration fails.
+
 ## Security (docs/09, T039)
 - Every API response passes `utils/security_headers.py`; web headers live in `next.config.ts`.
 - Provider adapters call only endpoints that pass `utils/urlpolicy.assert_outbound_allowed`

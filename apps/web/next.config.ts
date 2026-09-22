@@ -28,6 +28,8 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   // Never advertise the framework.
   poweredByHeader: false,
+  // Lets the E2E web server build beside a running dev server (see playwright.config.ts).
+  distDir: process.env.NEXT_DIST_DIR ?? ".next",
   experimental: {
     // Image uploads travel through a server action; match the API's VERIXA_MAX_UPLOAD_BYTES.
     serverActions: { bodySizeLimit: "26mb" },

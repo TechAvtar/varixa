@@ -10,6 +10,9 @@ import { Label } from "@/components/ui/label";
 
 const initial: TextFormState = {};
 
+// Fixed locale: server and client must render identical digits or hydration fails.
+const count = new Intl.NumberFormat("en-US");
+
 export function TextInputForm() {
   const [state, action] = useActionState(createTextAnalysisAction, initial);
   const [text, setText] = useState(state.text ?? "");
@@ -42,9 +45,9 @@ export function TextInputForm() {
           id="text-hint"
           className={`text-xs ${tooLong ? "text-destructive" : "text-muted-foreground"}`}
         >
-          {chars.toLocaleString()} characters · {words.toLocaleString()} words · limit{" "}
-          {TEXT_INPUT.maxChars.toLocaleString()} characters. The original is stored exactly as
-          pasted; hidden characters are reported, not silently removed.
+          {count.format(chars)} characters · {count.format(words)} words · limit{" "}
+          {count.format(TEXT_INPUT.maxChars)} characters. The original is stored exactly as pasted;
+          hidden characters are reported, not silently removed.
         </p>
       </div>
 
