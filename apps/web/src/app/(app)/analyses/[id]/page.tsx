@@ -38,6 +38,7 @@ import { ProviderCallsCard } from "@/components/analyses/provider-calls-card";
 import { ProvenanceCard } from "@/components/analyses/provenance-card";
 import { RawJson } from "@/components/analyses/raw-json";
 import { ReportsCard, type ReportWithLink } from "@/components/analyses/reports-card";
+import { RetentionNotice } from "@/components/analyses/retention-notice";
 import { SourceMatchesCard } from "@/components/analyses/source-matches-card";
 import { SynthesisCard } from "@/components/analyses/synthesis-card";
 import { TextFingerprintsCard } from "@/components/analyses/text-fingerprints-card";
@@ -58,7 +59,7 @@ import {
   summarise,
 } from "@/lib/evidence";
 import { formatBytes, formatDateTime, formatType } from "@/lib/format";
-import { createReport } from "./actions";
+import { createReport, setKeep } from "./actions";
 
 export const metadata: Metadata = { title: "Analysis · Verixa" };
 export const dynamic = "force-dynamic";
@@ -160,6 +161,10 @@ export default async function AnalysisPage({
     : deriveEvidence(a, md, prov, fp, txt, tfp, ai, sources, forensics);
   const counts = summarise(evidence);
   const processing = a.status === "queued" || a.status === "processing";
+  const keepAction = async (formData: FormData) => {
+    "use server";
+    await setKeep(a.id, String(formData.get("keep")) === "1");
+  };
 
   return (
     <div className="space-y-6">
@@ -173,6 +178,7 @@ export default async function AnalysisPage({
             <p className="font-mono text-xs text-muted-foreground">
               {a.id} · created {formatDateTime(a.created_at)}
             </p>
+            <RetentionNotice a={a} action={keepAction} />
           </div>
           <div className="flex items-center gap-3">
             <AnalysisStatusBadge status={a.status} />

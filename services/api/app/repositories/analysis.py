@@ -1,5 +1,6 @@
 import uuid
 from collections.abc import Sequence
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import delete, func, select
@@ -29,8 +30,9 @@ from app.repositories.reports import ReportRepository
 class AnalysisRepository:
     """Persistence for analyses. Soft-deleted rows are invisible to every read."""
 
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: AsyncSession, *, retention_hours: int = 0) -> None:
         self._session = session
+        self._retention_hours = retention_hours
 
     async def get(self, analysis_id: uuid.UUID) -> Analysis | None:
         stmt = (
@@ -65,6 +67,45 @@ class AnalysisRepository:
         )
         return {row[0]: row[1] for row in (await self._session.execute(stmt)).all()}
 
+    async def list_content_expired(self, now: datetime, *, limit: int) -> Sequence[Analysis]:
+        """Live, not kept, past their retention deadline, content not yet purged."""
+        stmt = (
+            select(Analysis)
+            .where(
+                Analysis.deleted_at.is_(None),
+                Analysis.kept_at.is_(None),
+                Analysis.content_purged_at.is_(None),
+                Analysis.retention_at.is_not(None),
+                Analysis.retention_at <= now,
+            )
+            .order_by(Analysis.retention_at)
+            .limit(limit)
+        )
+        return (await self._session.execute(stmt)).scalars().all()
+
+    async def list_live_created_before(self, cutoff: datetime, *, limit: int) -> Sequence[Analysis]:
+        stmt = (
+            select(Analysis)
+            .where(Analysis.deleted_at.is_(None), Analysis.created_at < cutoff)
+            .order_by(Analysis.created_at)
+            .limit(limit)
+        )
+        return (await self._session.execute(stmt)).scalars().all()
+
+    async def list_deleted_before(self, cutoff: datetime, *, limit: int) -> Sequence[Analysis]:
+        stmt = (
+            select(Analysis)
+            .where(Analysis.deleted_at.is_not(None), Analysis.deleted_at < cutoff)
+            .order_by(Analysis.deleted_at)
+            .limit(limit)
+        )
+        return (await self._session.execute(stmt)).scalars().all()
+
+    async def purge(self, analysis: Analysis) -> None:
+        """Hard-delete the row; every child table cascades."""
+        await self._session.delete(analysis)
+        await self._session.flush()
+
     async def list_object_keys(self, analysis_id: uuid.UUID) -> list[str]:
         """Every stored object for the analysis: originals plus generated artifacts."""
         stmt = select(AnalysisFile.object_key).where(AnalysisFile.analysis_id == analysis_id)
@@ -80,6 +121,10 @@ class AnalysisRepository:
         return keys
 
     async def add(self, analysis: Analysis) -> Analysis:
+        if analysis.created_at is None:
+            analysis.created_at = datetime.now(UTC)
+        if analysis.retention_at is None and self._retention_hours > 0:
+            analysis.retention_at = analysis.created_at + timedelta(hours=self._retention_hours)
         self._session.add(analysis)
         await self._session.flush()
         return analysis

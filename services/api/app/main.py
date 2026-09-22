@@ -1,5 +1,7 @@
 """FastAPI application factory."""
 
+import asyncio
+import contextlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -12,6 +14,7 @@ from app.config import Settings, get_settings
 from app.database import create_engine, create_session_factory
 from app.providers.storage import build_storage
 from app.utils.request_id import RequestIdMiddleware
+from app.workers.retention import run_periodically
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -26,9 +29,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.engine = engine
         app.state.session_factory = create_session_factory(engine)
         app.state.storage = build_storage(settings)
+        sweeper: asyncio.Task[None] | None = None
+        if settings.retention_sweep_interval_minutes > 0 and settings.environment != "test":
+            sweeper = asyncio.create_task(
+                run_periodically(app.state.session_factory, app.state.storage, settings)
+            )
         try:
             yield
         finally:
+            if sweeper is not None:
+                sweeper.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await sweeper
             await engine.dispose()
 
     app = FastAPI(

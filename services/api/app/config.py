@@ -117,6 +117,13 @@ class Settings(BaseSettings):
     openai_cost_per_million_input: float = Field(default=0.0, ge=0.0)
     openai_cost_per_million_output: float = Field(default=0.0, ge=0.0)
 
+    # Retention (docs/09). Hours/days of 0 disable the corresponding pass.
+    raw_content_retention_hours: int = Field(default=24, ge=0, le=24 * 3650)
+    provider_response_retention_days: int = Field(default=30, ge=0, le=3650)
+    deleted_record_grace_days: int = Field(default=7, ge=0, le=3650)
+    analysis_retention_days: int = Field(default=0, ge=0, le=36500)
+    retention_sweep_interval_minutes: int = Field(default=60, ge=0, le=24 * 60)
+
     # Persistent provider-result cache (content hash + provider/model/version). 0 disables.
     provider_cache_ttl_hours: int = Field(default=24 * 7, ge=0, le=24 * 365)
 

@@ -44,6 +44,10 @@ export interface AnalysisResponse {
   error_message: string | null;
   created_at: string;
   completed_at: string | null;
+  /** Raw-content expiry (null = never), owner keep flag, and when content was purged. */
+  retention_at: string | null;
+  kept_at: string | null;
+  content_purged_at: string | null;
   file: AnalysisFileResponse | null;
   steps: AnalysisStepResponse[];
 }

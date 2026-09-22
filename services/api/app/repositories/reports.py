@@ -2,8 +2,9 @@
 
 import uuid
 from collections.abc import Sequence
+from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Report
@@ -31,6 +32,16 @@ class ReportRepository:
             Report.analysis_id == analysis_id, Report.object_key.is_not(None)
         )
         return [k for k in (await self._session.execute(stmt)).scalars().all() if k]
+
+    async def mark_expired(self, analysis_id: uuid.UUID, now: datetime) -> int:
+        """Report files were removed by retention: keep the metadata, drop the key."""
+        stmt = (
+            update(Report)
+            .where(Report.analysis_id == analysis_id, Report.object_key.is_not(None))
+            .values(object_key=None, status="expired")
+        )
+        result = await self._session.execute(stmt)
+        return int(getattr(result, "rowcount", 0) or 0)
 
     async def add(self, report: Report) -> Report:
         self._session.add(report)

@@ -8,7 +8,7 @@ export interface ReportResponse {
   id: string;
   analysis_id: string;
   format: string;
-  status: "completed" | "failed";
+  status: "completed" | "failed" | "expired";
   created_at: string;
   size_bytes: number | null;
   sha256: string | null;

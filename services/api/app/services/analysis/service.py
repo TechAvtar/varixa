@@ -73,7 +73,9 @@ class AnalysisService:
         self._db = session
         self._storage = storage
         self._settings = settings
-        self._analyses = AnalysisRepository(session)
+        self._analyses = AnalysisRepository(
+            session, retention_hours=settings.raw_content_retention_hours
+        )
 
     # -- create / read ------------------------------------------------------------
 
@@ -172,6 +174,14 @@ class AnalysisService:
         await self.get_owned(user, analysis_id)
         return await self._analyses.get_text_analysis(analysis_id)
 
+    async def keep(self, user: User, analysis_id: uuid.UUID, *, keep: bool) -> Analysis:
+        """Opt an analysis out of (or back into) raw-content expiry."""
+        analysis = await self.get_owned(user, analysis_id)
+        analysis.kept_at = datetime.now(UTC) if keep else None
+        await self._db.commit()
+        await self._db.refresh(analysis)
+        return await self.get_owned(user, analysis_id)
+
     async def get_owned(self, user: User, analysis_id: uuid.UUID) -> Analysis:
         analysis = await self._analyses.get(analysis_id)
         assert_owns_analysis(user, analysis)
@@ -242,6 +252,8 @@ class AnalysisService:
         analysis = await self.get_owned(user, analysis_id)
         if not analysis.files:
             raise NotFoundError("This analysis has no stored file.")
+        if analysis.content_purged_at is not None:
+            raise NotFoundError("The original was removed under the retention policy.")
         file = analysis.files[0]
         url = await self._storage.signed_url(
             file.object_key,
@@ -271,6 +283,9 @@ class AnalysisService:
     ) -> list[tuple[dict[str, Any], str]]:
         """Pair each stored artifact with a short-lived signed URL (keys stay internal)."""
         links: list[tuple[dict[str, Any], str]] = []
+        owner = await self._analyses.get(forensics.analysis_id)
+        if owner is None or owner.content_purged_at is not None:
+            return links  # purged under retention: no signed links to missing objects
         for artifact in forensics.artifacts_json or []:
             key = artifact.get("object_key")
             if not isinstance(key, str):

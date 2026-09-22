@@ -675,6 +675,22 @@ async def get_analysis_provenance(
     )
 
 
+@router.post("/{analysis_id}/keep", response_model=AnalysisResponse)
+async def keep_analysis(
+    analysis_id: uuid.UUID, user: CurrentUser, analyses: AnalysisSvc
+) -> AnalysisResponse:
+    """Keep the raw content beyond the retention window (owner only)."""
+    return _to_response(await analyses.keep(user, analysis_id, keep=True))
+
+
+@router.delete("/{analysis_id}/keep", response_model=AnalysisResponse)
+async def release_analysis(
+    analysis_id: uuid.UUID, user: CurrentUser, analyses: AnalysisSvc
+) -> AnalysisResponse:
+    """Let the raw content expire again under the retention policy."""
+    return _to_response(await analyses.keep(user, analysis_id, keep=False))
+
+
 @router.delete("/{analysis_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_analysis(analysis_id: uuid.UUID, user: CurrentUser, analyses: AnalysisSvc) -> None:
     await analyses.soft_delete(user, analysis_id)

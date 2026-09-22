@@ -13,7 +13,7 @@ class ReportResponse(BaseModel):
     id: uuid.UUID
     analysis_id: uuid.UUID
     format: str
-    status: Literal["completed", "failed"]
+    status: Literal["completed", "failed", "expired"]
     created_at: datetime
     size_bytes: int | None
     sha256: str | None

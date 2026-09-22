@@ -40,7 +40,12 @@ class Analysis(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     title: Mapped[str | None] = mapped_column(String(300))
     error_code: Mapped[str | None] = mapped_column(String(64))
     error_message: Mapped[str | None] = mapped_column(Text)
+    # When raw content (originals, derived images, report files) expires; None = never.
     retention_at: Mapped[datetime | None] = mapped_column(TZDateTime)
+    # Owner opted out of content expiry ("saved").
+    kept_at: Mapped[datetime | None] = mapped_column(TZDateTime)
+    # Raw content was removed by the retention sweeper; records and evidence remain.
+    content_purged_at: Mapped[datetime | None] = mapped_column(TZDateTime)
     completed_at: Mapped[datetime | None] = mapped_column(TZDateTime)
     deleted_at: Mapped[datetime | None] = mapped_column(TZDateTime)
 

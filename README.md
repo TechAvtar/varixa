@@ -208,6 +208,25 @@ conservative, clamped to the rule's docs/07 ceiling so nothing can be overstated
 record. The thresholds in force are recorded in the `evidence` step details and echoed by the
 evidence endpoint.
 
+### Retention and deletion
+
+`services/retention.py` implements docs/09 as four idempotent passes run by the in-process sweeper
+(`app/workers/retention.py`, every `VERIXA_RETENTION_SWEEP_INTERVAL_MINUTES`; `0` disables it, and
+`python -m app.workers.retention` runs one sweep and prints the JSON report):
+
+1. **Raw content expiry** – `VERIXA_RAW_CONTENT_RETENTION_HOURS` (default 24, `0` = never) after
+   creation the original, derived image artifacts and report files are removed unless the owner
+   *kept* the analysis (`POST`/`DELETE /analysis/{id}/keep`). Records, evidence, timeline and report
+   metadata stay (`content_purged_at` is set, reports become `expired`, the viewer says so).
+2. **Provider raw responses** – `VERIXA_PROVIDER_RESPONSE_RETENTION_DAYS` (default 30) after a call
+   its `response_json`/`error_json` are cleared; provider, operation, version, status, latency and
+   cost remain as the audit minimum.
+3. **Deleted records** – `DELETE /analysis/{id}` marks the record deleted, hides it from every read
+   and removes its stored objects at once; after `VERIXA_DELETED_RECORD_GRACE_DAYS` (default 7) the
+   row and all children are purged, leaving one structured log line (ids only).
+4. **Record retention** – `VERIXA_ANALYSIS_RETENTION_DAYS` (default 0 = keep) soft-deletes older
+   live analyses, which then follow pass 3.
+
 ### PDF export
 
 `POST /analysis/{id}/report` (`{"format": "pdf"}`) renders a completed analysis with ReportLab

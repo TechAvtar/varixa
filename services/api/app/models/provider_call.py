@@ -1,10 +1,11 @@
 import uuid
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import ForeignKey, Integer, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.models.base import Base, CreatedAtMixin, PortableJSON, UUIDPrimaryKeyMixin
+from app.models.base import Base, CreatedAtMixin, PortableJSON, TZDateTime, UUIDPrimaryKeyMixin
 
 if TYPE_CHECKING:
     from app.models.analysis import Analysis
@@ -28,5 +29,7 @@ class ProviderCall(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     request_hash: Mapped[str | None] = mapped_column(String(64))
     response_json: Mapped[dict[str, Any] | None] = mapped_column(PortableJSON)
     error_json: Mapped[dict[str, Any] | None] = mapped_column(PortableJSON)
+    # Raw response/error cleared by retention; provider, status and timings remain.
+    purged_at: Mapped[datetime | None] = mapped_column(TZDateTime)
 
     analysis: Mapped["Analysis | None"] = relationship(back_populates="provider_calls")

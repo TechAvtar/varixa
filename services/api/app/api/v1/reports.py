@@ -16,7 +16,7 @@ def to_response(r: Report) -> ReportResponse:
         id=r.id,
         analysis_id=r.analysis_id,
         format=r.format,
-        status="completed" if r.status == "completed" else "failed",
+        status=r.status if r.status in ("completed", "expired") else "failed",
         created_at=r.created_at,
         size_bytes=r.size_bytes,
         sha256=r.sha256,

@@ -56,6 +56,10 @@ class AnalysisResponse(BaseModel):
     error_message: str | None
     created_at: datetime
     completed_at: datetime | None
+    # Raw-content expiry (None = never), owner keep flag, and when content was purged.
+    retention_at: datetime | None = None
+    kept_at: datetime | None = None
+    content_purged_at: datetime | None = None
     file: AnalysisFileResponse | None = None
     steps: list[AnalysisStepResponse] = Field(default_factory=list)
 
