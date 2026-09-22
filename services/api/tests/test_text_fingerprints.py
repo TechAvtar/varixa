@@ -95,6 +95,7 @@ async def test_text_pipeline_persists_fingerprints_and_finds_matches(client: Asy
         "ai",
         "search",
         "evidence",
+        "synthesis",
     ]
     assert detail["steps"][3]["status"] == "completed"
 

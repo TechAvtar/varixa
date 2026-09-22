@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from app.models.image_provenance import ImageProvenance
     from app.models.provider_call import ProviderCall
     from app.models.source_match import SourceMatch, SourceSearchRun
+    from app.models.synthesis import Synthesis
     from app.models.text_analysis import TextAnalysis
     from app.models.text_fingerprints import TextFingerprints
     from app.models.timeline_event import TimelineEvent
@@ -53,6 +54,9 @@ class Analysis(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     )
     timeline_events: Mapped[list["TimelineEvent"]] = relationship(
         back_populates="analysis", cascade="all, delete-orphan"
+    )
+    synthesis: Mapped["Synthesis | None"] = relationship(
+        back_populates="analysis", cascade="all, delete-orphan", uselist=False
     )
     evidence: Mapped[list["Evidence"]] = relationship(
         back_populates="analysis", cascade="all, delete-orphan"

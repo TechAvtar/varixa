@@ -6,6 +6,7 @@ from fastapi import APIRouter, File, Form, Query, UploadFile, status
 from app.api.deps import AnalysisSvc, AppSettings, CurrentUser, Jobs, Storage
 from app.enums import AnalysisType, EvidenceLevel
 from app.models import Analysis
+from app.providers.llm.base import SECTIONS as _SYNTHESIS_SECTIONS
 from app.providers.storage.base import ObjectNotFoundError
 from app.schemas.ai import AIDetectionResponse
 from app.schemas.analysis import (
@@ -41,6 +42,11 @@ from app.schemas.matches import SourceMatchesResponse, SourceMatchResponse
 from app.schemas.metadata import ImageMetadataResponse, NormalizedMetadataResponse
 from app.schemas.provenance import ImageProvenanceResponse, NormalizedProvenanceResponse
 from app.schemas.provider_calls import ProviderCallResponse, ProviderCallsResponse
+from app.schemas.synthesis import (
+    SynthesisCitation,
+    SynthesisResponse,
+    SynthesisSectionResponse,
+)
 from app.schemas.text import LanguageResponse, TextAnalysisCreate, TextAnalysisResponse
 from app.schemas.timeline import TimelineEventResponse, TimelineResponse
 from app.services.evidence.engine import (
@@ -52,6 +58,7 @@ from app.services.evidence.engine import (
 from app.services.evidence.timeline import LIMITATIONS as _TIMELINE_NOTES
 from app.services.image import ImageTooLargeError
 from app.services.image.provenance import NormalizedProvenance, provenance_limitations
+from app.services.synthesis.request import build_request as _build_synthesis_request
 from app.utils.errors import NotFoundError
 
 router = APIRouter(prefix="/analysis")
@@ -506,6 +513,78 @@ async def get_analysis_timeline(
         generated_at=max(r.created_at for r in rows),
         events=events,
         limitations=list(_TIMELINE_NOTES),
+    )
+
+
+_SYNTHESIS_NOTES = [
+    "This text was written by a language model from the evidence records above and nothing "
+    "else. It cannot add evidence or change a level; each section lists the records it used.",
+    "Sections flagged as ungrounded made statements without citing evidence and should be "
+    "read as unsupported. Warnings list wording the checks found questionable.",
+    "A synthesis marked not current was produced for an earlier evidence set; re-run the "
+    "analysis to refresh it.",
+]
+
+
+@router.get("/{analysis_id}/synthesis", response_model=SynthesisResponse)
+async def get_analysis_synthesis(
+    analysis_id: uuid.UUID, user: CurrentUser, analyses: AnalysisSvc, settings: AppSettings
+) -> SynthesisResponse:
+    """The model's grounded explanation of the evidence (docs/07 summary template)."""
+    row = await analyses.get_synthesis(user, analysis_id)
+    if row is None:
+        raise NotFoundError("No synthesis has been generated for this analysis.")
+    evidence = await analyses.list_evidence(user, analysis_id)
+    by_id = {str(e.id): e for e in evidence}
+    current_fp = _build_synthesis_request(
+        analysis_type="",
+        evidence_rows=evidence,
+        timeline_rows=[],
+        synthesis_confidence=0.0,
+        prompt_version=row.prompt_version,
+    ).fingerprint
+    sections = []
+    for key, question in _SYNTHESIS_SECTIONS:
+        s = (row.sections_json or {}).get(key) or {}
+        cites = []
+        for eid in s.get("evidence_ids") or []:
+            e = by_id.get(str(eid))
+            if e is not None:
+                cites.append(
+                    SynthesisCitation(
+                        id=e.id,
+                        rule=str((e.details or {}).get("rule") or ""),
+                        level=e.level,
+                        claim=e.claim,
+                    )
+                )
+        sections.append(
+            SynthesisSectionResponse(
+                key=key,
+                question=question,
+                text=str(s.get("text") or ""),
+                citations=cites,
+                grounded=bool(s.get("grounded", True)),
+                dropped_citations=len(s.get("dropped_ids") or []),
+            )
+        )
+    return SynthesisResponse(
+        provider=row.provider,
+        model=row.model,
+        model_version=row.model_version,
+        prompt_version=row.prompt_version,
+        generated_at=row.created_at,
+        current=row.evidence_fingerprint == current_fp,
+        grounded=row.grounded,
+        warnings=[str(w) for w in (row.warnings_json or [])],
+        sections=sections,
+        cached=row.cached,
+        latency_ms=row.latency_ms,
+        tokens_in=row.tokens_in,
+        tokens_out=row.tokens_out,
+        estimated_cost=row.estimated_cost,
+        limitations=_SYNTHESIS_NOTES,
+        raw=row.raw_json or {},
     )
 
 

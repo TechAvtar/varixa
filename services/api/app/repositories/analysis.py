@@ -18,6 +18,7 @@ from app.models import (
     ImageProvenance,
     SourceMatch,
     SourceSearchRun,
+    Synthesis,
     TextAnalysis,
     TextFingerprints,
     TimelineEvent,
@@ -252,6 +253,18 @@ class AnalysisRepository:
         )
         self._session.add_all(rows)
         await self._session.flush()
+
+    async def get_synthesis(self, analysis_id: uuid.UUID) -> Synthesis | None:
+        stmt = select(Synthesis).where(Synthesis.analysis_id == analysis_id)
+        return (await self._session.execute(stmt)).scalar_one_or_none()
+
+    async def replace_synthesis(self, row: Synthesis) -> Synthesis:
+        await self._session.execute(
+            delete(Synthesis).where(Synthesis.analysis_id == row.analysis_id)
+        )
+        self._session.add(row)
+        await self._session.flush()
+        return row
 
     async def get_forensics(self, analysis_id: uuid.UUID) -> ImageForensics | None:
         stmt = select(ImageForensics).where(ImageForensics.analysis_id == analysis_id)

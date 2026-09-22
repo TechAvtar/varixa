@@ -105,6 +105,18 @@ class Settings(BaseSettings):
     # How much each conflict record lowers the synthesis confidence.
     evidence_conflict_penalty: float = Field(default=0.25, ge=0.0, le=1.0)
 
+    # LLM synthesis (explanation layer only). "none" skips the step; "mock" is deterministic;
+    # "openai" needs VERIXA_OPENAI_API_KEY. Only structured evidence is ever sent.
+    llm_provider: Literal["none", "mock", "openai"] = "none"
+    llm_timeout_seconds: float = Field(default=60.0, ge=1, le=300)
+    llm_prompt_version: str = Field(default="v1", min_length=1, max_length=16)
+    openai_api_key: SecretStr | None = None
+    openai_model: str = Field(default="gpt-4o-mini", min_length=1, max_length=128)
+    openai_base_url: str = "https://api.openai.com/v1"
+    # USD per million tokens, for the audit trail's cost estimate (0 = unknown).
+    openai_cost_per_million_input: float = Field(default=0.0, ge=0.0)
+    openai_cost_per_million_output: float = Field(default=0.0, ge=0.0)
+
     # Persistent provider-result cache (content hash + provider/model/version). 0 disables.
     provider_cache_ttl_hours: int = Field(default=24 * 7, ge=0, le=24 * 365)
 

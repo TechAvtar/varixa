@@ -208,6 +208,24 @@ conservative, clamped to the rule's docs/07 ceiling so nothing can be overstated
 record. The thresholds in force are recorded in the `evidence` step details and echoed by the
 evidence endpoint.
 
+### LLM synthesis (explanation layer only)
+
+`providers/llm/` holds the synthesiser adapters (`mock`, `openai` via Chat Completions with a
+strict JSON schema) behind one interface, cached by evidence fingerprint like every other
+provider. The model receives *structured evidence only* (`services/synthesis/request.py`: record
+ids, rules, levels, claims, sources, limitations, conflicts, timeline events) and must answer the
+six docs/07 summary questions, each with the evidence ids it relied on. `services/synthesis/
+grounding.py` then drops citations that name no sent record, flags sections that make statements
+without citing evidence, and warns about level words the evidence does not carry or certainty
+wording with nothing VERIFIED. The result is stored in `syntheses` with the evidence fingerprint
+(so `GET /analysis/{id}/synthesis` can report `current: false` after the evidence changes) and
+shown under Interpretation on the overview with its citations, grounding flags and warnings.
+Settings: `VERIXA_LLM_PROVIDER` (none | mock | openai), `VERIXA_OPENAI_API_KEY`,
+`VERIXA_OPENAI_MODEL`, `VERIXA_OPENAI_BASE_URL`, `VERIXA_LLM_TIMEOUT_SECONDS`,
+`VERIXA_LLM_PROMPT_VERSION`, `VERIXA_OPENAI_COST_PER_MILLION_INPUT|OUTPUT`. Provider data
+handling: no file bytes, user text, storage keys or user identity are ever sent; the system prompt
+declares file-derived field values to be data, not instructions.
+
 ### Timeline
 
 `services/evidence/timeline.py` turns *recorded* times into ordered events: C2PA signing time

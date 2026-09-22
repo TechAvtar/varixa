@@ -9,6 +9,7 @@ import type {
   ImageProvenanceResponse,
   ProviderCallsResponse,
   SourceMatchesResponse,
+  SynthesisResponse,
   TextAnalysisResponse,
   TextFingerprintsResponse,
   TimelineResponse,
@@ -34,6 +35,7 @@ import { ProviderCallsCard } from "@/components/analyses/provider-calls-card";
 import { ProvenanceCard } from "@/components/analyses/provenance-card";
 import { RawJson } from "@/components/analyses/raw-json";
 import { SourceMatchesCard } from "@/components/analyses/source-matches-card";
+import { SynthesisCard } from "@/components/analyses/synthesis-card";
 import { TextFingerprintsCard } from "@/components/analyses/text-fingerprints-card";
 import { TextStatsCard } from "@/components/analyses/text-stats-card";
 import { TimelineCard } from "@/components/analyses/timeline-card";
@@ -91,6 +93,7 @@ export default async function AnalysisPage({
     fileLinkResult,
     evidenceResult,
     timelineResult,
+    synthesisResult,
   ] = await Promise.all([
     isImage ? authedRequest<ImageMetadataResponse>(`/analysis/${id}/metadata`) : null,
     isImage ? authedRequest<ImageProvenanceResponse>(`/analysis/${id}/provenance`) : null,
@@ -106,6 +109,7 @@ export default async function AnalysisPage({
       : null,
     authedRequest<EvidenceListResponse>(`/analysis/${id}/evidence`),
     active === "timeline" ? authedRequest<TimelineResponse>(`/analysis/${id}/timeline`) : null,
+    active === "overview" ? authedRequest<SynthesisResponse>(`/analysis/${id}/synthesis`) : null,
   ]);
   const md = metadataResult?.ok ? metadataResult.data : null;
   const prov = provenanceResult?.ok ? provenanceResult.data : null;
@@ -120,6 +124,7 @@ export default async function AnalysisPage({
 
   const engine = evidenceResult.ok ? evidenceResult.data : null;
   const timeline = timelineResult?.ok ? timelineResult.data : null;
+  const synthesis = synthesisResult?.ok ? synthesisResult.data : null;
   const evidence = engine
     ? fromServerEvidence(engine)
     : deriveEvidence(a, md, prov, fp, txt, tfp, ai, sources, forensics);
@@ -210,7 +215,7 @@ export default async function AnalysisPage({
 
       <section role="tabpanel" aria-label={active} className="space-y-6">
         {active === "overview" ? (
-          <Overview a={a} evidence={evidence} text={txt} calls={calls} />
+          <Overview a={a} evidence={evidence} text={txt} calls={calls} synthesis={synthesis} />
         ) : active === "ai" ? (
           <>
             <EvidenceList
@@ -321,11 +326,13 @@ function Overview({
   evidence,
   text,
   calls,
+  synthesis,
 }: {
   a: AnalysisResponse;
   evidence: EvidenceItem[];
   text: TextAnalysisResponse | null;
   calls: ProviderCallsResponse | null;
+  synthesis: SynthesisResponse | null;
 }) {
   const facts = evidence.filter((e) => e.kind === "fact");
   const signals = evidence.filter((e) => e.kind === "signal");
@@ -352,12 +359,25 @@ function Overview({
           items={conflicts}
           empty="No conflicting evidence."
         />
-        <Group
-          title="Interpretation"
-          hint="Plain-language synthesis of the evidence."
-          items={[]}
-          empty="Not available in this build. Interpretation will be generated only from the evidence above and will always cite it."
-        />
+        <section aria-labelledby="grp-interpretation" className="space-y-2">
+          <div>
+            <h2 id="grp-interpretation" className="text-base font-medium">
+              Interpretation
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              Plain-language synthesis written by a language model from the evidence above, and
+              nothing else. It cannot add evidence or change a level.
+            </p>
+          </div>
+          {synthesis ? (
+            <SynthesisCard data={synthesis} />
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              No synthesis is available: either no LLM provider is configured or the step has not
+              run. The evidence above stands on its own.
+            </p>
+          )}
+        </section>
         <Group
           title="Unknown"
           hint="What could not be established. Absence of evidence is not evidence."

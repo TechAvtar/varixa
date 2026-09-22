@@ -14,6 +14,7 @@ from app.services.analysis.pipeline import (
     StepOutcome,
 )
 from app.services.analysis.search_step import SourceSearchStep
+from app.services.analysis.synthesis_step import SynthesisStep
 from app.services.text import (
     compute_statistics,
     compute_structure,
@@ -162,4 +163,5 @@ def text_pipeline_steps() -> list[PipelineStep]:
         AIDetectionStep(),
         SourceSearchStep(),
         EvidenceStep(),
+        SynthesisStep(),
     ]

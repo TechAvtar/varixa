@@ -58,6 +58,43 @@ export interface TimelineResponse {
   limitations: string[];
 }
 
+/** Mirrors `app/schemas/synthesis.py`: the model's grounded explanation of the evidence. */
+export interface SynthesisCitation {
+  id: string;
+  rule: string;
+  level: EvidenceLevel;
+  claim: string;
+}
+
+export interface SynthesisSection {
+  key: string;
+  question: string;
+  text: string;
+  citations: SynthesisCitation[];
+  grounded: boolean;
+  dropped_citations: number;
+}
+
+export interface SynthesisResponse {
+  provider: string;
+  model: string;
+  model_version: string;
+  prompt_version: string;
+  generated_at: string;
+  /** False when the evidence changed after this synthesis was produced. */
+  current: boolean;
+  grounded: boolean;
+  warnings: string[];
+  sections: SynthesisSection[];
+  cached: boolean;
+  latency_ms: number | null;
+  tokens_in: number | null;
+  tokens_out: number | null;
+  estimated_cost: number | null;
+  limitations: string[];
+  raw: Record<string, unknown>;
+}
+
 export const EVIDENCE_LEVELS: readonly EvidenceLevel[] = [
   "VERIFIED",
   "STRONG",

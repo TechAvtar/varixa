@@ -31,6 +31,9 @@ export type {
   EvidenceLevel,
   EvidenceListResponse,
   EvidenceRecord,
+  SynthesisCitation,
+  SynthesisResponse,
+  SynthesisSection,
   TimelineEvent,
   TimelineResponse,
 } from "./evidence";

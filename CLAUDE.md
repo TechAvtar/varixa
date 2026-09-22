@@ -70,6 +70,9 @@ Every package's `__init__.py` carries a one-line responsibility docstring.
   rule there with a stable `rule` id, `refs` to the raw observation and a limitation; never assign a
   level in a route, a card or an LLM prompt. Thresholds go on `EvidenceThresholds` / `Settings`.
 - Correlated signals share a family (ELA + compression). Conflicts are records, not deletions.
+- The LLM (`providers/llm/`) only ever receives structured evidence (`services/synthesis/request.py`)
+  and its output passes `services/synthesis/grounding.py` before it is stored or shown. Never send
+  raw content, keys or identity to it, and never let its text set a level.
 - Timeline events come only from recorded times (`services/evidence/timeline.py`), never from
   inference; keep `raw_time` and `tz_known`, and leave `event_time` null when parsing fails.
 

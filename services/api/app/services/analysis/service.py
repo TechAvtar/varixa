@@ -24,6 +24,7 @@ from app.models import (
     ProviderCall,
     SourceMatch,
     SourceSearchRun,
+    Synthesis,
     TextAnalysis,
     TextFingerprints,
     TimelineEvent,
@@ -256,6 +257,10 @@ class AnalysisService:
     async def list_timeline(self, user: User, analysis_id: uuid.UUID) -> Sequence[TimelineEvent]:
         await self.get_owned(user, analysis_id)
         return await self._analyses.list_timeline(analysis_id)
+
+    async def get_synthesis(self, user: User, analysis_id: uuid.UUID) -> Synthesis | None:
+        await self.get_owned(user, analysis_id)
+        return await self._analyses.get_synthesis(analysis_id)
 
     async def get_forensics(self, user: User, analysis_id: uuid.UUID) -> ImageForensics | None:
         await self.get_owned(user, analysis_id)

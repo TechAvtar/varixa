@@ -17,6 +17,7 @@ from app.config import Settings
 from app.enums import AnalysisStatus, AnalysisType
 from app.providers.ai import build_ai_detector
 from app.providers.cache import InMemoryProviderCache, ProviderResultCache
+from app.providers.llm import build_synthesizer
 from app.providers.metadata import build_metadata_extractor
 from app.providers.provenance import build_provenance_inspector
 from app.providers.search import build_image_source_search, build_text_source_search
@@ -108,6 +109,7 @@ async def run_analysis(
                 "ai_detector": build_ai_detector(settings, cache=cache),
                 "image_search": build_image_source_search(settings, cache=cache),
                 "text_search": build_text_source_search(settings, cache=cache),
+                "synthesizer": build_synthesizer(settings, cache=cache),
             },
         )
         try:
