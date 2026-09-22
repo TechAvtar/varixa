@@ -4,7 +4,7 @@ import type { SourceMatch, SourceMatchesResponse } from "@verixa/shared-types";
 import { useId, useMemo, useState } from "react";
 import { EvidenceLevelBadge } from "@/components/evidence/evidence-level-badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTime, safeExternalHref } from "@/lib/format";
 
 type SortKey = "rank" | "similarity" | "published";
 
@@ -191,14 +191,20 @@ export function SourceMatchesCard({ data }: { data: SourceMatchesResponse | null
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                     <span className="font-mono text-xs text-muted-foreground">#{m.rank}</span>
                     <EvidenceLevelBadge level="POSSIBLE" />
-                    <a
-                      href={m.url}
-                      target="_blank"
-                      rel="noopener noreferrer nofollow"
-                      className="font-medium underline-offset-4 hover:underline"
-                    >
-                      {m.title ?? hostOf(m.url)}
-                    </a>
+                    {safeExternalHref(m.url) ? (
+                      <a
+                        href={safeExternalHref(m.url) ?? undefined}
+                        target="_blank"
+                        rel="noopener noreferrer nofollow"
+                        className="font-medium underline-offset-4 hover:underline"
+                      >
+                        {m.title ?? hostOf(m.url)}
+                      </a>
+                    ) : (
+                      <span className="font-medium" title="Link withheld: not a web address">
+                        {m.title ?? m.url}
+                      </span>
+                    )}
                     <span className="text-xs text-muted-foreground">{hostOf(m.url)}</span>
                   </div>
                   <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-0.5 text-xs sm:grid-cols-[auto_1fr_auto_1fr]">

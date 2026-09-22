@@ -43,13 +43,18 @@ def error_response(
 def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def _app_error(request: Request, exc: AppError) -> JSONResponse:
-        headers = {"WWW-Authenticate": "Bearer"} if exc.status_code == 401 else None
+        headers: dict[str, str] = {}
+        if exc.status_code == 401:
+            headers["WWW-Authenticate"] = "Bearer"
+        retry_after = getattr(exc, "retry_after", None)
+        if isinstance(retry_after, int):
+            headers["Retry-After"] = str(retry_after)
         return error_response(
             request,
             status_code=exc.status_code,
             code=exc.code,
             message=exc.message,
-            headers=headers,
+            headers=headers or None,
         )
 
     @app.exception_handler(RequestValidationError)

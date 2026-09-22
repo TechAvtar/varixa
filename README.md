@@ -103,6 +103,40 @@ returned in the `X-Request-ID` response header. Analysis endpoints must call
 `services.authorization.assert_owns_analysis`, which answers 404 for both missing and foreign
 resources.
 
+Failed logins are throttled per email and per client address (`VERIXA_LOGIN_MAX_ATTEMPTS`,
+`VERIXA_LOGIN_MAX_ATTEMPTS_PER_IP`, `VERIXA_LOGIN_WINDOW_MINUTES`) and registrations per client
+address (`VERIXA_REGISTER_MAX_PER_HOUR`); a throttled request gets `429 RATE_LIMITED` with a
+`Retry-After` header. Counters live in the API process; put a shared limiter in front of
+multi-worker deployments. `VERIXA_TRUST_PROXY_HEADERS=true` makes the first `X-Forwarded-For`
+entry the client address (only behind a proxy that overwrites the header).
+
+## Security (docs/09)
+
+- **Authorization**: every per-analysis and per-report route resolves the record through the
+  owner; foreign and missing ids both answer 404 (`tests/test_security.py` sweeps every route).
+- **Uploads**: format from magic bytes only, signature/format mismatch rejected, size and
+  pixel caps checked before decoding, decompression-bomb guard, full decode before storage.
+  Object keys derive from ids and the content hash; the client filename only survives as a
+  sanitised basename (`utils/filenames.py`) for titles and `Content-Disposition`.
+- **Signed links**: HMAC over key + expiry, verified with a constant-time compare; a signature
+  opens exactly one object for `VERIXA_SIGNED_URL_TTL_SECONDS`. Downloads are `no-store`.
+- **Response headers** on every API response (`utils/security_headers.py`): `nosniff`,
+  `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, a `default-src 'none'` CSP,
+  `Cache-Control: no-store`, HSTS in production. The web app sets its own set in
+  `next.config.ts` (frame-ancestors, object-src, base-uri, form-action) and drops `X-Powered-By`.
+- **SSRF**: Verixa never fetches URLs supplied by users. Provider endpoints come from
+  configuration and must pass `utils/urlpolicy.py` (https only, no credentials, no IP literals,
+  host on `VERIXA_OUTBOUND_ALLOWED_HOSTS`). URLs *returned* by providers are stored and shown as
+  links only; non-http(s) links are dropped by the search step and never rendered as anchors.
+- **Prompt injection**: analysed text is data. The LLM receives structured evidence only
+  (`services/synthesis/request.py`), the system prompt carries the rules, and grounding checks
+  drop anything the model invents. Levels are assigned by the evidence engine alone.
+- **Secrets**: `SecretStr` settings (never in `repr`/dumps/responses), `.env` git-ignored, keys
+  only in provider adapters. Unhandled errors return a generic envelope with the request id.
+- **Logging**: `utils/logredact.py` installs a log-record factory that scrubs bearer tokens,
+  JWTs, `sig=`/`token=`/`password=` values and API keys from every logger, including uvicorn's
+  access log. Log lines carry ids, status, duration and provider names; never content.
+
 ## Analyses
 
 | Endpoint | Purpose |
@@ -385,6 +419,10 @@ All configuration is via environment variables; see the `.env.example` files. Ne
 | `VERIXA_SECRET_KEY` | API | Signs access tokens. Random, 32+ chars; the built-in dev default is refused in production |
 | `VERIXA_ACCESS_TOKEN_TTL_MINUTES` | API | Access-token lifetime (default 30) |
 | `VERIXA_REFRESH_TOKEN_TTL_DAYS` | API | Refresh-token lifetime (default 14) |
+| `VERIXA_LOGIN_MAX_ATTEMPTS` / `VERIXA_LOGIN_MAX_ATTEMPTS_PER_IP` / `VERIXA_LOGIN_WINDOW_MINUTES` | API | Failed logins allowed per email (10) and per client address (50) inside the window (15 min); 0 disables |
+| `VERIXA_REGISTER_MAX_PER_HOUR` | API | Registrations per client address per hour (default 20; 0 disables) |
+| `VERIXA_TRUST_PROXY_HEADERS` | API | Use the first `X-Forwarded-For` entry as the client address (default false) |
+| `VERIXA_OUTBOUND_ALLOWED_HOSTS` | API | JSON list of hosts provider adapters may call over https (default `["api.openai.com"]`); localhost http stubs are also accepted outside production |
 | `VERIXA_METADATA_ENGINE` | API | `auto` (ExifTool if found, else Pillow), `exiftool`, or `pillow` |
 | `VERIXA_EXIFTOOL_PATH` | API | Explicit ExifTool executable; otherwise PATH and known install dirs are searched |
 | `VERIXA_EXIFTOOL_TIMEOUT_SECONDS` | API | Per-file extraction timeout (default 30) |

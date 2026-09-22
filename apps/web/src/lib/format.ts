@@ -27,3 +27,16 @@ export function formatBytes(bytes: number): string {
   }
   return `${value.toFixed(value < 10 ? 1 : 0)} ${units[i]}`;
 }
+
+/**
+ * Only plain web links are ever rendered as anchors. Provider-supplied URLs are untrusted data:
+ * anything else (javascript:, data:, protocol-relative, malformed) is shown as text instead.
+ */
+export function safeExternalHref(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "http:" || parsed.protocol === "https:" ? parsed.href : null;
+  } catch {
+    return null;
+  }
+}

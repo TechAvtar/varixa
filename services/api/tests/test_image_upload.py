@@ -141,8 +141,8 @@ async def test_upload_title_defaults_to_filename(client: AsyncClient) -> None:
     )
     assert r.status_code == 201
     detail = (await client.get(f"/analysis/{r.json()['id']}", headers=headers)).json()
-    assert detail["title"] == "..evilname.png"  # path separators stripped
-    assert detail["file"]["original_filename"] == "..evilname.png"
+    assert detail["title"] == "name.png"  # basename only: directories and dot-prefixes dropped
+    assert detail["file"]["original_filename"] == "name.png"
 
 
 async def test_upload_rejects_non_image_without_creating_record(client: AsyncClient) -> None:

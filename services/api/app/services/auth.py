@@ -5,6 +5,7 @@ Security properties:
 - refresh tokens stored as SHA-256 only, rotated on every use, revocable
 - access tokens are short-lived JWTs bound to a session, so logout is immediate
 - login failures never reveal whether the email exists
+- failed logins and registrations are throttled per email and per client address
 """
 
 import uuid
@@ -18,9 +19,11 @@ from app.models import User, UserSession
 from app.repositories.user import UserRepository
 from app.repositories.user_session import UserSessionRepository
 from app.utils import security
-from app.utils.errors import ConflictError, UnauthorizedError
+from app.utils.errors import ConflictError, RateLimitedError, UnauthorizedError
+from app.utils.ratelimit import SlidingWindowLimiter
 
 INVALID_CREDENTIALS = "Invalid email or password."
+TOO_MANY_ATTEMPTS = "Too many attempts. Please try again later."
 INVALID_SESSION = "Session is invalid or has expired."
 INVALID_TOKEN = "Invalid or expired access token."
 
@@ -37,17 +40,58 @@ def _as_utc(dt: datetime) -> datetime:
     return dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)
 
 
+@dataclass(frozen=True)
+class AuthLimiters:
+    """Process-wide attempt counters shared by every request (kept on ``app.state``)."""
+
+    login: SlidingWindowLimiter  # failed attempts per email
+    login_ip: SlidingWindowLimiter  # failed attempts per client address (shared NATs: higher)
+    register: SlidingWindowLimiter
+
+    @classmethod
+    def from_settings(cls, settings: Settings) -> "AuthLimiters":
+        window = settings.login_window_minutes * 60
+        return cls(
+            login=SlidingWindowLimiter(limit=settings.login_max_attempts, window_seconds=window),
+            login_ip=SlidingWindowLimiter(
+                limit=settings.login_max_attempts_per_ip, window_seconds=window
+            ),
+            register=SlidingWindowLimiter(
+                limit=settings.register_max_per_hour, window_seconds=3600
+            ),
+        )
+
+
+def _throttle(limiter: SlidingWindowLimiter, *keys: str) -> None:
+    for key in keys:
+        decision = limiter.check(key)
+        if not decision.allowed:
+            raise RateLimitedError(TOO_MANY_ATTEMPTS, retry_after=decision.retry_after)
+
+
 class AuthService:
-    def __init__(self, session: AsyncSession, settings: Settings) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        settings: Settings,
+        *,
+        limiters: AuthLimiters | None = None,
+    ) -> None:
         self._db = session
         self._settings = settings
         self._users = UserRepository(session)
         self._sessions = UserSessionRepository(session)
+        self._limiters = limiters or AuthLimiters.from_settings(settings)
 
     # -- registration / login -------------------------------------------------
 
-    async def register(self, *, email: str, password: str, name: str | None) -> User:
+    async def register(
+        self, *, email: str, password: str, name: str | None, client_ip: str = "unknown"
+    ) -> User:
         normalized = email.strip().lower()
+        ip_key = f"ip:{client_ip}"
+        _throttle(self._limiters.register, ip_key)
+        self._limiters.register.hit(ip_key)  # every attempt counts, successful or not
         if await self._users.get_by_email(normalized) is not None:
             raise ConflictError("An account with this email already exists.", code="EMAIL_TAKEN")
         user = User(email=normalized, name=name, password_hash=security.hash_password(password))
@@ -55,14 +99,22 @@ class AuthService:
         await self._db.commit()
         return user
 
-    async def login(self, *, email: str, password: str) -> IssuedTokens:
-        user = await self._users.get_by_email(email.strip().lower())
+    async def login(self, *, email: str, password: str, client_ip: str = "unknown") -> IssuedTokens:
+        normalized = email.strip().lower()
+        email_key, ip_key = f"email:{normalized}", f"ip:{client_ip}"
+        # Checked before the password so a locked account cannot be probed at all.
+        _throttle(self._limiters.login, email_key)
+        _throttle(self._limiters.login_ip, ip_key)
+        user = await self._users.get_by_email(normalized)
         if user is None or user.password_hash is None:
             # Run a hash verify anyway to keep timing similar for unknown emails.
             security.verify_password(password, security.hash_password("timing-equalizer"))
+            self._record_failure(email_key, ip_key)
             raise UnauthorizedError(INVALID_CREDENTIALS, code="INVALID_CREDENTIALS")
         if not security.verify_password(password, user.password_hash):
+            self._record_failure(email_key, ip_key)
             raise UnauthorizedError(INVALID_CREDENTIALS, code="INVALID_CREDENTIALS")
+        self._limiters.login.reset(email_key)
         tokens = await self._start_session(user)
         await self._db.commit()
         return tokens
@@ -108,6 +160,10 @@ class AuthService:
         return user
 
     # -- helpers ----------------------------------------------------------------
+
+    def _record_failure(self, email_key: str, ip_key: str) -> None:
+        self._limiters.login.hit(email_key)
+        self._limiters.login_ip.hit(ip_key)
 
     async def _start_session(self, user: User) -> IssuedTokens:
         now = datetime.now(UTC)

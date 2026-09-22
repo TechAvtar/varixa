@@ -1,6 +1,6 @@
 from fastapi import APIRouter, status
 
-from app.api.deps import AuthSvc, CurrentSessionId, CurrentUser
+from app.api.deps import AuthSvc, ClientIp, CurrentSessionId, CurrentUser
 from app.schemas.auth import (
     LoginRequest,
     RefreshRequest,
@@ -13,14 +13,16 @@ router = APIRouter(prefix="/auth")
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-async def register(body: RegisterRequest, auth: AuthSvc) -> UserResponse:
-    user = await auth.register(email=body.email, password=body.password, name=body.name)
+async def register(body: RegisterRequest, auth: AuthSvc, client_ip: ClientIp) -> UserResponse:
+    user = await auth.register(
+        email=body.email, password=body.password, name=body.name, client_ip=client_ip
+    )
     return UserResponse.model_validate(user)
 
 
 @router.post("/login", response_model=TokenPair)
-async def login(body: LoginRequest, auth: AuthSvc) -> TokenPair:
-    tokens = await auth.login(email=body.email, password=body.password)
+async def login(body: LoginRequest, auth: AuthSvc, client_ip: ClientIp) -> TokenPair:
+    tokens = await auth.login(email=body.email, password=body.password, client_ip=client_ip)
     return TokenPair(
         access_token=tokens.access_token,
         refresh_token=tokens.refresh_token,

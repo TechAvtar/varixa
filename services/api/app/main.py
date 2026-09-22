@@ -13,12 +13,16 @@ from app.api.v1.router import api_router
 from app.config import Settings, get_settings
 from app.database import create_engine, create_session_factory
 from app.providers.storage import build_storage
+from app.services.auth import AuthLimiters
+from app.utils.logredact import install_log_redaction
 from app.utils.request_id import RequestIdMiddleware
+from app.utils.security_headers import SecurityHeadersMiddleware
 from app.workers.retention import run_periodically
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
+    install_log_redaction()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -29,6 +33,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.engine = engine
         app.state.session_factory = create_session_factory(engine)
         app.state.storage = build_storage(settings)
+        app.state.auth_limiters = AuthLimiters.from_settings(settings)
         sweeper: asyncio.Task[None] | None = None
         if settings.retention_sweep_interval_minutes > 0 and settings.environment != "test":
             sweeper = asyncio.create_task(
@@ -53,7 +58,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
 
     # Middleware order: the last added runs first, so the request id exists
-    # before CORS and before any handler.
+    # before CORS and before any handler. Security headers wrap everything so
+    # even CORS preflights and error envelopes carry them.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
@@ -63,6 +69,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
 
     app.add_middleware(RequestIdMiddleware)
+    app.add_middleware(SecurityHeadersMiddleware, hsts=settings.environment == "production")
 
     register_error_handlers(app)
     app.include_router(api_router, prefix="/api/v1")

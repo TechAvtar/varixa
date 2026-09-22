@@ -46,3 +46,14 @@ class LimitExceededError(AppError):
 
     status_code = 429
     code = "USAGE_LIMIT_EXCEEDED"
+
+
+class RateLimitedError(AppError):
+    """Too many attempts in the window; ``retry_after`` becomes the Retry-After header."""
+
+    status_code = 429
+    code = "RATE_LIMITED"
+
+    def __init__(self, message: str, *, retry_after: int, code: str | None = None) -> None:
+        super().__init__(message, code=code)
+        self.retry_after = max(1, int(retry_after))

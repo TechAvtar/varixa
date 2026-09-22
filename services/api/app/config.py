@@ -45,6 +45,20 @@ class Settings(BaseSettings):
     # Lifetime of signed download URLs.
     signed_url_ttl_seconds: int = Field(default=300, ge=10, le=3600)
 
+    # Abuse controls (docs/09). Attempts are counted per process; 0 disables a limit.
+    # Login: failed attempts per email and per client address inside the window.
+    login_max_attempts: int = Field(default=10, ge=0, le=10_000)
+    login_max_attempts_per_ip: int = Field(default=50, ge=0, le=100_000)
+    login_window_minutes: int = Field(default=15, ge=1, le=24 * 60)
+    # Registration attempts per client address per hour.
+    register_max_per_hour: int = Field(default=20, ge=0, le=100_000)
+    # Only enable behind a reverse proxy that overwrites X-Forwarded-For.
+    trust_proxy_headers: bool = False
+
+    # SSRF guard: hosts (and their subdomains) that provider adapters may call over https.
+    # Plain-http localhost endpoints are additionally allowed outside production for stubs.
+    outbound_allowed_hosts: list[str] = Field(default_factory=lambda: ["api.openai.com"])
+
     # Metadata extraction engine: "auto" prefers ExifTool when installed, else Pillow.
     metadata_engine: Literal["auto", "exiftool", "pillow"] = "auto"
     exiftool_path: str | None = None

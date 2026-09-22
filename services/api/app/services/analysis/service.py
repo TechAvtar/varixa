@@ -2,7 +2,6 @@
 
 import hashlib
 import logging
-import re
 import uuid
 from collections.abc import Sequence
 from datetime import UTC, datetime
@@ -41,13 +40,13 @@ from app.services.image.similarity import SimilarityMatch
 from app.services.image.validation import ImageTooLargeError
 from app.services.usage import UsageService
 from app.utils.errors import ConflictError, NotFoundError, ValidationError
+from app.utils.filenames import safe_filename
 
 log = logging.getLogger("verixa.analysis")
 
 MAX_ERROR_MESSAGE = 1000
 MAX_TITLE = 300
 MAX_FILENAME = 255
-_FILENAME_UNSAFE = re.compile(r"[\x00-\x1f\x7f/\\]")
 
 # Legal status transitions. Terminal states have no successors.
 _TRANSITIONS: dict[str, frozenset[str]] = {
@@ -63,10 +62,7 @@ def _clean_title(title: str | None) -> str | None:
 
 
 def _clean_filename(name: str | None) -> str | None:
-    if not name:
-        return None
-    cleaned = _FILENAME_UNSAFE.sub("", name).strip()
-    return cleaned[:MAX_FILENAME] or None
+    return safe_filename(name, max_length=MAX_FILENAME)
 
 
 class AnalysisService:

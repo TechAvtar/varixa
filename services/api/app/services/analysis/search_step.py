@@ -21,6 +21,7 @@ from app.services.analysis.pipeline import PipelineContext, StepFailedError, Ste
 from app.services.provider_calls import ProviderCallRecorder, request_hash
 from app.services.text.phrases import select_distinctive_phrases
 from app.services.usage import UsageService
+from app.utils.urlpolicy import is_web_url
 
 MAX_MATCHES = 50
 
@@ -58,7 +59,7 @@ class SourceSearchStep:
                 discovered_at=m.discovered_at,
                 raw_json=dict(m.raw),
             )
-            for i, m in enumerate(result.matches[:MAX_MATCHES])
+            for i, m in enumerate([m for m in result.matches if is_web_url(m.url)][:MAX_MATCHES])
         ]
         run = SourceSearchRun(
             analysis_id=ctx.analysis.id,

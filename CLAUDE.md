@@ -76,6 +76,16 @@ Every package's `__init__.py` carries a one-line responsibility docstring.
 - Timeline events come only from recorded times (`services/evidence/timeline.py`), never from
   inference; keep `raw_time` and `tz_known`, and leave `event_time` null when parsing fails.
 
+## Security (docs/09, T039)
+- Every API response passes `utils/security_headers.py`; web headers live in `next.config.ts`.
+- Provider adapters call only endpoints that pass `utils/urlpolicy.assert_outbound_allowed`
+  (allowlist in `VERIXA_OUTBOUND_ALLOWED_HOSTS`). Never fetch a URL a user or a provider supplied.
+- Client filenames go through `utils/filenames.safe_filename` before titles or headers; object
+  keys never derive from them.
+- Logging goes through the redacting record factory (`utils/logredact.py`); still log ids and
+  statuses only. Throttling lives in `services/auth.py` via `utils/ratelimit.py`.
+- New security behaviour gets a test in `tests/test_security.py`.
+
 ## Non-negotiables
 - Routes → Services → Repositories/Providers. No provider calls from routes.
 - Every schema change ships with an Alembic migration.

@@ -12,7 +12,7 @@ from app.database import get_session
 from app.models import User
 from app.providers.storage.base import ObjectStorage
 from app.services.analysis import AnalysisService
-from app.services.auth import AuthService
+from app.services.auth import AuthLimiters, AuthService
 from app.services.reports.service import ReportService
 from app.services.usage import UsageService
 from app.utils import security
@@ -45,8 +45,22 @@ def get_dispatcher(
 Jobs = Annotated[Dispatcher, Depends(get_dispatcher)]
 
 
-def get_auth_service(session: DbSession, settings: AppSettings) -> AuthService:
-    return AuthService(session, settings)
+def get_client_ip(request: Request, settings: AppSettings) -> str:
+    """Client address for abuse controls. Proxy headers count only when configured."""
+    if settings.trust_proxy_headers:
+        forwarded = request.headers.get("x-forwarded-for", "")
+        first = forwarded.split(",")[0].strip()
+        if first:
+            return first[:64]
+    return request.client.host if request.client else "unknown"
+
+
+ClientIp = Annotated[str, Depends(get_client_ip)]
+
+
+def get_auth_service(request: Request, session: DbSession, settings: AppSettings) -> AuthService:
+    limiters: AuthLimiters | None = getattr(request.app.state, "auth_limiters", None)
+    return AuthService(session, settings, limiters=limiters)
 
 
 AuthSvc = Annotated[AuthService, Depends(get_auth_service)]

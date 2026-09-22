@@ -22,6 +22,7 @@ from app.providers.llm.base import (
 from app.providers.llm.cache import CachedLLMSynthesizer
 from app.providers.llm.mock import MOCK_MODEL, MockLLMSynthesizer
 from app.providers.llm.openai import OpenAISynthesizer
+from app.utils.urlpolicy import DisallowedUrlError, assert_outbound_allowed
 
 _process_cache = InMemoryProviderCache(ttl=timedelta(hours=1))
 
@@ -39,10 +40,18 @@ def build_synthesizer(
         model_hint = MOCK_MODEL
     elif provider == "openai":
         key = settings.openai_api_key.get_secret_value() if settings.openai_api_key else ""
+        try:
+            base_url = assert_outbound_allowed(
+                settings.openai_base_url,
+                allowed_hosts=settings.outbound_allowed_hosts,
+                allow_insecure_localhost=settings.environment != "production",
+            )
+        except DisallowedUrlError as exc:
+            raise LLMSynthesisUnavailableError(f"VERIXA_OPENAI_BASE_URL refused: {exc}") from exc
         inner = OpenAISynthesizer(
             api_key=key,
             model=settings.openai_model,
-            base_url=settings.openai_base_url,
+            base_url=base_url,
             timeout_seconds=settings.llm_timeout_seconds,
             cost_per_million_in=settings.openai_cost_per_million_input,
             cost_per_million_out=settings.openai_cost_per_million_output,
