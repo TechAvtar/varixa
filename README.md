@@ -151,6 +151,13 @@ limitations, ...metrics}`). Visualisations are stored as private artifacts under
   is `anomaly: true` and surfaces as POSSIBLE at most (docs/07). Other formats are recorded as
   not applicable, not as clean.
 
+- **Compression** (`services/image/compression.py`, any format): JPEG encoding facts read from
+  the headers (estimated IJG quality, standard vs custom tables, chroma subsampling,
+  progressive/baseline, JFIF/Adobe markers) plus an 8×8 block-grid measurement. A second grid
+  offset from the file's block boundaries (`anomaly`) or a JPEG grid inside a lossless file
+  (`prior_jpeg_grid`) surfaces as POSSIBLE; encoding facts alone are UNKNOWN-level context.
+  Threshold: `VERIXA_COMPRESSION_GRID_MIN_STRENGTH`.
+
 ### Provider result cache
 
 Repeatable provider results (AI detection, reverse-image and phrase search) are cached in the
@@ -228,6 +235,7 @@ All configuration is via environment variables; see the `.env.example` files. Ne
 | `VERIXA_FINGERPRINT_NEAR_THRESHOLD` | API | Max Hamming distance (bits) on pHash/dHash counted as a near duplicate (default 10) |
 | `VERIXA_ELA_QUALITY` / `VERIXA_ELA_MAX_SIDE` | API | ELA resave quality (default 95) and working-size cap (default 3000 px) |
 | `VERIXA_ELA_OUTLIER_SIGMA` / `VERIXA_ELA_ANOMALY_MIN_FRACTION` / `VERIXA_ELA_ANOMALY_MAX_FRACTION` | API | Outlier threshold and the outlier-block band that counts as localised |
+| `VERIXA_COMPRESSION_GRID_MIN_STRENGTH` | API | Minimum relative strength of an 8 px periodicity to count as a block grid (default 0.08) |
 | `VERIXA_PROVIDER_CACHE_TTL_HOURS` | API | TTL for cached provider results (default 168; 0 disables) |
 | `VERIXA_AI_DETECTOR_PROVIDER` | API | `none` (default) or `mock`; real adapters register under `providers/ai` |
 | `VERIXA_AI_SCORE_HIGH` / `VERIXA_AI_SCORE_MEDIUM` | API | Score thresholds → PROBABLE / POSSIBLE (defaults 0.85 / 0.6) |

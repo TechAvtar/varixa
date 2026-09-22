@@ -10,9 +10,47 @@ import asyncio
 from app.repositories.analysis import AnalysisRepository
 from app.services import storage_keys
 from app.services.analysis.pipeline import PipelineContext, StepFailedError, StepOutcome
-from app.services.image import ela
+from app.services.image import compression, ela
 
 ELA_ARTIFACT = "ela.png"
+
+
+class CompressionStep:
+    """JPEG encoding facts plus the 8x8 block-grid heuristic (any format). Non-critical.
+
+    Writes ``compression_json`` only. Produces no artifact.
+    """
+
+    name = "compression"
+    critical = False
+
+    async def run(self, ctx: PipelineContext) -> StepOutcome:
+        image = ctx.artifacts.get("image")
+        if image is None:
+            raise StepFailedError("NO_VERIFIED_IMAGE", "Validation did not publish an image.")
+        result = await asyncio.to_thread(
+            compression.analyze_compression,
+            image.data,
+            grid_min_strength=ctx.settings.compression_grid_min_strength,
+        )
+        await AnalysisRepository(ctx.session).upsert_forensics(
+            ctx.analysis.id, compression_json=result.to_json()
+        )
+        ctx.artifacts["compression"] = result
+        enc = result.encoding
+        return StepOutcome.ok(
+            version=compression.COMPRESSION_VERSION,
+            format=result.format,
+            estimated_quality=enc.estimated_quality if enc else None,
+            standard_tables=enc.standard_tables if enc else None,
+            subsampling=enc.subsampling if enc else None,
+            progressive=enc.progressive if enc else None,
+            grid_measured=result.grid.measured,
+            grid_aligned=result.grid.detected_aligned,
+            grid_offset=result.grid.detected_offset,
+            anomaly=result.anomaly,
+            prior_jpeg_grid=result.prior_jpeg_grid,
+        )
 
 
 class ELAStep:

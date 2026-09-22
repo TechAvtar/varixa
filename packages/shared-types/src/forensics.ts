@@ -36,6 +36,47 @@ export interface ELAFinding {
   limitations: string[];
 }
 
+/** Facts read from the JPEG headers (last save only). */
+export interface CompressionEncoding {
+  progressive: boolean;
+  subsampling: string | null;
+  table_count: number;
+  estimated_quality: number | null;
+  standard_tables: boolean;
+  luma_table_error: number | null;
+  chroma_estimated_quality: number | null;
+  has_jfif: boolean;
+  has_adobe: boolean;
+}
+
+export interface BlockGrid {
+  measured: boolean;
+  aligned_strength: number;
+  offset_x: number;
+  offset_y: number;
+  offset_strength: number;
+  detected_aligned: boolean;
+  detected_offset: boolean;
+  profile_x: number[];
+  profile_y: number[];
+}
+
+export interface CompressionFinding {
+  method: "compression";
+  version: string;
+  observation: string;
+  confidence: ForensicConfidence;
+  format: string;
+  lossless_container: boolean;
+  encoding: CompressionEncoding | null;
+  grid: BlockGrid;
+  /** JPEG with a second, offset block grid (crop/shift then re-save). */
+  anomaly: boolean;
+  /** Non-JPEG file carrying a JPEG block grid (was probably a JPEG once). */
+  prior_jpeg_grid: boolean;
+  limitations: string[];
+}
+
 export interface ForensicSkipped {
   method: string;
   reason: string;
@@ -54,6 +95,7 @@ export interface ForensicArtifact {
 
 export interface ImageForensicsResponse {
   ela: ELAFinding | null;
+  compression: CompressionFinding | null;
   skipped: ForensicSkipped[];
   artifacts: ForensicArtifact[];
   limitations: string[];

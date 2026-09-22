@@ -73,6 +73,9 @@ class Settings(BaseSettings):
     ela_anomaly_min_fraction: float = Field(default=0.005, ge=0.0, le=1.0)
     ela_anomaly_max_fraction: float = Field(default=0.2, ge=0.0, le=1.0)
 
+    # Forensics: compression block-grid detection threshold (relative strength of an 8 px phase).
+    compression_grid_min_strength: float = Field(default=0.08, ge=0.0, le=5.0)
+
     # Persistent provider-result cache (content hash + provider/model/version). 0 disables.
     provider_cache_ttl_hours: int = Field(default=24 * 7, ge=0, le=24 * 365)
 

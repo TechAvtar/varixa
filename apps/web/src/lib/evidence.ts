@@ -310,6 +310,59 @@ function forensicsEvidence(f: ImageForensicsResponse | null): EvidenceItem[] {
       source: "ela",
     });
   }
+
+  const c = f.compression;
+  if (c?.anomaly) {
+    items.push({
+      id: "forensics.compression.offset-grid",
+      category: "forensics",
+      kind: "signal",
+      level: "POSSIBLE",
+      claim: `A second JPEG block grid offset by (${c.grid.offset_x}, ${c.grid.offset_y}) px is detectable.`,
+      source: "compression",
+      detail:
+        "Consistent with cropping or shifting after an earlier JPEG save, then saving again. Repeating texture can produce the same pattern.",
+      limitation:
+        "Correlated with ELA; not an independent indicator. Crop-and-resave is a routine, legitimate workflow.",
+    });
+  } else if (c?.prior_jpeg_grid) {
+    items.push({
+      id: "forensics.compression.prior-jpeg",
+      category: "forensics",
+      kind: "signal",
+      level: "POSSIBLE",
+      claim: `This ${c.format} file carries an 8×8 JPEG-style block grid.`,
+      source: "compression",
+      detail: "The content was probably JPEG-compressed before being saved in its current format.",
+      limitation:
+        "Says something about the file's history, not about editing. Scaling or texture can mimic a grid.",
+    });
+  } else if (c?.encoding) {
+    const e = c.encoding;
+    items.push({
+      id: "forensics.compression.encoding",
+      category: "forensics",
+      kind: "signal",
+      level: "UNKNOWN",
+      claim: `Last saved as a ${e.progressive ? "progressive" : "baseline"} JPEG, ${
+        e.subsampling ?? "unknown"
+      } subsampling, ${
+        e.standard_tables ? "standard tables" : "custom tables"
+      } at quality ≈ ${e.estimated_quality ?? "?"}.`,
+      source: "compression",
+      detail: "Encoder settings of the most recent save. They do not indicate editing.",
+    });
+  } else if (c) {
+    items.push({
+      id: "forensics.compression.none",
+      category: "forensics",
+      kind: "signal",
+      level: "UNKNOWN",
+      claim: `${c.format} container; no JPEG block grid stands out.`,
+      source: "compression",
+      detail: c.observation,
+    });
+  }
   return items;
 }
 

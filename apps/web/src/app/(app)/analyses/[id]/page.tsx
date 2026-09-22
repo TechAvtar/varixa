@@ -16,6 +16,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AICard } from "@/components/analyses/ai-card";
 import { AnalysisStatusBadge } from "@/components/analyses/analysis-status-badge";
+import { CompressionCard } from "@/components/analyses/compression-card";
 import { ELACard } from "@/components/analyses/ela-card";
 import { FingerprintsCard } from "@/components/analyses/fingerprints-card";
 import { MetadataCard } from "@/components/analyses/metadata-card";
@@ -243,9 +244,10 @@ export default async function AnalysisPage({
             {forensics ? (
               <>
                 <ELACard data={forensics} />
+                <CompressionCard data={forensics} />
                 <p className="text-xs text-muted-foreground">
-                  Compression, noise, resampling and copy-move heuristics arrive in later builds.
-                  Nothing is inferred for them in the meantime.
+                  Noise, resampling and copy-move heuristics arrive in later builds. Nothing is
+                  inferred for them in the meantime.
                 </p>
               </>
             ) : (

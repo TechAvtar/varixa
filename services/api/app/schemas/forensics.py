@@ -39,6 +39,48 @@ class ELAFindingResponse(BaseModel):
     limitations: list[str]
 
 
+class CompressionEncodingResponse(BaseModel):
+    """Facts read from the JPEG headers (last save only)."""
+
+    progressive: bool
+    subsampling: str | None
+    table_count: int
+    estimated_quality: int | None
+    standard_tables: bool
+    luma_table_error: float | None
+    chroma_estimated_quality: int | None
+    has_jfif: bool
+    has_adobe: bool
+
+
+class BlockGridResponse(BaseModel):
+    measured: bool
+    aligned_strength: float
+    offset_x: int
+    offset_y: int
+    offset_strength: float
+    detected_aligned: bool
+    detected_offset: bool
+    profile_x: list[float]
+    profile_y: list[float]
+
+
+class CompressionFindingResponse(BaseModel):
+    method: Literal["compression"] = "compression"
+    version: str
+    observation: str
+    confidence: Confidence
+    format: str
+    lossless_container: bool
+    encoding: CompressionEncodingResponse | None
+    grid: BlockGridResponse
+    # JPEG with a second, offset block grid (crop/shift then re-save).
+    anomaly: bool
+    # Non-JPEG file carrying a JPEG block grid (was probably a JPEG once).
+    prior_jpeg_grid: bool
+    limitations: list[str]
+
+
 class ForensicSkipped(BaseModel):
     method: str
     reason: str
@@ -57,6 +99,7 @@ class ForensicArtifactResponse(BaseModel):
 
 class ImageForensicsResponse(BaseModel):
     ela: ELAFindingResponse | None
+    compression: CompressionFindingResponse | None
     skipped: list[ForensicSkipped]
     artifacts: list[ForensicArtifactResponse]
     limitations: list[str]

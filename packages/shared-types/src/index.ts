@@ -42,6 +42,9 @@ export type {
   ProvenanceValidationFailure,
 } from "./provenance";
 export type {
+  BlockGrid,
+  CompressionEncoding,
+  CompressionFinding,
   ELAFinding,
   ForensicArtifact,
   ForensicConfidence,

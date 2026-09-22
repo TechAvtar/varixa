@@ -26,6 +26,7 @@ from app.schemas.fingerprints import (
     TextFingerprintsValues,
 )
 from app.schemas.forensics import (
+    CompressionFindingResponse,
     ELAFindingResponse,
     ForensicArtifactResponse,
     ForensicSkipped,
@@ -279,6 +280,16 @@ async def get_analysis_forensics(
             ela_finding = ELAFindingResponse.model_validate(row.ela_json)
         else:
             skipped.append(ForensicSkipped(method="ela", reason=str(row.ela_json.get("reason"))))
+    compression_finding: CompressionFindingResponse | None = None
+    if row.compression_json:
+        if row.compression_json.get("applicable"):
+            compression_finding = CompressionFindingResponse.model_validate(row.compression_json)
+        else:
+            skipped.append(
+                ForensicSkipped(
+                    method="compression", reason=str(row.compression_json.get("reason"))
+                )
+            )
     artifacts = [
         ForensicArtifactResponse(
             name=str(a.get("name")),
@@ -292,7 +303,11 @@ async def get_analysis_forensics(
         for a, url in await analyses.forensic_artifact_links(row)
     ]
     return ImageForensicsResponse(
-        ela=ela_finding, skipped=skipped, artifacts=artifacts, limitations=_FORENSICS_NOTES
+        ela=ela_finding,
+        compression=compression_finding,
+        skipped=skipped,
+        artifacts=artifacts,
+        limitations=_FORENSICS_NOTES,
     )
 
 
