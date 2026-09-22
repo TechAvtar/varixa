@@ -24,4 +24,10 @@ export type {
   UserRole,
 } from "./auth";
 export type { ApiErrorBody } from "./errors";
+export type {
+  ImageMetadataResponse,
+  NormalizedMetadata,
+  ParsedTimestamp,
+  RawTagGroup,
+} from "./metadata";
 export type { HealthResponse } from "./health";

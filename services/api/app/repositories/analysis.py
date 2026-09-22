@@ -1,11 +1,11 @@
 import uuid
 from collections.abc import Sequence
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models import Analysis, AnalysisFile, AnalysisStep
+from app.models import Analysis, AnalysisFile, AnalysisStep, ImageMetadata
 
 
 class AnalysisRepository:
@@ -65,3 +65,16 @@ class AnalysisRepository:
         self._session.add(step)
         await self._session.flush()
         return step
+
+    async def get_metadata(self, analysis_id: uuid.UUID) -> ImageMetadata | None:
+        stmt = select(ImageMetadata).where(ImageMetadata.analysis_id == analysis_id)
+        return (await self._session.execute(stmt)).scalar_one_or_none()
+
+    async def replace_metadata(self, metadata: ImageMetadata) -> ImageMetadata:
+        """Idempotent: a re-run replaces the previous row for the analysis."""
+        await self._session.execute(
+            delete(ImageMetadata).where(ImageMetadata.analysis_id == metadata.analysis_id)
+        )
+        self._session.add(metadata)
+        await self._session.flush()
+        return metadata

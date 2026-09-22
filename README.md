@@ -21,6 +21,9 @@ TASKS/                  Sequential implementation tasks (T001â€“T043)
 
 - Node.js 22+ (see `.nvmrc`)
 - Python 3.12+
+- [ExifTool](https://exiftool.org) for full metadata coverage (`winget install OliverBetz.ExifTool`
+  on Windows, `apt install libimage-exiftool-perl` on Debian/Ubuntu). Without it the API falls
+  back to Pillow and marks metadata as reduced-coverage.
 - No database or storage service needed locally: the API defaults to SQLite and a local
   storage directory under `services/api/data/`. PostgreSQL and S3-compatible storage are
   opt-in via environment variables (see below).
@@ -103,6 +106,7 @@ resources.
 | `GET /api/v1/analysis?page=&page_size=` | Caller's analyses, newest first (soft-deleted hidden) |
 | `GET /api/v1/analysis/counts` | `{total, image, text}` for the dashboard |
 | `GET /api/v1/analysis/{id}` | One analysis; 404 if missing or owned by someone else |
+| `GET /api/v1/analysis/{id}/metadata` | Normalised + raw metadata with plain-language limitations |
 | `DELETE /api/v1/analysis/{id}` | Soft delete (record kept for audit) and remove stored files |
 
 Status lifecycle: `queued → processing → completed | failed`; illegal moves return
@@ -136,6 +140,7 @@ Steps today:
 | ---- | -------- | --------------- |
 | `validate` | yes | Re-reads the stored original, checks SHA-256 against the record, re-runs upload validation; format, dimensions, frames |
 | `hashing` | yes | SHA-256, MD5 (compatibility only), aHash, dHash, pHash (64-bit, imagehash-compatible) — perceptual hashes are similarity *signals*, not provenance proof |
+| `metadata` | no | EXIF/XMP/IPTC/ICC via ExifTool (stdin, fixed args) or Pillow fallback; raw groups preserved in `image_metadata`, normalised camera/software/timestamps/orientation/GPS-presence; `GET /analysis/{id}/metadata` |
 
 Later tasks add metadata, provenance, fingerprint persistence/matching, forensics, AI signals,
 source search, evidence and report steps.
@@ -165,6 +170,9 @@ All configuration is via environment variables; see the `.env.example` files. Ne
 | `VERIXA_SECRET_KEY` | API | Signs access tokens. Random, 32+ chars; the built-in dev default is refused in production |
 | `VERIXA_ACCESS_TOKEN_TTL_MINUTES` | API | Access-token lifetime (default 30) |
 | `VERIXA_REFRESH_TOKEN_TTL_DAYS` | API | Refresh-token lifetime (default 14) |
+| `VERIXA_METADATA_ENGINE` | API | `auto` (ExifTool if found, else Pillow), `exiftool`, or `pillow` |
+| `VERIXA_EXIFTOOL_PATH` | API | Explicit ExifTool executable; otherwise PATH and known install dirs are searched |
+| `VERIXA_EXIFTOOL_TIMEOUT_SECONDS` | API | Per-file extraction timeout (default 30) |
 | `VERIXA_MAX_UPLOAD_BYTES` | API | Upload size cap (default 26214400 = 25 MB); mirror it in `next.config.ts` `serverActions.bodySizeLimit` |
 | `VERIXA_MAX_IMAGE_PIXELS` | API | Width × height cap checked from the header (default 40 MP) |
 | `VERIXA_DATA_DIR` | API | Root for local runtime data (default `./data`, git-ignored) |

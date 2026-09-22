@@ -1,9 +1,17 @@
 """Concrete pipeline steps for image analyses. Each is small and independently testable."""
 
+from app.models import ImageMetadata
+from app.providers.metadata import (
+    MetadataExtractionError,
+    MetadataExtractor,
+    build_metadata_extractor,
+)
 from app.providers.storage.base import ObjectNotFoundError
+from app.repositories.analysis import AnalysisRepository
 from app.services.analysis.pipeline import PipelineContext, StepFailedError, StepOutcome
 from app.services.image import validate_image
 from app.services.image.hashing import compute_hashes
+from app.services.image.metadata import normalize_metadata, to_utc_or_none
 
 
 class ValidateImageStep:
@@ -75,6 +83,61 @@ class HashImageStep:
         )
 
 
-def image_pipeline_steps() -> list[ValidateImageStep | HashImageStep]:
-    """Ordered steps for an image analysis. Later tasks append metadata, C2PA, forensics, ..."""
-    return [ValidateImageStep(), HashImageStep()]
+class ExtractMetadataStep:
+    """EXIF/XMP/IPTC/ICC via the configured engine. Raw groups are preserved verbatim.
+
+    Non-critical: an image without metadata is a normal, fully valid outcome
+    (recorded as UNKNOWN downstream), and an engine failure must not sink the
+    deterministic steps that already ran.
+    """
+
+    name = "metadata"
+    critical = False
+
+    async def run(self, ctx: PipelineContext) -> StepOutcome:
+        image = ctx.artifacts.get("image")
+        if image is None:
+            raise StepFailedError("NO_VERIFIED_IMAGE", "Validation did not publish an image.")
+        extractor: MetadataExtractor = ctx.providers.get("metadata") or build_metadata_extractor(
+            ctx.settings
+        )
+        try:
+            raw = await extractor.extract(image.data)
+        except MetadataExtractionError as exc:
+            raise StepFailedError("METADATA_ENGINE_FAILED", str(exc)) from exc
+
+        normalized = normalize_metadata(raw)
+        row = ImageMetadata(
+            analysis_id=ctx.analysis.id,
+            engine=raw.engine,
+            engine_version=raw.engine_version,
+            exif_json=raw.group("EXIF") or None,
+            xmp_json=raw.group("XMP") or None,
+            iptc_json=raw.group("IPTC") or None,
+            icc_json=raw.group("ICC_Profile") or None,
+            raw_json=raw.groups,
+            normalized_json=normalized.to_json(),
+            software=normalized.software,
+            camera_make=normalized.camera_make,
+            camera_model=normalized.camera_model,
+            captured_at=to_utc_or_none(normalized.captured_at),
+            modified_at=to_utc_or_none(normalized.modified_at),
+        )
+        await AnalysisRepository(ctx.session).replace_metadata(row)
+        ctx.artifacts["metadata"] = normalized
+        return StepOutcome.ok(
+            engine=raw.engine,
+            engine_version=raw.engine_version,
+            tag_counts=normalized.tag_counts,
+            has_exif=normalized.has_exif,
+            has_xmp=normalized.has_xmp,
+            has_iptc=normalized.has_iptc,
+            has_icc=normalized.has_icc,
+            gps_present=normalized.gps_present,
+            warnings=normalized.warnings[:20],
+        )
+
+
+def image_pipeline_steps() -> list[ValidateImageStep | HashImageStep | ExtractMetadataStep]:
+    """Ordered steps for an image analysis. Later tasks append C2PA, forensics, ..."""
+    return [ValidateImageStep(), HashImageStep(), ExtractMetadataStep()]

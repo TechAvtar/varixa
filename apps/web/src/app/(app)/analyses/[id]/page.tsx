@@ -1,8 +1,9 @@
-import type { AnalysisResponse } from "@verixa/shared-types";
+import type { AnalysisResponse, ImageMetadataResponse } from "@verixa/shared-types";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AnalysisStatusBadge } from "@/components/analyses/analysis-status-badge";
+import { MetadataCard } from "@/components/analyses/metadata-card";
 import { ProcessingSteps } from "@/components/analyses/processing-steps";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -30,6 +31,8 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
     );
   }
   const a = result.data;
+  const metadataResult = await authedRequest<ImageMetadataResponse>(`/analysis/${id}/metadata`);
+  const metadata = metadataResult.ok ? metadataResult.data : null;
 
   return (
     <div className="space-y-8">
@@ -62,8 +65,8 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
         <Alert>
           <AlertTitle>Processing complete</AlertTitle>
           <AlertDescription>
-            Only validation and hashing run in this build. Metadata, provenance, forensic and source
-            findings are not yet produced, so no evidence is shown.
+            Validation, hashing and metadata extraction run in this build. Provenance, forensic and
+            source findings are not yet produced.
           </AlertDescription>
         </Alert>
       ) : null}
@@ -77,6 +80,8 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
       ) : null}
 
       <ProcessingSteps steps={a.steps ?? []} />
+
+      {a.type === "image" ? <MetadataCard metadata={metadata} /> : null}
 
       <Card>
         <CardHeader>

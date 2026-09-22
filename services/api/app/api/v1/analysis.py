@@ -14,7 +14,9 @@ from app.schemas.analysis import (
     AnalysisResponse,
     AnalysisStepResponse,
 )
+from app.schemas.metadata import ImageMetadataResponse, NormalizedMetadataResponse
 from app.services.image import ImageTooLargeError
+from app.utils.errors import NotFoundError
 
 router = APIRouter(prefix="/analysis")
 
@@ -77,6 +79,41 @@ async def get_analysis(
     analysis_id: uuid.UUID, user: CurrentUser, analyses: AnalysisSvc
 ) -> AnalysisResponse:
     return _to_response(await analyses.get_owned(user, analysis_id))
+
+
+_CORE_GROUPS = {"EXIF", "XMP", "IPTC", "ICC_Profile"}
+_NO_METADATA_NOTE = (
+    "No embedded metadata was found. This does not establish whether the file was edited."
+)
+_RECORDED_NOTE = (
+    "Metadata values are recorded by software and can be altered; they are not verified facts."
+)
+_PILLOW_NOTE = "Extracted with Pillow (reduced coverage): MakerNotes and IPTC were not decoded."
+
+
+@router.get("/{analysis_id}/metadata", response_model=ImageMetadataResponse)
+async def get_analysis_metadata(
+    analysis_id: uuid.UUID, user: CurrentUser, analyses: AnalysisSvc
+) -> ImageMetadataResponse:
+    row = await analyses.get_metadata(user, analysis_id)
+    if row is None:
+        raise NotFoundError("Metadata has not been extracted for this analysis.")
+    normalized = NormalizedMetadataResponse.model_validate(row.normalized_json or {})
+    raw = row.raw_json or {}
+    limitations = [_RECORDED_NOTE]
+    if not (normalized.has_exif or normalized.has_xmp or normalized.has_iptc):
+        limitations.append(_NO_METADATA_NOTE)
+    if row.engine == "pillow":
+        limitations.append(_PILLOW_NOTE)
+    return ImageMetadataResponse(
+        normalized=normalized,
+        exif=row.exif_json or {},
+        xmp=row.xmp_json or {},
+        iptc=row.iptc_json or {},
+        icc=row.icc_json or {},
+        other={g: tags for g, tags in raw.items() if g not in _CORE_GROUPS},
+        limitations=limitations,
+    )
 
 
 @router.delete("/{analysis_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -37,6 +37,8 @@ class PipelineContext:
     storage: ObjectStorage
     settings: Settings
     artifacts: dict[str, Any] = field(default_factory=dict)
+    # External engines/adapters injected by the worker, keyed by role (e.g. "metadata").
+    providers: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
