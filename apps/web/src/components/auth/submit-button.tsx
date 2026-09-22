@@ -6,13 +6,15 @@ import { Button } from "@/components/ui/button";
 export function SubmitButton({
   children,
   pendingLabel,
+  disabled = false,
 }: {
   children: React.ReactNode;
   pendingLabel: string;
+  disabled?: boolean;
 }) {
   const { pending } = useFormStatus();
   return (
-    <Button type="submit" className="w-full" disabled={pending} aria-busy={pending}>
+    <Button type="submit" className="w-full" disabled={pending || disabled} aria-busy={pending}>
       {pending ? pendingLabel : children}
     </Button>
   );

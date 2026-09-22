@@ -24,22 +24,10 @@ const UNREACHABLE: ApiResult<never> = {
   message: "The Verixa API could not be reached.",
 };
 
-export async function apiRequest<T>(
-  path: string,
-  { method = "GET", body, token }: ApiRequestOptions = {},
-): Promise<ApiResult<T>> {
-  const headers: Record<string, string> = { Accept: "application/json" };
-  if (body !== undefined) headers["Content-Type"] = "application/json";
-  if (token) headers.Authorization = `Bearer ${token}`;
-
+async function send<T>(path: string, init: RequestInit): Promise<ApiResult<T>> {
   let res: Response;
   try {
-    res = await fetch(`${env.apiBaseUrl}/api/v1${path}`, {
-      method,
-      headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
-      cache: "no-store",
-    });
+    res = await fetch(`${env.apiBaseUrl}/api/v1${path}`, { ...init, cache: "no-store" });
   } catch {
     return UNREACHABLE;
   }
@@ -63,4 +51,29 @@ export async function apiRequest<T>(
     message: err?.message ?? `Request failed with HTTP ${res.status}.`,
     requestId: err?.request_id,
   };
+}
+
+export async function apiRequest<T>(
+  path: string,
+  { method = "GET", body, token }: ApiRequestOptions = {},
+): Promise<ApiResult<T>> {
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (body !== undefined) headers["Content-Type"] = "application/json";
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return send<T>(path, {
+    method,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+}
+
+/** Multipart POST; the browser-provided FormData is forwarded as-is. */
+export async function apiUpload<T>(
+  path: string,
+  form: FormData,
+  { token }: { token?: string | null } = {},
+): Promise<ApiResult<T>> {
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return send<T>(path, { method: "POST", headers, body: form });
 }

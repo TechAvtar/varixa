@@ -20,6 +20,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <Link href="/dashboard" className="text-muted-foreground hover:text-foreground">
               Dashboard
             </Link>
+            <Link href="/analyses/new" className="text-muted-foreground hover:text-foreground">
+              New analysis
+            </Link>
           </nav>
           <div className="flex items-center gap-3 text-sm">
             {session.kind === "signed_in" ? (

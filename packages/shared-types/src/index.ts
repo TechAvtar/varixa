@@ -5,11 +5,14 @@
 
 export type {
   AnalysisCounts,
+  AnalysisCreatedResponse,
+  AnalysisFileResponse,
   AnalysisListResponse,
   AnalysisResponse,
   AnalysisStatus,
   AnalysisType,
 } from "./analysis";
+export { IMAGE_UPLOAD } from "./analysis";
 export type {
   LoginRequest,
   RefreshRequest,

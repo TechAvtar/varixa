@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     # Lifetime of signed download URLs.
     signed_url_ttl_seconds: int = Field(default=300, ge=10, le=3600)
 
+    # Upload limits (untrusted input). Pixels are checked from the header before decoding.
+    max_upload_bytes: int = Field(default=25 * 1024 * 1024, ge=1024)
+    max_image_pixels: int = Field(default=40_000_000, ge=10_000)
+
     # Root directory for all local, non-versioned runtime data (DB file, uploads).
     data_dir: Path = Path("./data")
 

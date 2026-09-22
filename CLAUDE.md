@@ -25,6 +25,10 @@ Every package's `__init__.py` carries a one-line responsibility docstring.
 - `lib/` — API client, env, formatting helpers. `lib/api/client.ts` and `lib/auth/*` are server-only.
 - Auth: tokens live in httpOnly cookies; `proxy.ts` refreshes/guards; server actions in `app/(auth)/actions.ts`.
   Use `getSession()` (signed_in | signed_out | unavailable) — never treat "API down" as "signed out".
+- Forms with server actions: React resets uncontrolled inputs after the action settles, so any
+  client-held selection (e.g. a picked file) must be re-synced on submit — see `image-upload-form.tsx`.
+- Upload cap lives in two places: `VERIXA_MAX_UPLOAD_BYTES` (API) and `next.config.ts`
+  `serverActions.bodySizeLimit` (web). Change both.
 - shadcn/ui here is the base-ui flavour: link-buttons use `<Button render={<Link … />}>`, not `asChild`.
 - Types come from `@verixa/shared-types`; do not redeclare API shapes locally.
 

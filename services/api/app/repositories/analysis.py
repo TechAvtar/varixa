@@ -3,6 +3,7 @@ from collections.abc import Sequence
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models import Analysis, AnalysisFile
 
@@ -14,7 +15,12 @@ class AnalysisRepository:
         self._session = session
 
     async def get(self, analysis_id: uuid.UUID) -> Analysis | None:
-        stmt = select(Analysis).where(Analysis.id == analysis_id, Analysis.deleted_at.is_(None))
+        stmt = (
+            select(Analysis)
+            .where(Analysis.id == analysis_id, Analysis.deleted_at.is_(None))
+            .options(selectinload(Analysis.files))
+            .execution_options(populate_existing=True)
+        )
         return (await self._session.execute(stmt)).scalar_one_or_none()
 
     async def list_for_user(
@@ -25,7 +31,8 @@ class AnalysisRepository:
             await self._session.execute(select(func.count()).select_from(base.subquery()))
         ).scalar_one()
         stmt = (
-            base.order_by(Analysis.created_at.desc(), Analysis.id.desc())
+            base.options(selectinload(Analysis.files))
+            .order_by(Analysis.created_at.desc(), Analysis.id.desc())
             .offset(offset)
             .limit(limit)
         )

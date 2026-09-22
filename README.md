@@ -54,7 +54,8 @@ cp apps/web/.env.example apps/web/.env.local
 npm run dev:web
 ```
 
-Open <http://localhost:3000>. Routes: `/` (status + sign-in), `/register`, `/login`, `/dashboard`.
+Open <http://localhost:3000>. Routes: `/` (status + sign-in), `/register`, `/login`, `/dashboard`,
+`/analyses/new` (drag-and-drop image upload), `/analyses/{id}` (status + verified file facts).
 
 The web app never exposes tokens to the browser: server actions call the API and store the
 access/refresh tokens in httpOnly cookies; `src/proxy.ts` refreshes the access token (rotating the
@@ -98,13 +99,27 @@ resources.
 
 | Endpoint | Purpose |
 | -------- | ------- |
+| `POST /api/v1/analysis/image` | Multipart `file` (+ optional `title`). Returns `201 {id, status, type}` |
 | `GET /api/v1/analysis?page=&page_size=` | Caller's analyses, newest first (soft-deleted hidden) |
 | `GET /api/v1/analysis/counts` | `{total, image, text}` for the dashboard |
 | `GET /api/v1/analysis/{id}` | One analysis; 404 if missing or owned by someone else |
 | `DELETE /api/v1/analysis/{id}` | Soft delete (record kept for audit) and remove stored files |
 
 Status lifecycle: `queued → processing → completed | failed`; illegal moves return
-`409 INVALID_TRANSITION`. Creation endpoints arrive with image upload (T010) and text (T017).
+`409 INVALID_TRANSITION`. Text creation arrives with T017.
+
+### Image upload rules
+
+The filename and client MIME type are never trusted. An upload is accepted only if all pass:
+
+1. size ≤ `VERIXA_MAX_UPLOAD_BYTES` (read in 1 MB chunks; overflow → `413 PAYLOAD_TOO_LARGE`)
+2. magic bytes identify JPEG, PNG, WebP or TIFF and match what Pillow decodes
+3. header dimensions ≤ `VERIXA_MAX_IMAGE_PIXELS` (checked before decoding; guards decompression bombs)
+4. `Image.verify()` and a full decode succeed (malformed/truncated → `422 INVALID_FILE`)
+
+Only then is the original stored (private key `uploads/{user}/{analysis}/{sha256}.{ext}`) and the
+analysis row committed; a rejected file leaves no record. `GET /analysis/{id}` returns a `file`
+block with the detected type, size, dimensions and SHA-256.
 
 ## Object storage
 
@@ -131,6 +146,8 @@ All configuration is via environment variables; see the `.env.example` files. Ne
 | `VERIXA_SECRET_KEY` | API | Signs access tokens. Random, 32+ chars; the built-in dev default is refused in production |
 | `VERIXA_ACCESS_TOKEN_TTL_MINUTES` | API | Access-token lifetime (default 30) |
 | `VERIXA_REFRESH_TOKEN_TTL_DAYS` | API | Refresh-token lifetime (default 14) |
+| `VERIXA_MAX_UPLOAD_BYTES` | API | Upload size cap (default 26214400 = 25 MB); mirror it in `next.config.ts` `serverActions.bodySizeLimit` |
+| `VERIXA_MAX_IMAGE_PIXELS` | API | Width × height cap checked from the header (default 40 MP) |
 | `VERIXA_DATA_DIR` | API | Root for local runtime data (default `./data`, git-ignored) |
 | `VERIXA_DATABASE_URL` | API | SQLAlchemy URL. Default: SQLite at `${VERIXA_DATA_DIR}/verixa.db`. Use `postgresql+asyncpg://…` for PostgreSQL |
 | `VERIXA_STORAGE_BACKEND` | API | `local` (default, files under `${VERIXA_DATA_DIR}/storage`) or `s3` |

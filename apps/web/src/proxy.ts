@@ -29,7 +29,13 @@ export default async function proxy(request: NextRequest): Promise<NextResponse>
   let rotated: TokenPair | null = null;
   let sessionDead = false;
 
-  if (needsRefresh(access) && refresh) {
+  // Link prefetches fan out concurrently; letting them rotate the refresh token
+  // would race the real navigation. They get the current cookies as-is.
+  const isPrefetch =
+    request.headers.get("next-router-prefetch") === "1" ||
+    request.headers.get("purpose") === "prefetch";
+
+  if (!isPrefetch && needsRefresh(access) && refresh) {
     const result = await apiRequest<TokenPair>("/auth/refresh", {
       method: "POST",
       body: { refresh_token: refresh },

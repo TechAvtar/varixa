@@ -37,8 +37,10 @@ def get_auth_service(session: DbSession, settings: AppSettings) -> AuthService:
 AuthSvc = Annotated[AuthService, Depends(get_auth_service)]
 
 
-def get_analysis_service(session: DbSession, storage: Storage) -> AnalysisService:
-    return AnalysisService(session, storage)
+def get_analysis_service(
+    session: DbSession, storage: Storage, settings: AppSettings
+) -> AnalysisService:
+    return AnalysisService(session, storage, settings)
 
 
 AnalysisSvc = Annotated[AnalysisService, Depends(get_analysis_service)]

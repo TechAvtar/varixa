@@ -6,6 +6,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import Settings, get_settings
 from app.enums import AnalysisStatus, AnalysisType
 from app.models import Analysis, AnalysisFile, User
 from app.providers.storage.local import LocalObjectStorage
@@ -25,8 +26,10 @@ def storage(tmp_path: Any) -> LocalObjectStorage:
 
 
 @pytest.fixture
-def service(session: AsyncSession, storage: LocalObjectStorage) -> AnalysisService:
-    return AnalysisService(session, storage)
+def service(
+    session: AsyncSession, storage: LocalObjectStorage, migrated_settings: Settings
+) -> AnalysisService:
+    return AnalysisService(session, storage, migrated_settings)
 
 
 async def make_user(session: AsyncSession, email: str = "owner@example.com") -> User:
@@ -43,7 +46,7 @@ async def create_via_api(client: AsyncClient, email: str) -> tuple[Json, dict[st
     app = client._transport.app  # type: ignore[attr-defined]
     async with app.state.session_factory() as db:
         user = (await db.execute(select(User).where(User.email == email))).scalar_one()
-        svc = AnalysisService(db, app.state.storage)
+        svc = AnalysisService(db, app.state.storage, app.dependency_overrides[get_settings]())
         analysis = await svc.create(user, type=AnalysisType.IMAGE, title="mine")
         return {"id": str(analysis.id), "user_id": str(user.id)}, bearer(tokens)
 

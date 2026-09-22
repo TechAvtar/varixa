@@ -1,4 +1,5 @@
 import type { AnalysisResponse } from "@verixa/shared-types";
+import Link from "next/link";
 import { AnalysisStatusBadge } from "@/components/analyses/analysis-status-badge";
 import {
   Table,
@@ -26,7 +27,12 @@ export function AnalysesTable({ items }: { items: AnalysisResponse[] }) {
           {items.map((a) => (
             <TableRow key={a.id}>
               <TableCell className="max-w-[24rem]">
-                <span className="block truncate font-medium">{a.title ?? "Untitled"}</span>
+                <Link
+                  href={`/analyses/${a.id}`}
+                  className="block truncate font-medium underline-offset-4 hover:underline"
+                >
+                  {a.title ?? "Untitled"}
+                </Link>
                 {a.status === "failed" && a.error_message ? (
                   <span className="block truncate text-xs text-muted-foreground">
                     {a.error_message}

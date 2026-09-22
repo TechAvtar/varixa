@@ -1,9 +1,11 @@
 import type { AnalysisCounts, AnalysisListResponse } from "@verixa/shared-types";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { AnalysesTable } from "@/components/analyses/analyses-table";
 import { EmptyState } from "@/components/empty-state";
 import { StatCard } from "@/components/stat-card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { authedRequest } from "@/lib/auth/session";
 
 export const metadata: Metadata = { title: "Dashboard · Verixa" };
@@ -19,11 +21,14 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-8">
-      <div className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-        <p className="text-sm text-muted-foreground">
-          Your analyses and what has been established so far.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="space-y-1">
+          <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
+          <p className="text-sm text-muted-foreground">
+            Your analyses and what has been established so far.
+          </p>
+        </div>
+        <Button render={<Link href="/analyses/new" />}>New analysis</Button>
       </div>
 
       <section aria-labelledby="stats-heading" className="space-y-3">
@@ -62,7 +67,8 @@ export default async function DashboardPage() {
         ) : recent.data.items.length === 0 ? (
           <EmptyState
             title="No analyses yet"
-            description="Upload an image or paste text to start an evidence-backed analysis. Creating analyses arrives in the next release of this build."
+            description="Upload an image to start an evidence-backed analysis. Text analysis is coming in a later build."
+            action={<Button render={<Link href="/analyses/new" />}>Upload an image</Button>}
           />
         ) : (
           <AnalysesTable items={recent.data.items} />
