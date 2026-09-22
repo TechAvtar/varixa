@@ -33,6 +33,8 @@ Every package's `__init__.py` carries a one-line responsibility docstring.
 - Types come from `@verixa/shared-types`; do not redeclare API shapes locally.
 
 ## Commands
+- Dev API on Windows: run **without** `--reload` (uvicorn's WatchFiles reload hangs and keeps
+  serving stale code). Restart the process after API changes and confirm via `/openapi.json`.
 - Everything CI runs: `scripts/check.sh` or `scripts\check.ps1` (accepts `api` / `web`)
 - API: `cd services/api && .venv/Scripts/activate && uvicorn app.main:app --reload`
 - API checks: `cd services/api && ruff check . && ruff format --check . && mypy app tests && pytest`

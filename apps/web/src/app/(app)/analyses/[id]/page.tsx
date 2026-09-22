@@ -62,7 +62,7 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
         <Alert>
           <AlertTitle>Processing complete</AlertTitle>
           <AlertDescription>
-            Only file validation runs in this build. Metadata, provenance, forensic and source
+            Only validation and hashing run in this build. Metadata, provenance, forensic and source
             findings are not yet produced, so no evidence is shown.
           </AlertDescription>
         </Alert>
