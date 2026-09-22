@@ -29,6 +29,10 @@ export interface EvidenceListResponse {
   generated_at: string;
   counts: Record<string, number>;
   conflicts: number;
+  /** Strongest leveled record minus a penalty per conflict, in [0, 1]. */
+  synthesis_confidence: number;
+  /** Thresholds in force for this deployment. */
+  thresholds: Record<string, unknown>;
   items: EvidenceRecord[];
 }
 

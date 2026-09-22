@@ -11,6 +11,7 @@ from app.services.evidence.engine import (
     Observations,
     build_evidence,
     summarise,
+    synthesis_confidence,
 )
 
 
@@ -56,7 +57,8 @@ class EvidenceStep:
                     )
                 ]
 
-        drafts = build_evidence(obs, EvidenceThresholds.from_settings(ctx.settings))
+        thresholds = EvidenceThresholds.from_settings(ctx.settings)
+        drafts = build_evidence(obs, thresholds)
         rows = [
             Evidence(
                 analysis_id=aid,
@@ -76,5 +78,9 @@ class EvidenceStep:
             engine_version=ENGINE_VERSION,
             records=len(rows),
             conflicts=sum(1 for d in drafts if d.kind == "conflict"),
+            synthesis_confidence=synthesis_confidence(
+                [(d.level, d.confidence, d.kind) for d in drafts], thresholds
+            ),
+            thresholds=thresholds.to_json(),
             **{level.lower(): n for level, n in counts.items()},
         )

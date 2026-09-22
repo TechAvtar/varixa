@@ -42,7 +42,12 @@ from app.schemas.metadata import ImageMetadataResponse, NormalizedMetadataRespon
 from app.schemas.provenance import ImageProvenanceResponse, NormalizedProvenanceResponse
 from app.schemas.provider_calls import ProviderCallResponse, ProviderCallsResponse
 from app.schemas.text import LanguageResponse, TextAnalysisCreate, TextAnalysisResponse
-from app.services.evidence.engine import ENGINE_VERSION, EvidenceThresholds, ai_level
+from app.services.evidence.engine import (
+    ENGINE_VERSION,
+    EvidenceThresholds,
+    ai_level,
+    synthesis_confidence,
+)
 from app.services.image import ImageTooLargeError
 from app.services.image.provenance import NormalizedProvenance, provenance_limitations
 from app.utils.errors import NotFoundError
@@ -427,12 +432,13 @@ async def get_analysis_matches(
 
 @router.get("/{analysis_id}/evidence", response_model=EvidenceListResponse)
 async def get_analysis_evidence(
-    analysis_id: uuid.UUID, user: CurrentUser, analyses: AnalysisSvc
+    analysis_id: uuid.UUID, user: CurrentUser, analyses: AnalysisSvc, settings: AppSettings
 ) -> EvidenceListResponse:
     """Leveled, traceable evidence records produced by the evidence engine (docs/07)."""
     rows = await analyses.list_evidence(user, analysis_id)
     if not rows:
         raise NotFoundError("Evidence has not been generated for this analysis yet.")
+    thresholds = EvidenceThresholds.from_settings(settings)
     items: list[EvidenceRecordResponse] = []
     counts = {level.value: 0 for level in EvidenceLevel}
     for r in rows:
@@ -462,6 +468,10 @@ async def get_analysis_evidence(
         generated_at=max(r.created_at for r in rows),
         counts=counts,
         conflicts=sum(1 for i in items if i.kind == "conflict"),
+        synthesis_confidence=synthesis_confidence(
+            [(i.level, i.confidence, i.kind) for i in items], thresholds
+        ),
+        thresholds=thresholds.to_json(),
         items=items,
     )
 

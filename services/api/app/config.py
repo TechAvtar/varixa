@@ -94,6 +94,16 @@ class Settings(BaseSettings):
     # Evidence engine (docs/07). Rule thresholds live here, never in the rules themselves.
     language_probable_confidence: float = Field(default=0.9, ge=0.0, le=1.0)
     forensic_families_for_strong: int = Field(default=2, ge=1, le=3)
+    # Confidence attached to a record when the rule has no better number of its own.
+    evidence_confidence_verified: float = Field(default=1.0, ge=0.0, le=1.0)
+    evidence_confidence_strong: float = Field(default=0.8, ge=0.0, le=1.0)
+    evidence_confidence_probable: float = Field(default=0.65, ge=0.0, le=1.0)
+    evidence_confidence_possible: float = Field(default=0.4, ge=0.0, le=1.0)
+    # Per-rule level overrides, e.g. {"forensics.ela.anomaly": "UNKNOWN"}. A rule can be made
+    # more conservative than docs/07 but never stronger than its ceiling (enforced by the engine).
+    evidence_level_overrides: dict[str, str] = Field(default_factory=dict)
+    # How much each conflict record lowers the synthesis confidence.
+    evidence_conflict_penalty: float = Field(default=0.25, ge=0.0, le=1.0)
 
     # Persistent provider-result cache (content hash + provider/model/version). 0 disables.
     provider_cache_ttl_hours: int = Field(default=24 * 7, ge=0, le=24 * 365)
@@ -146,6 +156,25 @@ class Settings(BaseSettings):
             raise ValueError(
                 "VERIXA_SECRET_KEY must be a random value of at least 32 characters in production"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _evidence_settings_consistent(self) -> "Settings":
+        order = (
+            self.evidence_confidence_possible,
+            self.evidence_confidence_probable,
+            self.evidence_confidence_strong,
+            self.evidence_confidence_verified,
+        )
+        if list(order) != sorted(order):
+            raise ValueError(
+                "VERIXA_EVIDENCE_CONFIDENCE_* must be ordered possible <= probable <= strong "
+                "<= verified"
+            )
+        allowed = {"VERIFIED", "STRONG", "PROBABLE", "POSSIBLE", "UNKNOWN"}
+        bad = {k: v for k, v in self.evidence_level_overrides.items() if v not in allowed}
+        if bad:
+            raise ValueError(f"VERIXA_EVIDENCE_LEVEL_OVERRIDES has invalid levels: {bad}")
         return self
 
     @model_validator(mode="after")

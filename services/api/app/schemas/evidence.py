@@ -34,4 +34,8 @@ class EvidenceListResponse(BaseModel):
     generated_at: datetime
     counts: dict[str, int]
     conflicts: int
+    # Strongest leveled record minus a penalty per conflict (docs/07), in [0, 1].
+    synthesis_confidence: float
+    # Thresholds in force for this deployment (rules are never hard-coded).
+    thresholds: dict[str, Any]
     items: list[EvidenceRecordResponse]

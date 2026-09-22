@@ -193,6 +193,14 @@ explicit `conflict` record that keeps both sides. The `evidence` step runs last 
 and replaces the analysis' rows; `GET /analysis/{id}/evidence` returns them and the report uses
 them instead of its client-side preliminary derivation once they exist.
 
+Configurable confidence (T030): `VERIXA_EVIDENCE_CONFIDENCE_{VERIFIED,STRONG,PROBABLE,POSSIBLE}`
+set the default confidence per level (rules with their own number, such as an AI score, keep it);
+`VERIXA_EVIDENCE_LEVEL_OVERRIDES` (JSON, rule id → level) lets a deployment make a rule more
+conservative, clamped to the rule's docs/07 ceiling so nothing can be overstated;
+`VERIXA_EVIDENCE_CONFLICT_PENALTY` is subtracted from the synthesis confidence per conflict
+record. The thresholds in force are recorded in the `evidence` step details and echoed by the
+evidence endpoint.
+
 ### Forensics UI
 
 The Forensics tab shows, per method, the observation, the method's design confidence, the

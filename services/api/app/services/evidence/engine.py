@@ -15,7 +15,7 @@ docs/07-EVIDENCE-ENGINE.md:
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 
 from app.config import Settings
@@ -25,14 +25,42 @@ ENGINE_VERSION = "v1"
 
 Kind = Literal["fact", "signal", "unknown", "conflict"]
 
-# Default confidence attached to a record of a given level when the rule has no better
-# number (AI scores and detector confidences are used directly where they exist).
-LEVEL_CONFIDENCE: dict[str, float | None] = {
-    EvidenceLevel.VERIFIED: 1.0,
-    EvidenceLevel.STRONG: 0.8,
-    EvidenceLevel.PROBABLE: 0.65,
-    EvidenceLevel.POSSIBLE: 0.4,
-    EvidenceLevel.UNKNOWN: None,
+# Level order, strongest first. Overrides may move a rule *down* this list, never up.
+LEVEL_RANK: dict[str, int] = {
+    EvidenceLevel.VERIFIED: 4,
+    EvidenceLevel.STRONG: 3,
+    EvidenceLevel.PROBABLE: 2,
+    EvidenceLevel.POSSIBLE: 1,
+    EvidenceLevel.UNKNOWN: 0,
+}
+
+# docs/07 ceilings: the strongest level a rule may ever produce, whatever the configuration.
+# Rules not listed are capped at the level the engine assigns them (i.e. cannot be raised).
+LEVEL_CEILING: dict[str, str] = {
+    "file.identity": EvidenceLevel.VERIFIED,
+    "provenance.valid": EvidenceLevel.VERIFIED,
+    "provenance.invalid": EvidenceLevel.POSSIBLE,
+    "metadata.software": EvidenceLevel.STRONG,
+    "metadata.camera": EvidenceLevel.POSSIBLE,
+    "metadata.captured": EvidenceLevel.POSSIBLE,
+    "metadata.gps": EvidenceLevel.POSSIBLE,
+    "matches.exact": EvidenceLevel.VERIFIED,
+    "matches.near": EvidenceLevel.POSSIBLE,
+    "matches.text.identical": EvidenceLevel.VERIFIED,
+    "matches.text.near": EvidenceLevel.POSSIBLE,
+    "text.stats": EvidenceLevel.VERIFIED,
+    "text.language": EvidenceLevel.PROBABLE,
+    "text.hidden": EvidenceLevel.POSSIBLE,
+    "text.repetition": EvidenceLevel.POSSIBLE,
+    "ai.signal": EvidenceLevel.PROBABLE,
+    "sources.matches": EvidenceLevel.POSSIBLE,
+    "forensics.multiple": EvidenceLevel.STRONG,
+    "forensics.ela.anomaly": EvidenceLevel.POSSIBLE,
+    "forensics.compression.offset-grid": EvidenceLevel.POSSIBLE,
+    "forensics.compression.prior-jpeg": EvidenceLevel.POSSIBLE,
+    "forensics.resampling.detected": EvidenceLevel.POSSIBLE,
+    "forensics.noise.anomaly": EvidenceLevel.POSSIBLE,
+    "forensics.copy-move.detected": EvidenceLevel.POSSIBLE,
 }
 
 
@@ -47,6 +75,15 @@ class EvidenceThresholds:
     language_probable_confidence: float = 0.9
     # Independent forensic families needed for docs/07 "multiple independent anomalies".
     forensic_families_for_strong: int = 2
+    # Default confidence per level when a rule has no better number of its own.
+    confidence_verified: float = 1.0
+    confidence_strong: float = 0.8
+    confidence_probable: float = 0.65
+    confidence_possible: float = 0.4
+    # rule id -> level; applied after the rules, clamped to LEVEL_CEILING (never stronger).
+    level_overrides: dict[str, str] = field(default_factory=dict)
+    # Synthesis confidence drops by this much per conflict record.
+    conflict_penalty: float = 0.25
 
     @classmethod
     def from_settings(cls, settings: Settings) -> EvidenceThresholds:
@@ -57,7 +94,42 @@ class EvidenceThresholds:
             text_near_threshold=settings.text_near_threshold,
             language_probable_confidence=settings.language_probable_confidence,
             forensic_families_for_strong=settings.forensic_families_for_strong,
+            confidence_verified=settings.evidence_confidence_verified,
+            confidence_strong=settings.evidence_confidence_strong,
+            confidence_probable=settings.evidence_confidence_probable,
+            confidence_possible=settings.evidence_confidence_possible,
+            level_overrides=dict(settings.evidence_level_overrides),
+            conflict_penalty=settings.evidence_conflict_penalty,
         )
+
+    def confidence_for(self, level: str) -> float | None:
+        table: dict[str, float | None] = {
+            EvidenceLevel.VERIFIED: self.confidence_verified,
+            EvidenceLevel.STRONG: self.confidence_strong,
+            EvidenceLevel.PROBABLE: self.confidence_probable,
+            EvidenceLevel.POSSIBLE: self.confidence_possible,
+            EvidenceLevel.UNKNOWN: None,
+        }
+        return table[level]
+
+    def to_json(self) -> dict[str, Any]:
+        """Snapshot recorded with each run so a report can say which thresholds applied."""
+        return {
+            "ai_score_high": self.ai_score_high,
+            "ai_score_medium": self.ai_score_medium,
+            "fingerprint_near_threshold": self.fingerprint_near_threshold,
+            "text_near_threshold": self.text_near_threshold,
+            "language_probable_confidence": self.language_probable_confidence,
+            "forensic_families_for_strong": self.forensic_families_for_strong,
+            "confidence": {
+                "VERIFIED": self.confidence_verified,
+                "STRONG": self.confidence_strong,
+                "PROBABLE": self.confidence_probable,
+                "POSSIBLE": self.confidence_possible,
+            },
+            "level_overrides": dict(self.level_overrides),
+            "conflict_penalty": self.conflict_penalty,
+        }
 
 
 @dataclass(frozen=True)
@@ -117,8 +189,62 @@ def _fmt(value: Any) -> str:
     return "?" if value is None else str(value)
 
 
-def _conf(level: str) -> float | None:
-    return LEVEL_CONFIDENCE[level]
+def _conf(level: str, t: EvidenceThresholds | None = None) -> float | None:
+    return (t or EvidenceThresholds()).confidence_for(level)
+
+
+def apply_overrides(drafts: list[EvidenceDraft], t: EvidenceThresholds) -> list[EvidenceDraft]:
+    """Apply configured per-rule levels. A level can only move *down* from its docs/07 ceiling.
+
+    A record whose confidence was the level default follows the new level's default;
+    a record with its own number (an AI score, a language probability) keeps it.
+    """
+    if not t.level_overrides:
+        return drafts
+    out: list[EvidenceDraft] = []
+    for d in drafts:
+        wanted = t.level_overrides.get(d.rule)
+        if wanted is None or wanted not in LEVEL_RANK or d.kind == "conflict":
+            out.append(d)
+            continue
+        ceiling = LEVEL_CEILING.get(d.rule, d.level)
+        new_level = wanted if LEVEL_RANK[wanted] <= LEVEL_RANK[ceiling] else ceiling
+        if new_level == d.level:
+            out.append(d)
+            continue
+        confidence = d.confidence
+        if confidence is None or confidence == _conf(d.level, t):
+            confidence = _conf(new_level, t)
+        out.append(
+            replace(
+                d,
+                level=new_level,
+                confidence=confidence,
+                data={**d.data, "level_override": {"from": d.level, "to": new_level}},
+            )
+        )
+    return out
+
+
+def synthesis_confidence(
+    records: Sequence[tuple[str, float | None, str]], t: EvidenceThresholds
+) -> float:
+    """Overall confidence a synthesis may claim: the strongest leveled record, minus conflicts.
+
+    ``records`` are (level, confidence, kind). UNKNOWN records contribute nothing; each
+    conflict record subtracts ``t.conflict_penalty`` (docs/07: conflicts lower synthesis
+    confidence). Result is clipped to [0, 1].
+    """
+    best = 0.0
+    conflicts = 0
+    for level, confidence, kind in records:
+        if kind == "conflict":
+            conflicts += 1
+            continue
+        if level == EvidenceLevel.UNKNOWN:
+            continue
+        best = max(best, float(confidence if confidence is not None else _conf(level, t) or 0.0))
+    return round(min(1.0, max(0.0, best - conflicts * t.conflict_penalty)), 4)
 
 
 def _call_refs(calls: Sequence[Any], operation_prefix: str) -> list[str]:
@@ -128,7 +254,7 @@ def _call_refs(calls: Sequence[Any], operation_prefix: str) -> list[str]:
 # -- rule groups --------------------------------------------------------------------------------
 
 
-def _file_rules(o: Observations) -> list[EvidenceDraft]:
+def _file_rules(o: Observations, t: EvidenceThresholds) -> list[EvidenceDraft]:
     f = o.file
     if f is None:
         return []
@@ -142,7 +268,7 @@ def _file_rules(o: Observations) -> list[EvidenceDraft]:
                 claim=f"The submitted text is {f.size_bytes or '?'} bytes of UTF-8 with SHA-256 "
                 f"{f.sha256[:12]}…",
                 source="storage",
-                confidence=1.0,
+                confidence=_conf(EvidenceLevel.VERIFIED, t),
                 detail="Stored exactly as received; the normalised working copy is hashed "
                 "separately.",
                 refs=["step:validate", "row:analysis_files"],
@@ -158,7 +284,7 @@ def _file_rules(o: Observations) -> list[EvidenceDraft]:
             claim=f"The stored file is {f.mime_type or 'of unknown type'}, {f.width or '?'} x "
             f"{f.height or '?'} px, {f.size_bytes or '?'} bytes, SHA-256 {f.sha256[:12]}…",
             source="validation",
-            confidence=1.0,
+            confidence=_conf(EvidenceLevel.VERIFIED, t),
             detail="Type and dimensions were decoded from the content, not read from the name.",
             refs=["step:validate", "step:hashing", "row:analysis_files"],
             data={
@@ -172,7 +298,7 @@ def _file_rules(o: Observations) -> list[EvidenceDraft]:
     ]
 
 
-def _provenance_rules(o: Observations) -> list[EvidenceDraft]:
+def _provenance_rules(o: Observations, t: EvidenceThresholds) -> list[EvidenceDraft]:
     p = o.provenance
     refs = ["step:provenance", *_call_refs(o.provider_calls, "provenance.")]
     if p is None:
@@ -215,7 +341,7 @@ def _provenance_rules(o: Observations) -> list[EvidenceDraft]:
                 claim="A C2PA manifest is present and its signature validates (issuer as stated: "
                 f"{p.signer or 'unknown'}).",
                 source=src,
-                confidence=1.0,
+                confidence=_conf(EvidenceLevel.VERIFIED, t),
                 detail=f"Claim generator: {p.claim_generator}." if p.claim_generator else None,
                 limitation="Validity shows the manifest is intact, not that its claims are true; "
                 "issuer trust is not evaluated.",
@@ -238,7 +364,7 @@ def _provenance_rules(o: Observations) -> list[EvidenceDraft]:
             kind="signal",
             claim="A C2PA manifest is present but validation reported problems.",
             source=src,
-            confidence=_conf(EvidenceLevel.POSSIBLE),
+            confidence=_conf(EvidenceLevel.POSSIBLE, t),
             detail=", ".join(failures) or None,
             limitation="The manifest may be damaged, or the file changed after signing.",
             refs=refs,
@@ -248,7 +374,7 @@ def _provenance_rules(o: Observations) -> list[EvidenceDraft]:
     ]
 
 
-def _metadata_rules(o: Observations) -> list[EvidenceDraft]:
+def _metadata_rules(o: Observations, t: EvidenceThresholds) -> list[EvidenceDraft]:
     m = o.metadata
     if m is None:
         return [
@@ -275,7 +401,7 @@ def _metadata_rules(o: Observations) -> list[EvidenceDraft]:
                 kind="signal",
                 claim=f'Metadata records the software "{m.software}".',
                 source=src,
-                confidence=_conf(EvidenceLevel.STRONG),
+                confidence=_conf(EvidenceLevel.STRONG, t),
                 limitation="A software tag shows what wrote the metadata, not the full edit "
                 "history; tags can be altered.",
                 refs=refs,
@@ -293,7 +419,7 @@ def _metadata_rules(o: Observations) -> list[EvidenceDraft]:
                 kind="signal",
                 claim=f'Metadata records the camera "{camera}".',
                 source=src,
-                confidence=_conf(EvidenceLevel.POSSIBLE),
+                confidence=_conf(EvidenceLevel.POSSIBLE, t),
                 limitation="Camera fields are recorded values and can be copied or edited.",
                 refs=refs,
                 provider_version=m.engine_version,
@@ -311,7 +437,7 @@ def _metadata_rules(o: Observations) -> list[EvidenceDraft]:
                 kind="signal",
                 claim=f"Metadata records a capture time of {captured['raw']}{tz}.",
                 source=src,
-                confidence=_conf(EvidenceLevel.POSSIBLE),
+                confidence=_conf(EvidenceLevel.POSSIBLE, t),
                 limitation="Device clocks and edits can make recorded times wrong.",
                 refs=refs,
                 provider_version=m.engine_version,
@@ -327,7 +453,7 @@ def _metadata_rules(o: Observations) -> list[EvidenceDraft]:
                 kind="signal",
                 claim="Metadata contains GPS location fields.",
                 source=src,
-                confidence=_conf(EvidenceLevel.POSSIBLE),
+                confidence=_conf(EvidenceLevel.POSSIBLE, t),
                 limitation="Coordinates are not shown here and can be inaccurate or fabricated.",
                 refs=refs,
                 provider_version=m.engine_version,
@@ -368,7 +494,7 @@ def _image_match_rules(o: Observations, t: EvidenceThresholds) -> list[EvidenceD
                 claim=f"{len(exact)} of your other analyses contain byte-identical content "
                 "(same SHA-256).",
                 source="fingerprints",
-                confidence=1.0,
+                confidence=_conf(EvidenceLevel.VERIFIED, t),
                 limitation="Identity of bytes says nothing about which copy came first.",
                 refs=refs,
                 data={"analysis_ids": [str(s[0]) for s in exact]},
@@ -384,7 +510,7 @@ def _image_match_rules(o: Observations, t: EvidenceThresholds) -> list[EvidenceD
                 claim=f"{len(near)} of your other analyses look perceptually similar (pHash/dHash "
                 f"within {t.fingerprint_near_threshold} bits).",
                 source="fingerprints",
-                confidence=_conf(EvidenceLevel.POSSIBLE),
+                confidence=_conf(EvidenceLevel.POSSIBLE, t),
                 limitation="Perceptual similarity can come from recompression, resizing or "
                 "unrelated look-alikes.",
                 refs=refs,
@@ -422,7 +548,7 @@ def _text_rules(o: Observations, t: EvidenceThresholds) -> list[EvidenceDraft]:
             claim=f"{tx.word_count or 0:,} words, {tx.sentence_count or 0:,} sentences, "
             f"{tx.paragraph_count or 0:,} paragraphs.",
             source="statistics",
-            confidence=1.0,
+            confidence=_conf(EvidenceLevel.VERIFIED, t),
             detail="Deterministic counts over the normalised text.",
             refs=["step:statistics", "row:text_analysis"],
             data={
@@ -483,7 +609,7 @@ def _text_rules(o: Observations, t: EvidenceThresholds) -> list[EvidenceDraft]:
                 kind="signal",
                 claim=f"{hidden} hidden or control characters were present in the original text.",
                 source="normalize",
-                confidence=_conf(EvidenceLevel.POSSIBLE),
+                confidence=_conf(EvidenceLevel.POSSIBLE, t),
                 limitation="Such characters can come from ordinary copy-paste, but also from "
                 "watermarking or obfuscation.",
                 refs=["step:normalize", "row:text_analysis"],
@@ -500,7 +626,7 @@ def _text_rules(o: Observations, t: EvidenceThresholds) -> list[EvidenceDraft]:
                 kind="signal",
                 claim=f"{repeated} sentence(s) are repeated verbatim.",
                 source="statistics",
-                confidence=_conf(EvidenceLevel.POSSIBLE),
+                confidence=_conf(EvidenceLevel.POSSIBLE, t),
                 limitation="Repetition is a stylistic observation, not evidence of machine "
                 "authorship.",
                 refs=["step:statistics", "row:text_analysis"],
@@ -528,7 +654,7 @@ def _text_match_rules(o: Observations, t: EvidenceThresholds) -> list[EvidenceDr
                 "(identical bytes, or identical after normalisation / ignoring case and "
                 "punctuation).",
                 source="fingerprints",
-                confidence=1.0,
+                confidence=_conf(EvidenceLevel.VERIFIED, t),
                 limitation="Identity says nothing about which copy came first.",
                 refs=refs,
                 data={"analysis_ids": [str(s[0]) for s in identical]},
@@ -544,7 +670,7 @@ def _text_match_rules(o: Observations, t: EvidenceThresholds) -> list[EvidenceDr
                 claim=f"{len(near)} of your other text analyses share many 5-word sequences "
                 f"(estimated Jaccard ≥ {t.text_near_threshold:.2f}).",
                 source="fingerprints",
-                confidence=_conf(EvidenceLevel.POSSIBLE),
+                confidence=_conf(EvidenceLevel.POSSIBLE, t),
                 limitation="Shared phrasing can come from quotation, templates or common idiom, "
                 "not only copying.",
                 refs=refs,
@@ -653,7 +779,7 @@ def _ai_rules(o: Observations, t: EvidenceThresholds) -> list[EvidenceDraft]:
     ]
 
 
-def _source_rules(o: Observations) -> list[EvidenceDraft]:
+def _source_rules(o: Observations, t: EvidenceThresholds) -> list[EvidenceDraft]:
     kind = "reverse-image" if o.analysis_type == "image" else "phrase"
     run = o.search_run
     if run is None:
@@ -705,7 +831,7 @@ def _source_rules(o: Observations) -> list[EvidenceDraft]:
             kind="signal",
             claim=f"The {kind} search found {len(matches)} similar {noun}{dated_note}.",
             source=src,
-            confidence=_conf(EvidenceLevel.POSSIBLE),
+            confidence=_conf(EvidenceLevel.POSSIBLE, t),
             limitation=limitation,
             refs=refs,
             provider_version=run.provider_version,
@@ -770,7 +896,7 @@ def _forensic_rules(o: Observations, t: EvidenceThresholds) -> list[EvidenceDraf
                 claim=f"ELA shows {len(regions)} localised region(s) re-compressing differently "
                 "from the rest of the image.",
                 source="ela",
-                confidence=_conf(EvidenceLevel.POSSIBLE),
+                confidence=_conf(EvidenceLevel.POSSIBLE, t),
                 detail=(
                     f"Largest region at ({r['x']}, {r['y']}), {r['width']} x {r['height']} px; "
                     f"{float(ela.get('outlier_block_fraction') or 0) * 100:.1f}% of blocks are "
@@ -818,7 +944,7 @@ def _forensic_rules(o: Observations, t: EvidenceThresholds) -> list[EvidenceDraf
                     claim=f"A second JPEG block grid offset by ({grid.get('offset_x')}, "
                     f"{grid.get('offset_y')}) px is detectable.",
                     source="compression",
-                    confidence=_conf(EvidenceLevel.POSSIBLE),
+                    confidence=_conf(EvidenceLevel.POSSIBLE, t),
                     detail="Consistent with cropping or shifting after an earlier JPEG save, then "
                     "saving again. Repeating texture can produce the same pattern.",
                     limitation="Correlated with ELA; not an independent indicator. Crop-and-resave "
@@ -837,7 +963,7 @@ def _forensic_rules(o: Observations, t: EvidenceThresholds) -> list[EvidenceDraf
                     kind="signal",
                     claim=f"This {c.get('format')} file carries an 8x8 JPEG-style block grid.",
                     source="compression",
-                    confidence=_conf(EvidenceLevel.POSSIBLE),
+                    confidence=_conf(EvidenceLevel.POSSIBLE, t),
                     detail="The content was probably JPEG-compressed before being saved in its "
                     "current format.",
                     limitation="Says something about the file's history, not about editing. "
@@ -900,7 +1026,7 @@ def _forensic_rules(o: Observations, t: EvidenceThresholds) -> list[EvidenceDraf
                     claim="Periodic pixel correlations consistent with the picture having been "
                     "rescaled or rotated.",
                     source="resampling",
-                    confidence=_conf(EvidenceLevel.POSSIBLE),
+                    confidence=_conf(EvidenceLevel.POSSIBLE, t),
                     detail=(
                         f"{len(peaks)} spectral peak(s); strongest {p['ratio']}x its surroundings "
                         f"at ({p['fx']}, {p['fy']}) cycles/px."
@@ -960,7 +1086,7 @@ def _forensic_rules(o: Observations, t: EvidenceThresholds) -> list[EvidenceDraf
                     claim=f"Noise level differs from the rest of the image in {len(regions)} "
                     "compact region(s).",
                     source="noise",
-                    confidence=_conf(EvidenceLevel.POSSIBLE),
+                    confidence=_conf(EvidenceLevel.POSSIBLE, t),
                     detail=(
                         f"Baseline about {n.get('baseline_sigma')} grey levels; largest region at "
                         f"({reg['x']}, {reg['y']}), {reg['width']} x {reg['height']} px, about "
@@ -1023,7 +1149,7 @@ def _forensic_rules(o: Observations, t: EvidenceThresholds) -> list[EvidenceDraf
                     claim=f"{len(matches)} region(s) of the image reappear elsewhere in the same "
                     "image, shifted by a constant offset.",
                     source="copy_move",
-                    confidence=_conf(EvidenceLevel.POSSIBLE),
+                    confidence=_conf(EvidenceLevel.POSSIBLE, t),
                     detail=(
                         f"Largest: {m['width']} x {m['height']} px at ({m['source_x']}, "
                         f"{m['source_y']}) reappears at ({m['target_x']}, {m['target_y']}); "
@@ -1080,7 +1206,7 @@ def _forensic_rules(o: Observations, t: EvidenceThresholds) -> list[EvidenceDraf
                 claim=f"{len(families)} independent forensic methods flag anomalies "
                 f"({', '.join(families)}).",
                 source="forensics",
-                confidence=_conf(EvidenceLevel.STRONG),
+                confidence=_conf(EvidenceLevel.STRONG, t),
                 detail="Independent heuristics agreeing raises the weight of the observation. "
                 "Each remains a heuristic with the failure modes listed on its own record.",
                 limitation="Repeated content, depth of field and detail-rich areas can trip more "
@@ -1129,17 +1255,18 @@ def _conflict_rules(drafts: list[EvidenceDraft]) -> list[EvidenceDraft]:
 def build_evidence(o: Observations, t: EvidenceThresholds) -> list[EvidenceDraft]:
     """All evidence for one analysis, in report order; deterministic for the same inputs."""
     drafts: list[EvidenceDraft] = []
-    drafts += _file_rules(o)
+    drafts += _file_rules(o, t)
     if o.analysis_type == "image":
-        drafts += _provenance_rules(o)
-        drafts += _metadata_rules(o)
+        drafts += _provenance_rules(o, t)
+        drafts += _metadata_rules(o, t)
         drafts += _image_match_rules(o, t)
         drafts += _forensic_rules(o, t)
     else:
         drafts += _text_rules(o, t)
         drafts += _text_match_rules(o, t)
     drafts += _ai_rules(o, t)
-    drafts += _source_rules(o)
+    drafts += _source_rules(o, t)
+    drafts = apply_overrides(drafts, t)
     drafts += _conflict_rules(drafts)
     return drafts
 

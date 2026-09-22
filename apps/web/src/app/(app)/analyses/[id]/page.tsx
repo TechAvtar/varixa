@@ -161,7 +161,7 @@ export default async function AnalysisPage({
           ))}
           <span className="text-xs text-muted-foreground">
             {engine
-              ? `· evidence engine ${engine.engine_version}, ${formatDateTime(engine.generated_at)}${
+              ? `· evidence engine ${engine.engine_version}, ${formatDateTime(engine.generated_at)} · synthesis confidence ${engine.synthesis_confidence.toFixed(2)}${
                   engine.conflicts
                     ? ` · ${engine.conflicts} conflict${engine.conflicts === 1 ? "" : "s"}`
                     : ""
