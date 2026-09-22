@@ -1,5 +1,36 @@
 /** Mirrors `app/enums.py::EvidenceLevel`. Classifications of evidence, never claims of truth. */
-export type EvidenceLevel = "VERIFIED" | "STRONG" | "PROBABLE" | "POSSIBLE" | "UNKNOWN";
+export type EvidenceLevel =
+  "VERIFIED" | "STRONG" | "PROBABLE" | "POSSIBLE" | "UNKNOWN";
+
+export type EvidenceKind = "fact" | "signal" | "unknown" | "conflict";
+
+/** Mirrors `app/schemas/evidence.py`: one leveled, traceable record from the evidence engine. */
+export interface EvidenceRecord {
+  id: string;
+  rule: string;
+  category: string;
+  level: EvidenceLevel;
+  kind: EvidenceKind;
+  claim: string;
+  source: string;
+  confidence: number | null;
+  detail: string | null;
+  limitation: string | null;
+  /** Pointers to raw observations: "step:<name>", "provider_call:<id>", "row:<table>". */
+  refs: string[];
+  provider_version: string | null;
+  conflicts_with: string[];
+  data: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface EvidenceListResponse {
+  engine_version: string;
+  generated_at: string;
+  counts: Record<string, number>;
+  conflicts: number;
+  items: EvidenceRecord[];
+}
 
 export const EVIDENCE_LEVELS: readonly EvidenceLevel[] = [
   "VERIFIED",

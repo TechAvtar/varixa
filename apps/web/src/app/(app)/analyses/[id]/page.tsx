@@ -2,6 +2,7 @@ import type {
   AIDetectionResponse,
   AnalysisFileLink,
   AnalysisResponse,
+  EvidenceListResponse,
   ImageFingerprintsResponse,
   ImageForensicsResponse,
   ImageMetadataResponse,
@@ -41,7 +42,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { authedRequest } from "@/lib/auth/session";
-import { deriveEvidence, type EvidenceItem, summarise } from "@/lib/evidence";
+import { deriveEvidence, type EvidenceItem, fromServerEvidence, summarise } from "@/lib/evidence";
 import { formatBytes, formatDateTime, formatType } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Analysis · Verixa" };
@@ -91,6 +92,7 @@ export default async function AnalysisPage({
     callsResult,
     forensicsResult,
     fileLinkResult,
+    evidenceResult,
   ] = await Promise.all([
     isImage ? authedRequest<ImageMetadataResponse>(`/analysis/${id}/metadata`) : null,
     isImage ? authedRequest<ImageProvenanceResponse>(`/analysis/${id}/provenance`) : null,
@@ -104,6 +106,7 @@ export default async function AnalysisPage({
     isImage && active === "forensics"
       ? authedRequest<AnalysisFileLink>(`/analysis/${id}/file`)
       : null,
+    authedRequest<EvidenceListResponse>(`/analysis/${id}/evidence`),
   ]);
   const md = metadataResult?.ok ? metadataResult.data : null;
   const prov = provenanceResult?.ok ? provenanceResult.data : null;
@@ -116,7 +119,10 @@ export default async function AnalysisPage({
   const forensics = forensicsResult?.ok ? forensicsResult.data : null;
   const fileLink = fileLinkResult?.ok ? fileLinkResult.data : null;
 
-  const evidence = deriveEvidence(a, md, prov, fp, txt, tfp, ai, sources, forensics);
+  const engine = evidenceResult.ok ? evidenceResult.data : null;
+  const evidence = engine
+    ? fromServerEvidence(engine)
+    : deriveEvidence(a, md, prov, fp, txt, tfp, ai, sources, forensics);
   const counts = summarise(evidence);
   const processing = a.status === "queued" || a.status === "processing";
 
@@ -154,7 +160,13 @@ export default async function AnalysisPage({
             </span>
           ))}
           <span className="text-xs text-muted-foreground">
-            · preliminary, derived from deterministic steps
+            {engine
+              ? `· evidence engine ${engine.engine_version}, ${formatDateTime(engine.generated_at)}${
+                  engine.conflicts
+                    ? ` · ${engine.conflicts} conflict${engine.conflicts === 1 ? "" : "s"}`
+                    : ""
+                }`
+              : "· preliminary, derived on the client until the evidence step has run"}
           </span>
         </div>
 
@@ -302,6 +314,7 @@ function Overview({
 }) {
   const facts = evidence.filter((e) => e.kind === "fact");
   const signals = evidence.filter((e) => e.kind === "signal");
+  const conflicts = evidence.filter((e) => e.kind === "conflict");
   const unknowns = evidence.filter((e) => e.kind === "unknown");
   return (
     <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
@@ -317,6 +330,12 @@ function Overview({
           hint="Recorded values and observations worth weighing. None of these is proof."
           items={signals}
           empty="No signals were recorded."
+        />
+        <Group
+          title="Conflicts"
+          hint="Evidence that points in different directions. Both sides are retained and synthesis confidence is lowered."
+          items={conflicts}
+          empty="No conflicting evidence."
         />
         <Group
           title="Interpretation"

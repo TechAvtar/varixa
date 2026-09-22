@@ -1,0 +1,1151 @@
+"""Evidence engine: turns every subsystem's persisted observation into leveled evidence records.
+
+Pure and deterministic: it reads ORM rows (or anything with the same attributes) and
+returns ``EvidenceDraft`` objects; the pipeline step persists them. Rules follow
+docs/07-EVIDENCE-ENGINE.md:
+
+* levels come only from the initial rules table, never from an LLM;
+* thresholds live in ``EvidenceThresholds`` (built from ``Settings``), not in the rules;
+* correlated signals are grouped into *families* so they are never double counted;
+* conflicting evidence is kept on both sides and surfaced as an explicit conflict record;
+* every record points at its source subsystem, the raw observation (step, provider call
+  or row) and the engine/provider versions involved.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+from dataclasses import dataclass, field
+from typing import Any, Literal
+
+from app.config import Settings
+from app.enums import EvidenceLevel
+
+ENGINE_VERSION = "v1"
+
+Kind = Literal["fact", "signal", "unknown", "conflict"]
+
+# Default confidence attached to a record of a given level when the rule has no better
+# number (AI scores and detector confidences are used directly where they exist).
+LEVEL_CONFIDENCE: dict[str, float | None] = {
+    EvidenceLevel.VERIFIED: 1.0,
+    EvidenceLevel.STRONG: 0.8,
+    EvidenceLevel.PROBABLE: 0.65,
+    EvidenceLevel.POSSIBLE: 0.4,
+    EvidenceLevel.UNKNOWN: None,
+}
+
+
+@dataclass(frozen=True)
+class EvidenceThresholds:
+    """Every number a rule depends on. Built from settings so deployments can tune them."""
+
+    ai_score_high: float = 0.85
+    ai_score_medium: float = 0.6
+    fingerprint_near_threshold: int = 10
+    text_near_threshold: float = 0.5
+    language_probable_confidence: float = 0.9
+    # Independent forensic families needed for docs/07 "multiple independent anomalies".
+    forensic_families_for_strong: int = 2
+
+    @classmethod
+    def from_settings(cls, settings: Settings) -> EvidenceThresholds:
+        return cls(
+            ai_score_high=settings.ai_score_high,
+            ai_score_medium=settings.ai_score_medium,
+            fingerprint_near_threshold=settings.fingerprint_near_threshold,
+            text_near_threshold=settings.text_near_threshold,
+            language_probable_confidence=settings.language_probable_confidence,
+            forensic_families_for_strong=settings.forensic_families_for_strong,
+        )
+
+
+@dataclass(frozen=True)
+class EvidenceDraft:
+    rule: str  # stable rule id, e.g. "provenance.valid"
+    category: str
+    level: str
+    kind: Kind
+    claim: str
+    source: str
+    confidence: float | None = None
+    limitation: str | None = None
+    detail: str | None = None
+    # Pointers to raw observations: "step:<name>", "provider_call:<id>", "row:<table>".
+    refs: list[str] = field(default_factory=list)
+    provider_version: str | None = None
+    data: dict[str, Any] = field(default_factory=dict)
+    conflicts_with: list[str] = field(default_factory=list)
+
+    def details_json(self) -> dict[str, Any]:
+        """Everything except the columns of the ``evidence`` table, for the ``details`` JSON."""
+        return {
+            "rule": self.rule,
+            "kind": self.kind,
+            "limitation": self.limitation,
+            "detail": self.detail,
+            "refs": list(self.refs),
+            "provider_version": self.provider_version,
+            "conflicts_with": list(self.conflicts_with),
+            "engine_version": ENGINE_VERSION,
+            **({"data": self.data} if self.data else {}),
+        }
+
+
+@dataclass
+class Observations:
+    """Everything the engine may look at for one analysis. ``None`` = subsystem did not run."""
+
+    analysis_type: str
+    file: Any | None = None
+    metadata: Any | None = None
+    provenance: Any | None = None
+    fingerprints: Any | None = None
+    # (other_analysis_id, relation, score) from the account-level similarity lookup.
+    similar_images: Sequence[tuple[Any, str, int]] = ()
+    text: Any | None = None
+    text_fingerprints: Any | None = None
+    similar_texts: Sequence[tuple[Any, str, float]] = ()
+    ai: Any | None = None
+    search_run: Any | None = None
+    search_matches: Sequence[Any] = ()
+    forensics: Any | None = None
+    provider_calls: Sequence[Any] = ()
+
+
+def _fmt(value: Any) -> str:
+    return "?" if value is None else str(value)
+
+
+def _conf(level: str) -> float | None:
+    return LEVEL_CONFIDENCE[level]
+
+
+def _call_refs(calls: Sequence[Any], operation_prefix: str) -> list[str]:
+    return [f"provider_call:{c.id}" for c in calls if str(c.operation).startswith(operation_prefix)]
+
+
+# -- rule groups --------------------------------------------------------------------------------
+
+
+def _file_rules(o: Observations) -> list[EvidenceDraft]:
+    f = o.file
+    if f is None:
+        return []
+    if o.analysis_type == "text":
+        return [
+            EvidenceDraft(
+                rule="file.identity",
+                category="file",
+                level=EvidenceLevel.VERIFIED,
+                kind="fact",
+                claim=f"The submitted text is {f.size_bytes or '?'} bytes of UTF-8 with SHA-256 "
+                f"{f.sha256[:12]}…",
+                source="storage",
+                confidence=1.0,
+                detail="Stored exactly as received; the normalised working copy is hashed "
+                "separately.",
+                refs=["step:validate", "row:analysis_files"],
+                data={"sha256": f.sha256, "size_bytes": f.size_bytes},
+            )
+        ]
+    return [
+        EvidenceDraft(
+            rule="file.identity",
+            category="file",
+            level=EvidenceLevel.VERIFIED,
+            kind="fact",
+            claim=f"The stored file is {f.mime_type or 'of unknown type'}, {f.width or '?'} x "
+            f"{f.height or '?'} px, {f.size_bytes or '?'} bytes, SHA-256 {f.sha256[:12]}…",
+            source="validation",
+            confidence=1.0,
+            detail="Type and dimensions were decoded from the content, not read from the name.",
+            refs=["step:validate", "step:hashing", "row:analysis_files"],
+            data={
+                "sha256": f.sha256,
+                "mime_type": f.mime_type,
+                "width": f.width,
+                "height": f.height,
+                "size_bytes": f.size_bytes,
+            },
+        )
+    ]
+
+
+def _provenance_rules(o: Observations) -> list[EvidenceDraft]:
+    p = o.provenance
+    refs = ["step:provenance", *_call_refs(o.provider_calls, "provenance.")]
+    if p is None:
+        return [
+            EvidenceDraft(
+                rule="provenance.uninspected",
+                category="provenance",
+                level=EvidenceLevel.UNKNOWN,
+                kind="unknown",
+                claim="Content credentials were not inspected.",
+                source="c2pa",
+                limitation="No C2PA engine ran for this analysis.",
+                refs=["step:provenance"],
+            )
+        ]
+    n = p.normalized_json or {}
+    src = f"c2pa/{p.engine}"
+    if not p.has_c2pa:
+        return [
+            EvidenceDraft(
+                rule="provenance.absent",
+                category="provenance",
+                level=EvidenceLevel.UNKNOWN,
+                kind="unknown",
+                claim="No content credentials (C2PA) are embedded in this file.",
+                source=src,
+                limitation="Absence does not establish whether the file was edited or generated; "
+                "most images carry none.",
+                refs=refs,
+                provider_version=p.engine_version,
+            )
+        ]
+    if p.valid_signature:
+        return [
+            EvidenceDraft(
+                rule="provenance.valid",
+                category="provenance",
+                level=EvidenceLevel.VERIFIED,
+                kind="fact",
+                claim="A C2PA manifest is present and its signature validates (issuer as stated: "
+                f"{p.signer or 'unknown'}).",
+                source=src,
+                confidence=1.0,
+                detail=f"Claim generator: {p.claim_generator}." if p.claim_generator else None,
+                limitation="Validity shows the manifest is intact, not that its claims are true; "
+                "issuer trust is not evaluated.",
+                refs=refs,
+                provider_version=p.engine_version,
+                data={
+                    "signer": p.signer,
+                    "signed_at": p.signed_at,
+                    "claim_generator": p.claim_generator,
+                    "actions": n.get("actions") or [],
+                },
+            )
+        ]
+    failures = [str(x.get("code")) for x in (n.get("validation_failures") or []) if x]
+    return [
+        EvidenceDraft(
+            rule="provenance.invalid",
+            category="provenance",
+            level=EvidenceLevel.POSSIBLE,
+            kind="signal",
+            claim="A C2PA manifest is present but validation reported problems.",
+            source=src,
+            confidence=_conf(EvidenceLevel.POSSIBLE),
+            detail=", ".join(failures) or None,
+            limitation="The manifest may be damaged, or the file changed after signing.",
+            refs=refs,
+            provider_version=p.engine_version,
+            data={"validation_failures": failures},
+        )
+    ]
+
+
+def _metadata_rules(o: Observations) -> list[EvidenceDraft]:
+    m = o.metadata
+    if m is None:
+        return [
+            EvidenceDraft(
+                rule="metadata.unavailable",
+                category="metadata",
+                level=EvidenceLevel.UNKNOWN,
+                kind="unknown",
+                claim="Metadata was not extracted.",
+                source="metadata",
+                refs=["step:metadata"],
+            )
+        ]
+    n = m.normalized_json or {}
+    src = f"metadata/{m.engine}"
+    refs = ["step:metadata", "row:image_metadata", *_call_refs(o.provider_calls, "metadata.")]
+    out: list[EvidenceDraft] = []
+    if m.software:
+        out.append(
+            EvidenceDraft(
+                rule="metadata.software",
+                category="metadata",
+                level=EvidenceLevel.STRONG,
+                kind="signal",
+                claim=f'Metadata records the software "{m.software}".',
+                source=src,
+                confidence=_conf(EvidenceLevel.STRONG),
+                limitation="A software tag shows what wrote the metadata, not the full edit "
+                "history; tags can be altered.",
+                refs=refs,
+                provider_version=m.engine_version,
+                data={"software": m.software},
+            )
+        )
+    if m.camera_make or m.camera_model:
+        camera = " ".join(x for x in (m.camera_make, m.camera_model) if x)
+        out.append(
+            EvidenceDraft(
+                rule="metadata.camera",
+                category="metadata",
+                level=EvidenceLevel.POSSIBLE,
+                kind="signal",
+                claim=f'Metadata records the camera "{camera}".',
+                source=src,
+                confidence=_conf(EvidenceLevel.POSSIBLE),
+                limitation="Camera fields are recorded values and can be copied or edited.",
+                refs=refs,
+                provider_version=m.engine_version,
+                data={"camera_make": m.camera_make, "camera_model": m.camera_model},
+            )
+        )
+    captured = n.get("captured_at")
+    if captured and captured.get("raw"):
+        tz = "" if captured.get("tz_known") else " (timezone not recorded)"
+        out.append(
+            EvidenceDraft(
+                rule="metadata.captured",
+                category="metadata",
+                level=EvidenceLevel.POSSIBLE,
+                kind="signal",
+                claim=f"Metadata records a capture time of {captured['raw']}{tz}.",
+                source=src,
+                confidence=_conf(EvidenceLevel.POSSIBLE),
+                limitation="Device clocks and edits can make recorded times wrong.",
+                refs=refs,
+                provider_version=m.engine_version,
+                data={"captured_at": captured},
+            )
+        )
+    if n.get("gps_present"):
+        out.append(
+            EvidenceDraft(
+                rule="metadata.gps",
+                category="metadata",
+                level=EvidenceLevel.POSSIBLE,
+                kind="signal",
+                claim="Metadata contains GPS location fields.",
+                source=src,
+                confidence=_conf(EvidenceLevel.POSSIBLE),
+                limitation="Coordinates are not shown here and can be inaccurate or fabricated.",
+                refs=refs,
+                provider_version=m.engine_version,
+            )
+        )
+    if not (n.get("has_exif") or n.get("has_xmp") or n.get("has_iptc")):
+        out.append(
+            EvidenceDraft(
+                rule="metadata.none",
+                category="metadata",
+                level=EvidenceLevel.UNKNOWN,
+                kind="unknown",
+                claim="No EXIF, XMP or IPTC metadata is present.",
+                source=src,
+                limitation="Missing metadata does not establish editing; many platforms strip "
+                "it on upload.",
+                refs=refs,
+                provider_version=m.engine_version,
+            )
+        )
+    return out
+
+
+def _image_match_rules(o: Observations, t: EvidenceThresholds) -> list[EvidenceDraft]:
+    if o.fingerprints is None:
+        return []
+    exact = [s for s in o.similar_images if s[1] == "exact"]
+    near = [s for s in o.similar_images if s[1] == "near"]
+    out: list[EvidenceDraft] = []
+    refs = ["step:hashing", "row:image_fingerprints"]
+    if exact:
+        out.append(
+            EvidenceDraft(
+                rule="matches.exact",
+                category="matches",
+                level=EvidenceLevel.VERIFIED,
+                kind="fact",
+                claim=f"{len(exact)} of your other analyses contain byte-identical content "
+                "(same SHA-256).",
+                source="fingerprints",
+                confidence=1.0,
+                limitation="Identity of bytes says nothing about which copy came first.",
+                refs=refs,
+                data={"analysis_ids": [str(s[0]) for s in exact]},
+            )
+        )
+    if near:
+        out.append(
+            EvidenceDraft(
+                rule="matches.near",
+                category="matches",
+                level=EvidenceLevel.POSSIBLE,
+                kind="signal",
+                claim=f"{len(near)} of your other analyses look perceptually similar (pHash/dHash "
+                f"within {t.fingerprint_near_threshold} bits).",
+                source="fingerprints",
+                confidence=_conf(EvidenceLevel.POSSIBLE),
+                limitation="Perceptual similarity can come from recompression, resizing or "
+                "unrelated look-alikes.",
+                refs=refs,
+                data={
+                    "analysis_ids": [str(s[0]) for s in near],
+                    "threshold_bits": t.fingerprint_near_threshold,
+                },
+            )
+        )
+    return out
+
+
+def _text_rules(o: Observations, t: EvidenceThresholds) -> list[EvidenceDraft]:
+    tx = o.text
+    if tx is None:
+        return [
+            EvidenceDraft(
+                rule="text.unprocessed",
+                category="text",
+                level=EvidenceLevel.UNKNOWN,
+                kind="unknown",
+                claim="Text statistics are not available.",
+                source="text",
+                refs=["step:normalize", "step:statistics"],
+            )
+        ]
+    out: list[EvidenceDraft] = []
+    st = tx.statistics_json or {}
+    out.append(
+        EvidenceDraft(
+            rule="text.stats",
+            category="text",
+            level=EvidenceLevel.VERIFIED,
+            kind="fact",
+            claim=f"{tx.word_count or 0:,} words, {tx.sentence_count or 0:,} sentences, "
+            f"{tx.paragraph_count or 0:,} paragraphs.",
+            source="statistics",
+            confidence=1.0,
+            detail="Deterministic counts over the normalised text.",
+            refs=["step:statistics", "row:text_analysis"],
+            data={
+                "word_count": tx.word_count,
+                "sentence_count": tx.sentence_count,
+                "paragraph_count": tx.paragraph_count,
+            },
+        )
+    )
+    lang = tx.language_json or {}
+    engine = lang.get("engine") or "language"
+    if tx.language:
+        conf = float(tx.language_confidence or 0.0)
+        level = (
+            EvidenceLevel.PROBABLE
+            if conf >= t.language_probable_confidence
+            else EvidenceLevel.POSSIBLE
+        )
+        out.append(
+            EvidenceDraft(
+                rule="text.language",
+                category="text",
+                level=level,
+                kind="signal",
+                claim=f'The text is most likely written in "{tx.language}" (p≈{conf:.2f}).',
+                source=f"language/{engine}",
+                confidence=round(conf, 4),
+                limitation="Statistical detection; short or mixed-language texts are often "
+                "misclassified.",
+                refs=["step:language", "row:text_analysis"],
+                data={"language": tx.language, "confidence": conf},
+            )
+        )
+    else:
+        out.append(
+            EvidenceDraft(
+                rule="text.language.unknown",
+                category="text",
+                level=EvidenceLevel.UNKNOWN,
+                kind="unknown",
+                claim="The language could not be determined.",
+                source="language",
+                limitation=lang.get("reason"),
+                refs=["step:language"],
+            )
+        )
+    norm = tx.normalization_json or {}
+    hidden = sum(
+        int(norm.get(k) or 0)
+        for k in ("zero_width_removed", "bidi_controls_removed", "control_chars_removed")
+    )
+    if hidden > 0:
+        out.append(
+            EvidenceDraft(
+                rule="text.hidden",
+                category="text",
+                level=EvidenceLevel.POSSIBLE,
+                kind="signal",
+                claim=f"{hidden} hidden or control characters were present in the original text.",
+                source="normalize",
+                confidence=_conf(EvidenceLevel.POSSIBLE),
+                limitation="Such characters can come from ordinary copy-paste, but also from "
+                "watermarking or obfuscation.",
+                refs=["step:normalize", "row:text_analysis"],
+                data={"hidden_characters": hidden},
+            )
+        )
+    repeated = int(st.get("repeated_sentence_count") or 0)
+    if repeated > 0:
+        out.append(
+            EvidenceDraft(
+                rule="text.repetition",
+                category="text",
+                level=EvidenceLevel.POSSIBLE,
+                kind="signal",
+                claim=f"{repeated} sentence(s) are repeated verbatim.",
+                source="statistics",
+                confidence=_conf(EvidenceLevel.POSSIBLE),
+                limitation="Repetition is a stylistic observation, not evidence of machine "
+                "authorship.",
+                refs=["step:statistics", "row:text_analysis"],
+                data={"repeated_sentence_count": repeated},
+            )
+        )
+    return out
+
+
+def _text_match_rules(o: Observations, t: EvidenceThresholds) -> list[EvidenceDraft]:
+    if o.text_fingerprints is None:
+        return []
+    identical = [s for s in o.similar_texts if s[1] != "near"]
+    near = [s for s in o.similar_texts if s[1] == "near"]
+    refs = ["step:fingerprints", "row:text_fingerprints"]
+    out: list[EvidenceDraft] = []
+    if identical:
+        out.append(
+            EvidenceDraft(
+                rule="matches.text.identical",
+                category="matches",
+                level=EvidenceLevel.VERIFIED,
+                kind="fact",
+                claim=f"{len(identical)} of your other text analyses contain the same text "
+                "(identical bytes, or identical after normalisation / ignoring case and "
+                "punctuation).",
+                source="fingerprints",
+                confidence=1.0,
+                limitation="Identity says nothing about which copy came first.",
+                refs=refs,
+                data={"analysis_ids": [str(s[0]) for s in identical]},
+            )
+        )
+    if near:
+        out.append(
+            EvidenceDraft(
+                rule="matches.text.near",
+                category="matches",
+                level=EvidenceLevel.POSSIBLE,
+                kind="signal",
+                claim=f"{len(near)} of your other text analyses share many 5-word sequences "
+                f"(estimated Jaccard ≥ {t.text_near_threshold:.2f}).",
+                source="fingerprints",
+                confidence=_conf(EvidenceLevel.POSSIBLE),
+                limitation="Shared phrasing can come from quotation, templates or common idiom, "
+                "not only copying.",
+                refs=refs,
+                data={
+                    "analysis_ids": [str(s[0]) for s in near],
+                    "threshold": t.text_near_threshold,
+                },
+            )
+        )
+    return out
+
+
+def ai_level(score: float | None, *, calibrated: bool, t: EvidenceThresholds) -> str:
+    """docs/07: a *calibrated* high score is PROBABLE; uncalibrated high and medium are POSSIBLE."""
+    if score is None:
+        return EvidenceLevel.UNKNOWN
+    if score >= t.ai_score_high:
+        return EvidenceLevel.PROBABLE if calibrated else EvidenceLevel.POSSIBLE
+    if score >= t.ai_score_medium:
+        return EvidenceLevel.POSSIBLE
+    return EvidenceLevel.UNKNOWN
+
+
+def _ai_rules(o: Observations, t: EvidenceThresholds) -> list[EvidenceDraft]:
+    ai = o.ai
+    if ai is None:
+        return [
+            EvidenceDraft(
+                rule="ai.unavailable",
+                category="ai",
+                level=EvidenceLevel.UNKNOWN,
+                kind="unknown",
+                claim="AI-generation signals were not evaluated.",
+                source="ai-detector",
+                limitation="No detector is configured. Detector output is never proof of "
+                "authorship.",
+                refs=["step:ai"],
+            )
+        ]
+    src = f"ai/{ai.provider}:{ai.model}@{ai.provider_version}"
+    refs = ["step:ai", "row:ai_detections", *_call_refs(o.provider_calls, "ai.")]
+    if ai.score is None:
+        return [
+            EvidenceDraft(
+                rule="ai.noscore",
+                category="ai",
+                level=EvidenceLevel.UNKNOWN,
+                kind="unknown",
+                claim="The AI detector returned no usable score.",
+                source=src,
+                refs=refs,
+                provider_version=ai.provider_version,
+            )
+        ]
+    level = ai_level(ai.score, calibrated=bool(ai.calibrated), t=t)
+    pct = round(ai.score * 100)
+    data = {
+        "score": ai.score,
+        "label": ai.label,
+        "calibrated": bool(ai.calibrated),
+        "thresholds": {"high": t.ai_score_high, "medium": t.ai_score_medium},
+    }
+    if level == EvidenceLevel.UNKNOWN:
+        return [
+            EvidenceDraft(
+                rule="ai.weak",
+                category="ai",
+                level=level,
+                kind="signal",
+                claim=f"The AI detector reported a weak signal ({pct}/100, below the medium "
+                "threshold).",
+                source=src,
+                confidence=round(float(ai.score), 4),
+                limitation="A low score does not establish human authorship; detectors miss "
+                "much AI text and imagery.",
+                refs=refs,
+                provider_version=ai.provider_version,
+                data=data,
+            )
+        ]
+    strength = "strong" if ai.score >= t.ai_score_high else "medium"
+    if ai.calibrated:
+        limitation = (
+            "Detector scores have known false-positive and false-negative rates; this is not "
+            "proof of AI authorship."
+        )
+    else:
+        limitation = (
+            "The score is not calibrated, so a high value is treated as POSSIBLE rather than "
+            "PROBABLE; detector output is never proof of AI authorship."
+        )
+    return [
+        EvidenceDraft(
+            rule="ai.signal",
+            category="ai",
+            level=level,
+            kind="signal",
+            claim=f"The AI detector reported a {strength} AI-generation signal ({pct}/100).",
+            source=src,
+            confidence=round(float(ai.score), 4),
+            limitation=limitation,
+            refs=refs,
+            provider_version=ai.provider_version,
+            data=data,
+        )
+    ]
+
+
+def _source_rules(o: Observations) -> list[EvidenceDraft]:
+    kind = "reverse-image" if o.analysis_type == "image" else "phrase"
+    run = o.search_run
+    if run is None:
+        return [
+            EvidenceDraft(
+                rule="sources.unavailable",
+                category="sources",
+                level=EvidenceLevel.UNKNOWN,
+                kind="unknown",
+                claim=f"No {kind} search was performed.",
+                source="search",
+                limitation="No source-search provider is configured.",
+                refs=["step:search"],
+            )
+        ]
+    src = f"search/{run.provider}@{run.provider_version}"
+    refs = ["step:search", "row:source_search_runs", *_call_refs(o.provider_calls, "search.")]
+    matches = list(o.search_matches)
+    if not matches:
+        return [
+            EvidenceDraft(
+                rule="sources.none",
+                category="sources",
+                level=EvidenceLevel.UNKNOWN,
+                kind="unknown",
+                claim=f"The {kind} search returned no matches.",
+                source=src,
+                limitation="The provider's index is not the whole web; no matches is not "
+                "evidence of originality.",
+                refs=refs,
+                provider_version=run.provider_version,
+            )
+        ]
+    dated = sum(1 for m in matches if m.published_at)
+    noun = "source" if len(matches) == 1 else "sources"
+    dated_note = f" ({dated} with a reported date)" if dated else ""
+    limitation = (
+        "Shared wording can come from quotation, common phrasing or the same upstream source; "
+        "a phrase match is not plagiarism."
+        if kind == "phrase"
+        else "A reverse-image hit shows where similar content was found, not where it came "
+        "from or which copy is earlier."
+    )
+    return [
+        EvidenceDraft(
+            rule="sources.matches",
+            category="sources",
+            level=EvidenceLevel.POSSIBLE,
+            kind="signal",
+            claim=f"The {kind} search found {len(matches)} similar {noun}{dated_note}.",
+            source=src,
+            confidence=_conf(EvidenceLevel.POSSIBLE),
+            limitation=limitation,
+            refs=refs,
+            provider_version=run.provider_version,
+            data={
+                "match_count": len(matches),
+                "dated": dated,
+                "urls": [m.url for m in matches[:10]],
+            },
+        )
+    ]
+
+
+def _forensic_rules(o: Observations, t: EvidenceThresholds) -> list[EvidenceDraft]:
+    f = o.forensics
+    if f is None:
+        return [
+            EvidenceDraft(
+                rule="forensics.unavailable",
+                category="forensics",
+                level=EvidenceLevel.UNKNOWN,
+                kind="unknown",
+                claim="Forensic analysis was not run.",
+                source="forensics",
+                refs=["step:ela"],
+            )
+        ]
+    out: list[EvidenceDraft] = []
+    families: list[str] = []
+
+    def method(name: str) -> dict[str, Any] | None:
+        j = getattr(f, f"{name}_json", None)
+        return j if isinstance(j, dict) else None
+
+    def applicable(j: dict[str, Any] | None) -> dict[str, Any] | None:
+        return j if j and j.get("applicable") else None
+
+    # -- ELA --------------------------------------------------------------------------------
+    ela_raw = method("ela")
+    ela = applicable(ela_raw)
+    if ela_raw and not ela:
+        out.append(
+            EvidenceDraft(
+                rule="forensics.ela.na",
+                category="forensics",
+                level=EvidenceLevel.UNKNOWN,
+                kind="unknown",
+                claim="Error Level Analysis is not applicable to this file format.",
+                source="ela",
+                detail=ela_raw.get("reason"),
+                refs=["step:ela", "row:image_forensics"],
+            )
+        )
+    elif ela and ela.get("anomaly"):
+        regions = ela.get("regions") or []
+        r = regions[0] if regions else None
+        out.append(
+            EvidenceDraft(
+                rule="forensics.ela.anomaly",
+                category="forensics",
+                level=EvidenceLevel.POSSIBLE,
+                kind="signal",
+                claim=f"ELA shows {len(regions)} localised region(s) re-compressing differently "
+                "from the rest of the image.",
+                source="ela",
+                confidence=_conf(EvidenceLevel.POSSIBLE),
+                detail=(
+                    f"Largest region at ({r['x']}, {r['y']}), {r['width']} x {r['height']} px; "
+                    f"{float(ela.get('outlier_block_fraction') or 0) * 100:.1f}% of blocks are "
+                    "outliers."
+                    if r
+                    else None
+                ),
+                limitation="ELA is a heuristic: sharp detail, text and saturated colour produce "
+                "the same pattern. This is not proof of editing.",
+                refs=["step:ela", "row:image_forensics"],
+                provider_version=ela.get("version"),
+                data={"regions": regions, "family": "error-level/compression"},
+            )
+        )
+    elif ela:
+        out.append(
+            EvidenceDraft(
+                rule="forensics.ela.none",
+                category="forensics",
+                level=EvidenceLevel.UNKNOWN,
+                kind="signal",
+                claim="ELA found no localised error-level pattern.",
+                source="ela",
+                detail=ela.get("observation"),
+                limitation="Absence of an ELA pattern is not evidence of no editing; whole-image "
+                "resaves and same-quality edits leave no trace.",
+                refs=["step:ela", "row:image_forensics"],
+                provider_version=ela.get("version"),
+            )
+        )
+
+    # -- compression (same family as ELA) -----------------------------------------------------
+    c = applicable(method("compression"))
+    if c:
+        grid = c.get("grid") or {}
+        enc = c.get("encoding")
+        refs = ["step:compression", "row:image_forensics"]
+        if c.get("anomaly"):
+            out.append(
+                EvidenceDraft(
+                    rule="forensics.compression.offset-grid",
+                    category="forensics",
+                    level=EvidenceLevel.POSSIBLE,
+                    kind="signal",
+                    claim=f"A second JPEG block grid offset by ({grid.get('offset_x')}, "
+                    f"{grid.get('offset_y')}) px is detectable.",
+                    source="compression",
+                    confidence=_conf(EvidenceLevel.POSSIBLE),
+                    detail="Consistent with cropping or shifting after an earlier JPEG save, then "
+                    "saving again. Repeating texture can produce the same pattern.",
+                    limitation="Correlated with ELA; not an independent indicator. Crop-and-resave "
+                    "is a routine, legitimate workflow.",
+                    refs=refs,
+                    provider_version=c.get("version"),
+                    data={"grid": grid, "family": "error-level/compression"},
+                )
+            )
+        elif c.get("prior_jpeg_grid"):
+            out.append(
+                EvidenceDraft(
+                    rule="forensics.compression.prior-jpeg",
+                    category="forensics",
+                    level=EvidenceLevel.POSSIBLE,
+                    kind="signal",
+                    claim=f"This {c.get('format')} file carries an 8x8 JPEG-style block grid.",
+                    source="compression",
+                    confidence=_conf(EvidenceLevel.POSSIBLE),
+                    detail="The content was probably JPEG-compressed before being saved in its "
+                    "current format.",
+                    limitation="Says something about the file's history, not about editing. "
+                    "Scaling or texture can mimic a grid.",
+                    refs=refs,
+                    provider_version=c.get("version"),
+                    data={"grid": grid, "format": c.get("format")},
+                )
+            )
+        elif enc:
+            out.append(
+                EvidenceDraft(
+                    rule="forensics.compression.encoding",
+                    category="forensics",
+                    level=EvidenceLevel.UNKNOWN,
+                    kind="signal",
+                    claim="Last saved as a "
+                    f"{'progressive' if enc.get('progressive') else 'baseline'} JPEG, "
+                    f"{enc.get('subsampling') or 'unknown'} subsampling, "
+                    f"{'standard' if enc.get('standard_tables') else 'custom'} tables at "
+                    f"quality ≈ {_fmt(enc.get('estimated_quality'))}.",
+                    source="compression",
+                    detail="Encoder settings of the most recent save. They do not indicate "
+                    "editing.",
+                    refs=refs,
+                    provider_version=c.get("version"),
+                    data={"encoding": enc},
+                )
+            )
+        else:
+            out.append(
+                EvidenceDraft(
+                    rule="forensics.compression.none",
+                    category="forensics",
+                    level=EvidenceLevel.UNKNOWN,
+                    kind="signal",
+                    claim=f"{c.get('format')} container; no JPEG block grid stands out.",
+                    source="compression",
+                    detail=c.get("observation"),
+                    refs=refs,
+                    provider_version=c.get("version"),
+                )
+            )
+    if (ela and ela.get("anomaly")) or (c and c.get("anomaly")):
+        families.append("error-level/compression")
+
+    # -- resampling (processing history; never an anomaly) -------------------------------------
+    r = applicable(method("resampling"))
+    if r:
+        refs = ["step:resampling", "row:image_forensics"]
+        if r.get("detected"):
+            peaks = r.get("peaks") or []
+            p = peaks[0] if peaks else None
+            out.append(
+                EvidenceDraft(
+                    rule="forensics.resampling.detected",
+                    category="forensics",
+                    level=EvidenceLevel.POSSIBLE,
+                    kind="signal",
+                    claim="Periodic pixel correlations consistent with the picture having been "
+                    "rescaled or rotated.",
+                    source="resampling",
+                    confidence=_conf(EvidenceLevel.POSSIBLE),
+                    detail=(
+                        f"{len(peaks)} spectral peak(s); strongest {p['ratio']}x its surroundings "
+                        f"at ({p['fx']}, {p['fy']}) cycles/px."
+                        if p
+                        else None
+                    ),
+                    limitation="Resizing for the web or by a camera pipeline leaves the same "
+                    "trace. This says the image was resampled at some point, not that it was "
+                    "edited.",
+                    refs=refs,
+                    provider_version=r.get("version"),
+                    data={"peaks": peaks},
+                )
+            )
+        elif r.get("measured"):
+            out.append(
+                EvidenceDraft(
+                    rule="forensics.resampling.none",
+                    category="forensics",
+                    level=EvidenceLevel.UNKNOWN,
+                    kind="signal",
+                    claim="No global resampling trace stands out.",
+                    source="resampling",
+                    detail=r.get("observation"),
+                    limitation="Downscaling, strong compression and some scale factors leave no "
+                    "detectable trace.",
+                    refs=refs,
+                    provider_version=r.get("version"),
+                )
+            )
+        else:
+            out.append(
+                EvidenceDraft(
+                    rule="forensics.resampling.unmeasured",
+                    category="forensics",
+                    level=EvidenceLevel.UNKNOWN,
+                    kind="unknown",
+                    claim="The image is too small for a resampling measurement.",
+                    source="resampling",
+                    refs=refs,
+                )
+            )
+
+    # -- noise (independent family) ------------------------------------------------------------
+    n = applicable(method("noise"))
+    if n:
+        refs = ["step:noise", "row:image_forensics"]
+        if n.get("anomaly"):
+            regions = n.get("regions") or []
+            reg = regions[0] if regions else None
+            out.append(
+                EvidenceDraft(
+                    rule="forensics.noise.anomaly",
+                    category="forensics",
+                    level=EvidenceLevel.POSSIBLE,
+                    kind="signal",
+                    claim=f"Noise level differs from the rest of the image in {len(regions)} "
+                    "compact region(s).",
+                    source="noise",
+                    confidence=_conf(EvidenceLevel.POSSIBLE),
+                    detail=(
+                        f"Baseline about {n.get('baseline_sigma')} grey levels; largest region at "
+                        f"({reg['x']}, {reg['y']}), {reg['width']} x {reg['height']} px, about "
+                        f"{reg['sigma']}."
+                        if reg
+                        else None
+                    ),
+                    limitation="Depth of field, sky versus foliage and in-camera denoising produce "
+                    "the same differences. Not proof of editing.",
+                    refs=refs,
+                    provider_version=n.get("version"),
+                    data={"regions": regions, "family": "noise"},
+                )
+            )
+            families.append("noise")
+        elif n.get("measured") and int(n.get("blocks_smooth") or 0) > 0:
+            out.append(
+                EvidenceDraft(
+                    rule="forensics.noise.consistent",
+                    category="forensics",
+                    level=EvidenceLevel.UNKNOWN,
+                    kind="signal",
+                    claim="Noise level is consistent across the smooth areas that could be "
+                    "compared.",
+                    source="noise",
+                    detail=n.get("observation"),
+                    limitation="Only smooth areas are compared; strong compression flattens noise "
+                    "and hides differences.",
+                    refs=refs,
+                    provider_version=n.get("version"),
+                )
+            )
+        else:
+            out.append(
+                EvidenceDraft(
+                    rule="forensics.noise.unmeasured",
+                    category="forensics",
+                    level=EvidenceLevel.UNKNOWN,
+                    kind="unknown",
+                    claim="Noise consistency could not be measured.",
+                    source="noise",
+                    detail=n.get("observation"),
+                    refs=refs,
+                )
+            )
+
+    # -- copy-move (independent family) --------------------------------------------------------
+    cm = applicable(method("copy_move"))
+    if cm:
+        refs = ["step:copy_move", "row:image_forensics"]
+        if cm.get("detected"):
+            matches = cm.get("matches") or []
+            m = matches[0] if matches else None
+            out.append(
+                EvidenceDraft(
+                    rule="forensics.copy-move.detected",
+                    category="forensics",
+                    level=EvidenceLevel.POSSIBLE,
+                    kind="signal",
+                    claim=f"{len(matches)} region(s) of the image reappear elsewhere in the same "
+                    "image, shifted by a constant offset.",
+                    source="copy_move",
+                    confidence=_conf(EvidenceLevel.POSSIBLE),
+                    detail=(
+                        f"Largest: {m['width']} x {m['height']} px at ({m['source_x']}, "
+                        f"{m['source_y']}) reappears at ({m['target_x']}, {m['target_y']}); "
+                        f"{m['pairs']} matching block pairs."
+                        if m
+                        else None
+                    ),
+                    limitation="Tiles, brickwork, text and identical products repeat "
+                    "legitimately. Consistent with cloning, not proof of it.",
+                    refs=refs,
+                    provider_version=cm.get("version"),
+                    data={"matches": matches, "family": "copy-move"},
+                )
+            )
+            families.append("copy-move")
+        elif cm.get("measured"):
+            out.append(
+                EvidenceDraft(
+                    rule="forensics.copy-move.none",
+                    category="forensics",
+                    level=EvidenceLevel.UNKNOWN,
+                    kind="signal",
+                    claim="No translated duplicate regions were found.",
+                    source="copy_move",
+                    detail=cm.get("observation"),
+                    limitation="Rotated, scaled or retouched copies and clones inside flat areas "
+                    "are not detected.",
+                    refs=refs,
+                    provider_version=cm.get("version"),
+                )
+            )
+        else:
+            out.append(
+                EvidenceDraft(
+                    rule="forensics.copy-move.unmeasured",
+                    category="forensics",
+                    level=EvidenceLevel.UNKNOWN,
+                    kind="unknown",
+                    claim="The image is too small for block matching.",
+                    source="copy_move",
+                    refs=refs,
+                )
+            )
+
+    # -- independence: several independent families -> STRONG ---------------------------------
+    if len(families) >= t.forensic_families_for_strong:
+        out.insert(
+            0,
+            EvidenceDraft(
+                rule="forensics.multiple",
+                category="forensics",
+                level=EvidenceLevel.STRONG,
+                kind="signal",
+                claim=f"{len(families)} independent forensic methods flag anomalies "
+                f"({', '.join(families)}).",
+                source="forensics",
+                confidence=_conf(EvidenceLevel.STRONG),
+                detail="Independent heuristics agreeing raises the weight of the observation. "
+                "Each remains a heuristic with the failure modes listed on its own record.",
+                limitation="Repeated content, depth of field and detail-rich areas can trip more "
+                "than one method on an unedited photo. Strong is not proof.",
+                refs=["row:image_forensics"],
+                data={"families": families, "required": t.forensic_families_for_strong},
+            ),
+        )
+    return out
+
+
+def _conflict_rules(drafts: list[EvidenceDraft]) -> list[EvidenceDraft]:
+    """docs/07: keep both sides, surface the conflict, lower synthesis confidence."""
+    by_rule = {d.rule: d for d in drafts}
+    out: list[EvidenceDraft] = []
+    verified_prov = by_rule.get("provenance.valid")
+    if verified_prov:
+        opposing = [
+            d
+            for d in drafts
+            if d.rule in {"forensics.multiple", "ai.signal"}
+            and d.level in {EvidenceLevel.STRONG, EvidenceLevel.PROBABLE}
+        ]
+        for d in opposing:
+            out.append(
+                EvidenceDraft(
+                    rule=f"conflict.provenance-vs-{d.category}",
+                    category="synthesis",
+                    level=EvidenceLevel.UNKNOWN,
+                    kind="conflict",
+                    claim="Evidence conflicts: an intact, validated C2PA manifest coexists with "
+                    f"a {d.level} {d.category} signal.",
+                    source="evidence-engine",
+                    confidence=None,
+                    detail=f'"{verified_prov.claim}" versus "{d.claim}"',
+                    limitation="Both records are retained. A valid manifest covers what its "
+                    "signer asserted, not everything about the picture; the signal may also be "
+                    "a false positive. Synthesis confidence is lowered accordingly.",
+                    refs=[*verified_prov.refs, *d.refs],
+                    conflicts_with=[verified_prov.rule, d.rule],
+                )
+            )
+    return out
+
+
+def build_evidence(o: Observations, t: EvidenceThresholds) -> list[EvidenceDraft]:
+    """All evidence for one analysis, in report order; deterministic for the same inputs."""
+    drafts: list[EvidenceDraft] = []
+    drafts += _file_rules(o)
+    if o.analysis_type == "image":
+        drafts += _provenance_rules(o)
+        drafts += _metadata_rules(o)
+        drafts += _image_match_rules(o, t)
+        drafts += _forensic_rules(o, t)
+    else:
+        drafts += _text_rules(o, t)
+        drafts += _text_match_rules(o, t)
+    drafts += _ai_rules(o, t)
+    drafts += _source_rules(o)
+    drafts += _conflict_rules(drafts)
+    return drafts
+
+
+def summarise(drafts: Sequence[EvidenceDraft]) -> dict[str, int]:
+    counts = {level.value: 0 for level in EvidenceLevel}
+    for d in drafts:
+        counts[str(d.level)] += 1
+    return counts

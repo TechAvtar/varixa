@@ -91,6 +91,10 @@ class Settings(BaseSettings):
     copy_move_min_matches: int = Field(default=200, ge=10, le=100_000)
     copy_move_min_shift: int = Field(default=32, ge=16, le=1024)
 
+    # Evidence engine (docs/07). Rule thresholds live here, never in the rules themselves.
+    language_probable_confidence: float = Field(default=0.9, ge=0.0, le=1.0)
+    forensic_families_for_strong: int = Field(default=2, ge=1, le=3)
+
     # Persistent provider-result cache (content hash + provider/model/version). 0 disables.
     provider_cache_ttl_hours: int = Field(default=24 * 7, ge=0, le=24 * 365)
 

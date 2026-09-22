@@ -4,7 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, File, Form, Query, UploadFile, status
 
 from app.api.deps import AnalysisSvc, AppSettings, CurrentUser, Jobs, Storage
-from app.enums import AnalysisType
+from app.enums import AnalysisType, EvidenceLevel
 from app.models import Analysis
 from app.providers.storage.base import ObjectNotFoundError
 from app.schemas.ai import AIDetectionResponse
@@ -18,6 +18,7 @@ from app.schemas.analysis import (
     AnalysisResponse,
     AnalysisStepResponse,
 )
+from app.schemas.evidence import EvidenceListResponse, EvidenceRecordResponse
 from app.schemas.fingerprints import (
     FingerprintsResponse,
     ImageFingerprintsResponse,
@@ -41,6 +42,7 @@ from app.schemas.metadata import ImageMetadataResponse, NormalizedMetadataRespon
 from app.schemas.provenance import ImageProvenanceResponse, NormalizedProvenanceResponse
 from app.schemas.provider_calls import ProviderCallResponse, ProviderCallsResponse
 from app.schemas.text import LanguageResponse, TextAnalysisCreate, TextAnalysisResponse
+from app.services.evidence.engine import ENGINE_VERSION, EvidenceThresholds, ai_level
 from app.services.image import ImageTooLargeError
 from app.services.image.provenance import NormalizedProvenance, provenance_limitations
 from app.utils.errors import NotFoundError
@@ -364,14 +366,14 @@ async def get_analysis_ai(
     row = await analyses.get_ai_detection(user, analysis_id)
     if row is None:
         raise NotFoundError("No AI-generation signal was evaluated for this analysis.")
-    if row.score is None:
-        level = "UNKNOWN"
-    elif row.score >= row.threshold_high:
-        level = "PROBABLE"
-    elif row.score >= row.threshold_medium:
-        level = "POSSIBLE"
-    else:
-        level = "UNKNOWN"
+    # Same rule as the evidence engine: a high score is PROBABLE only when calibrated.
+    level = ai_level(
+        row.score,
+        calibrated=row.calibrated,
+        t=EvidenceThresholds(
+            ai_score_high=row.threshold_high, ai_score_medium=row.threshold_medium
+        ),
+    )
     return AIDetectionResponse(
         modality=row.modality,
         provider=row.provider,
@@ -420,6 +422,47 @@ async def get_analysis_matches(
             for m in matches
         ],
         limitations=[str(x) for x in (run.limitations_json or [])],
+    )
+
+
+@router.get("/{analysis_id}/evidence", response_model=EvidenceListResponse)
+async def get_analysis_evidence(
+    analysis_id: uuid.UUID, user: CurrentUser, analyses: AnalysisSvc
+) -> EvidenceListResponse:
+    """Leveled, traceable evidence records produced by the evidence engine (docs/07)."""
+    rows = await analyses.list_evidence(user, analysis_id)
+    if not rows:
+        raise NotFoundError("Evidence has not been generated for this analysis yet.")
+    items: list[EvidenceRecordResponse] = []
+    counts = {level.value: 0 for level in EvidenceLevel}
+    for r in rows:
+        d = r.details or {}
+        counts[r.level] = counts.get(r.level, 0) + 1
+        items.append(
+            EvidenceRecordResponse(
+                id=r.id,
+                rule=str(d.get("rule") or ""),
+                category=r.category,
+                level=EvidenceLevel(r.level),
+                kind=d.get("kind") or "signal",
+                claim=r.claim,
+                source=r.source,
+                confidence=float(r.confidence) if r.confidence is not None else None,
+                detail=d.get("detail"),
+                limitation=d.get("limitation"),
+                refs=[str(x) for x in (d.get("refs") or [])],
+                provider_version=d.get("provider_version"),
+                conflicts_with=[str(x) for x in (d.get("conflicts_with") or [])],
+                data=dict(d.get("data") or {}),
+                created_at=r.created_at,
+            )
+        )
+    return EvidenceListResponse(
+        engine_version=str((rows[0].details or {}).get("engine_version") or ENGINE_VERSION),
+        generated_at=max(r.created_at for r in rows),
+        counts=counts,
+        conflicts=sum(1 for i in items if i.kind == "conflict"),
+        items=items,
     )
 
 

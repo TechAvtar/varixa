@@ -177,6 +177,22 @@ limitations, ...metrics}`). Visualisations are stored as private artifacts under
   least `VERIXA_COPY_MOVE_MIN_SHIFT` px apart is `detected` → POSSIBLE. Translated copies only;
   flat blocks excluded; mask of source/target blocks stored as `copy_move.png`.
 
+### Evidence engine
+
+`services/evidence/engine.py` is a pure rules module: it reads the rows every pipeline step
+persisted (file, metadata, provenance, fingerprints + account-level similarity, text statistics,
+AI detection, source search, forensics, provider calls) and emits `EvidenceDraft` records with a
+stable `rule` id, category, level, kind (`fact` / `signal` / `unknown` / `conflict`), claim,
+source, confidence, limitation and `refs` to the raw observations (`step:`, `provider_call:`,
+`row:`). Levels follow the docs/07 table; thresholds come from `EvidenceThresholds`
+(`VERIXA_AI_SCORE_*`, `VERIXA_FINGERPRINT_NEAR_THRESHOLD`, `VERIXA_TEXT_NEAR_THRESHOLD`,
+`VERIXA_LANGUAGE_PROBABLE_CONFIDENCE`, `VERIXA_FORENSIC_FAMILIES_FOR_STRONG`). Correlated forensic
+signals are grouped into families (ELA + compression; noise; copy-move) so they are never double
+counted, and a valid C2PA manifest coexisting with a STRONG/PROBABLE contrary signal produces an
+explicit `conflict` record that keeps both sides. The `evidence` step runs last in both pipelines
+and replaces the analysis' rows; `GET /analysis/{id}/evidence` returns them and the report uses
+them instead of its client-side preliminary derivation once they exist.
+
 ### Forensics UI
 
 The Forensics tab shows, per method, the observation, the method's design confidence, the

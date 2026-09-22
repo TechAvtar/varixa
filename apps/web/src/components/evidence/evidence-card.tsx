@@ -5,6 +5,7 @@ const KIND_LABEL: Record<EvidenceItem["kind"], string> = {
   fact: "Fact",
   signal: "Signal",
   unknown: "Unknown",
+  conflict: "Conflict",
 };
 
 export function EvidenceCard({ item }: { item: EvidenceItem }) {
@@ -15,10 +16,20 @@ export function EvidenceCard({ item }: { item: EvidenceItem }) {
         <span className="text-xs uppercase tracking-wide text-muted-foreground">
           {KIND_LABEL[item.kind]} · {item.category}
         </span>
+        {item.confidence != null ? (
+          <span className="font-mono text-[11px] text-muted-foreground">
+            conf {item.confidence.toFixed(2)}
+          </span>
+        ) : null}
         <span className="ml-auto font-mono text-[11px] text-muted-foreground">{item.source}</span>
       </div>
       <p className="font-medium">{item.claim}</p>
       {item.detail ? <p className="text-muted-foreground">{item.detail}</p> : null}
+      {item.conflictsWith && item.conflictsWith.length > 0 ? (
+        <p className="text-xs text-muted-foreground">
+          <span className="font-medium">Conflicts:</span> {item.conflictsWith.join(" ↔ ")}
+        </p>
+      ) : null}
       {item.limitation ? (
         <p className="text-xs text-muted-foreground">
           <span className="font-medium">Limitation:</span> {item.limitation}

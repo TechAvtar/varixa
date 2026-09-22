@@ -65,6 +65,12 @@ Every package's `__init__.py` carries a one-line responsibility docstring.
 - Forensic region coordinates are always in *original* pixels (methods that downscale convert
   back); map artifacts are at the method's working size. `forensic-viewer.tsx` relies on both.
 
+## Evidence
+- Levels are assigned only in `services/evidence/engine.py` (docs/07 rules). New observations get a
+  rule there with a stable `rule` id, `refs` to the raw observation and a limitation; never assign a
+  level in a route, a card or an LLM prompt. Thresholds go on `EvidenceThresholds` / `Settings`.
+- Correlated signals share a family (ELA + compression). Conflicts are records, not deletions.
+
 ## Non-negotiables
 - Routes → Services → Repositories/Providers. No provider calls from routes.
 - Every schema change ships with an Alembic migration.

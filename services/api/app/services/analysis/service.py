@@ -16,6 +16,7 @@ from app.models import (
     AIDetection,
     Analysis,
     AnalysisFile,
+    Evidence,
     ImageFingerprints,
     ImageForensics,
     ImageMetadata,
@@ -31,11 +32,11 @@ from app.providers.storage.base import ObjectStorage
 from app.repositories.analysis import AnalysisRepository
 from app.repositories.provider_calls import ProviderCallRepository
 from app.services import storage_keys
+from app.services.analysis.similar import similar_images, similar_texts
 from app.services.authorization import assert_owns_analysis
 from app.services.image import validate_image
-from app.services.image.similarity import SimilarityMatch, compare
+from app.services.image.similarity import SimilarityMatch
 from app.services.image.validation import ImageTooLargeError
-from app.services.text.fingerprints import estimate_jaccard
 from app.utils.errors import ConflictError, NotFoundError, ValidationError
 
 log = logging.getLogger("verixa.analysis")
@@ -196,17 +197,7 @@ class AnalysisService:
         self, user: User, fingerprints: ImageFingerprints
     ) -> list[tuple[Analysis, SimilarityMatch]]:
         """Exact and near duplicates among the *same user's* live analyses, best first."""
-        threshold = self._settings.fingerprint_near_threshold
-        candidates = await self._analyses.list_user_fingerprints(
-            user.id, exclude_analysis_id=fingerprints.analysis_id
-        )
-        matches: list[tuple[Analysis, SimilarityMatch]] = []
-        for other_fp, other_analysis in candidates:
-            match = compare(fingerprints, other_fp, near_threshold=threshold)
-            if match is not None:
-                matches.append((other_analysis, match))
-        matches.sort(key=lambda m: (m[1].score, m[0].created_at), reverse=False)
-        return matches
+        return await similar_images(self._analyses, self._settings, user.id, fingerprints)
 
     async def get_text_fingerprints(
         self, user: User, analysis_id: uuid.UUID
@@ -218,27 +209,7 @@ class AnalysisService:
         self, user: User, fp: TextFingerprints
     ) -> list[tuple[Analysis, str, float]]:
         """(analysis, relation, estimated_jaccard) among the user's live texts, strongest first."""
-        threshold = self._settings.text_near_threshold
-        matches: list[tuple[Analysis, str, float]] = []
-        candidates = await self._analyses.list_user_text_fingerprints(
-            user.id, exclude_analysis_id=fp.analysis_id
-        )
-        for other, analysis in candidates:
-            jaccard = estimate_jaccard(list(fp.minhash_json), list(other.minhash_json))
-            if other.sha256 == fp.sha256:
-                relation = "exact"
-            elif other.normalized_sha256 == fp.normalized_sha256:
-                relation = "normalized"
-            elif other.canonical_sha256 == fp.canonical_sha256:
-                relation = "canonical"
-            elif jaccard >= threshold:
-                relation = "near"
-            else:
-                continue
-            matches.append((analysis, relation, jaccard))
-        rank = {"exact": 0, "normalized": 1, "canonical": 2, "near": 3}
-        matches.sort(key=lambda m: (rank[m[1]], -m[2]))
-        return matches
+        return await similar_texts(self._analyses, self._settings, user.id, fp)
 
     async def get_ai_detection(self, user: User, analysis_id: uuid.UUID) -> AIDetection | None:
         await self.get_owned(user, analysis_id)
@@ -276,6 +247,10 @@ class AnalysisService:
             filename=file.original_filename,
         )
         return url, file
+
+    async def list_evidence(self, user: User, analysis_id: uuid.UUID) -> Sequence[Evidence]:
+        await self.get_owned(user, analysis_id)
+        return await self._analyses.list_evidence(analysis_id)
 
     async def get_forensics(self, user: User, analysis_id: uuid.UUID) -> ImageForensics | None:
         await self.get_owned(user, analysis_id)

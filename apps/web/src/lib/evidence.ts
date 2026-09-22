@@ -2,6 +2,7 @@ import type {
   AIDetectionResponse,
   AnalysisResponse,
   EvidenceLevel,
+  EvidenceListResponse,
   ImageFingerprintsResponse,
   ImageForensicsResponse,
   ImageMetadataResponse,
@@ -18,18 +19,46 @@ import type {
  * traceable records; until then every item is explicitly labelled "preliminary".
  */
 
-export type EvidenceKind = "fact" | "signal" | "unknown";
+export type EvidenceKind = "fact" | "signal" | "unknown" | "conflict";
 
 export interface EvidenceItem {
   id: string;
   category:
-    "file" | "provenance" | "metadata" | "matches" | "ai" | "forensics" | "sources" | "text";
+    | "file"
+    | "provenance"
+    | "metadata"
+    | "matches"
+    | "ai"
+    | "forensics"
+    | "sources"
+    | "text"
+    | "synthesis";
   kind: EvidenceKind;
   level: EvidenceLevel;
   claim: string;
   source: string;
   detail?: string;
   limitation?: string;
+  confidence?: number | null;
+  refs?: string[];
+  conflictsWith?: string[];
+}
+
+/** Records produced by the server-side evidence engine, in the report's item shape. */
+export function fromServerEvidence(list: EvidenceListResponse): EvidenceItem[] {
+  return list.items.map((r) => ({
+    id: r.id,
+    category: (r.category === "synthesis" ? "forensics" : r.category) as EvidenceItem["category"],
+    kind: r.kind,
+    level: r.level,
+    claim: r.claim,
+    source: r.source,
+    detail: r.detail ?? undefined,
+    limitation: r.limitation ?? undefined,
+    confidence: r.confidence,
+    refs: r.refs,
+    conflictsWith: r.conflicts_with,
+  }));
 }
 
 export const LEVEL_STYLES: Record<EvidenceLevel, { label: string; className: string }> = {

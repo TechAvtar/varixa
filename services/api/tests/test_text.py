@@ -121,6 +121,7 @@ async def test_create_text_analysis_runs_pipeline(client: AsyncClient) -> None:
         "fingerprints",
         "ai",
         "search",
+        "evidence",
     ]
     assert all(s["status"] == "completed" for s in detail["steps"][:4])
     assert detail["steps"][4]["status"] == "skipped"  # no detector configured

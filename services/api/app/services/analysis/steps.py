@@ -14,6 +14,7 @@ from app.providers.provenance import (
 from app.providers.storage.base import ObjectNotFoundError
 from app.repositories.analysis import AnalysisRepository
 from app.services.analysis.ai_step import AIDetectionStep
+from app.services.analysis.evidence_step import EvidenceStep
 from app.services.analysis.forensics_steps import (
     CompressionStep,
     CopyMoveStep,
@@ -257,4 +258,5 @@ def image_pipeline_steps() -> list[PipelineStep]:
         CopyMoveStep(),
         AIDetectionStep(),
         SourceSearchStep(),
+        EvidenceStep(),
     ]

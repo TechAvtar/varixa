@@ -11,6 +11,7 @@ from app.models import (
     Analysis,
     AnalysisFile,
     AnalysisStep,
+    Evidence,
     ImageFingerprints,
     ImageForensics,
     ImageMetadata,
@@ -215,6 +216,20 @@ class AnalysisRepository:
         self._session.add(provenance)
         await self._session.flush()
         return provenance
+
+    async def list_evidence(self, analysis_id: uuid.UUID) -> Sequence[Evidence]:
+        stmt = (
+            select(Evidence)
+            .where(Evidence.analysis_id == analysis_id)
+            .order_by(Evidence.created_at, Evidence.id)
+        )
+        return (await self._session.execute(stmt)).scalars().all()
+
+    async def replace_evidence(self, analysis_id: uuid.UUID, rows: list[Evidence]) -> None:
+        """Evidence is derived; a re-run replaces the whole set atomically with the run."""
+        await self._session.execute(delete(Evidence).where(Evidence.analysis_id == analysis_id))
+        self._session.add_all(rows)
+        await self._session.flush()
 
     async def get_forensics(self, analysis_id: uuid.UUID) -> ImageForensics | None:
         stmt = select(ImageForensics).where(ImageForensics.analysis_id == analysis_id)
