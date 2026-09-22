@@ -1,9 +1,14 @@
-import type { AnalysisCounts, AnalysisListResponse } from "@verixa/shared-types";
+import type {
+  AnalysisCounts,
+  AnalysisListResponse,
+  UsagePeriodResponse,
+} from "@verixa/shared-types";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { AnalysesTable } from "@/components/analyses/analyses-table";
 import { EmptyState } from "@/components/empty-state";
 import { StatCard } from "@/components/stat-card";
+import { UsageCard } from "@/components/usage-card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { authedRequest } from "@/lib/auth/session";
@@ -14,9 +19,10 @@ export const dynamic = "force-dynamic";
 const RECENT_LIMIT = 10;
 
 export default async function DashboardPage() {
-  const [counts, recent] = await Promise.all([
+  const [counts, recent, usage] = await Promise.all([
     authedRequest<AnalysisCounts>("/analysis/counts"),
     authedRequest<AnalysisListResponse>(`/analysis?page=1&page_size=${RECENT_LIMIT}`),
+    authedRequest<UsagePeriodResponse>("/usage"),
   ]);
 
   return (
@@ -42,11 +48,11 @@ export default async function DashboardPage() {
             <StatCard label="Total analyses" value={counts.data.total} />
             <StatCard label="Image analyses" value={counts.data.image} />
             <StatCard label="Text analyses" value={counts.data.text} />
-            <StatCard
-              label="Usage"
-              value={counts.data.total}
-              hint="Analyses to date. Plan limits are not enforced yet."
-            />
+            {usage.ok ? (
+              <UsageCard usage={usage.data} />
+            ) : (
+              <StatCard label="Usage" value={counts.data.total} hint={usage.message} />
+            )}
           </div>
         ) : (
           <LoadError what="totals" message={counts.message} requestId={counts.requestId} />

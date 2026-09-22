@@ -14,6 +14,7 @@ from app.providers.storage.base import ObjectStorage
 from app.services.analysis import AnalysisService
 from app.services.auth import AuthService
 from app.services.reports.service import ReportService
+from app.services.usage import UsageService
 from app.utils import security
 from app.utils.errors import UnauthorizedError
 from app.workers import BackgroundTaskDispatcher, Dispatcher
@@ -67,6 +68,13 @@ def get_report_service(
 
 
 ReportSvc = Annotated[ReportService, Depends(get_report_service)]
+
+
+def get_usage_service(session: DbSession, settings: AppSettings) -> UsageService:
+    return UsageService(session, settings)
+
+
+UsageSvc = Annotated[UsageService, Depends(get_usage_service)]
 
 
 def _bearer_token(

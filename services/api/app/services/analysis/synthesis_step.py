@@ -18,6 +18,7 @@ from app.services.evidence.engine import EvidenceThresholds, synthesis_confidenc
 from app.services.provider_calls import ProviderCallRecorder
 from app.services.synthesis.grounding import check_grounding
 from app.services.synthesis.request import build_request
+from app.services.usage import UsageService
 
 
 class SynthesisStep:
@@ -32,6 +33,10 @@ class SynthesisStep:
             synthesizer = build_synthesizer(ctx.settings)
         if synthesizer is None:
             return StepOutcome.skipped("no LLM synthesis provider configured")
+        if await UsageService(ctx.session, ctx.settings).provider_budget_exhausted(
+            ctx.analysis.user_id
+        ):
+            return StepOutcome.skipped("monthly provider budget reached; paid step skipped")
 
         repo = AnalysisRepository(ctx.session)
         aid = ctx.analysis.id

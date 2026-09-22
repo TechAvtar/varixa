@@ -124,6 +124,12 @@ class Settings(BaseSettings):
     analysis_retention_days: int = Field(default=0, ge=0, le=36500)
     retention_sweep_interval_minutes: int = Field(default=60, ge=0, le=24 * 60)
 
+    # Usage limits per user (0 = unlimited): analyses per calendar month, bytes currently held,
+    # and provider cost (USD) per calendar month after which paid steps are skipped.
+    usage_monthly_analysis_limit: int = Field(default=0, ge=0)
+    usage_storage_limit_bytes: int = Field(default=0, ge=0)
+    usage_monthly_provider_cost_limit: float = Field(default=0.0, ge=0.0)
+
     # Persistent provider-result cache (content hash + provider/model/version). 0 disables.
     provider_cache_ttl_hours: int = Field(default=24 * 7, ge=0, le=24 * 365)
 

@@ -15,6 +15,7 @@ from app.repositories.analysis import AnalysisRepository
 from app.services import storage_keys
 from app.services.analysis.pipeline import PipelineContext, StepFailedError, StepOutcome
 from app.services.image import compression, copy_move, ela, noise, resampling
+from app.services.usage import UsageService
 
 ELA_ARTIFACT = "ela.png"
 NOISE_ARTIFACT = "noise.png"
@@ -118,6 +119,9 @@ class NoiseStep:
         if result.visualization_png:
             key = storage_keys.artifact_key(ctx.analysis.user_id, ctx.analysis.id, NOISE_ARTIFACT)
             await ctx.storage.put(key, result.visualization_png, content_type="image/png")
+            await UsageService(ctx.session, ctx.settings).record_storage(
+                ctx.analysis.user_id, len(result.visualization_png)
+            )
             with Image.open(io.BytesIO(result.visualization_png)) as vis:
                 vw, vh = vis.size
             others = [a for a in (row.artifacts_json or []) if a.get("method") != noise.METHOD]
@@ -130,6 +134,7 @@ class NoiseStep:
                     "content_type": "image/png",
                     "width": vw,
                     "height": vh,
+                    "size_bytes": len(result.visualization_png),
                 },
             ]
             await ctx.session.flush()
@@ -160,6 +165,7 @@ def _record_artifact(row: Any, *, name: str, method: str, key: str, png: bytes) 
             "content_type": "image/png",
             "width": vw,
             "height": vh,
+            "size_bytes": len(png),
         },
     ]
 
@@ -193,6 +199,9 @@ class CopyMoveStep:
                 ctx.analysis.user_id, ctx.analysis.id, COPY_MOVE_ARTIFACT
             )
             await ctx.storage.put(key, result.visualization_png, content_type="image/png")
+            await UsageService(ctx.session, ctx.settings).record_storage(
+                ctx.analysis.user_id, len(result.visualization_png)
+            )
             _record_artifact(
                 row,
                 name=COPY_MOVE_ARTIFACT,
@@ -249,6 +258,9 @@ class ELAStep:
 
         key = storage_keys.artifact_key(ctx.analysis.user_id, ctx.analysis.id, ELA_ARTIFACT)
         await ctx.storage.put(key, result.visualization_png, content_type="image/png")
+        await UsageService(ctx.session, ctx.settings).record_storage(
+            ctx.analysis.user_id, len(result.visualization_png)
+        )
         artifact = {
             "name": ELA_ARTIFACT,
             "method": ela.METHOD,
@@ -256,6 +268,7 @@ class ELAStep:
             "content_type": "image/png",
             "width": result.working_width,
             "height": result.working_height,
+            "size_bytes": len(result.visualization_png),
         }
         row = await repo.upsert_forensics(ctx.analysis.id, ela_json=result.to_json())
         others = [a for a in (row.artifacts_json or []) if a.get("method") != ela.METHOD]

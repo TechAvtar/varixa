@@ -80,6 +80,7 @@ export type {
   RawTagGroup,
 } from "./metadata";
 export type { HealthResponse } from "./health";
+export type { UsageHistoryResponse, UsagePeriodResponse } from "./usage";
 export type {
   ReportCreate,
   ReportFileLink,

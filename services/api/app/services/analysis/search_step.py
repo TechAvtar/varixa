@@ -20,6 +20,7 @@ from app.repositories.analysis import AnalysisRepository
 from app.services.analysis.pipeline import PipelineContext, StepFailedError, StepOutcome
 from app.services.provider_calls import ProviderCallRecorder, request_hash
 from app.services.text.phrases import select_distinctive_phrases
+from app.services.usage import UsageService
 
 MAX_MATCHES = 50
 
@@ -35,6 +36,10 @@ class SourceSearchStep:
             result = await self._search_text(ctx)
         if result is None:
             return StepOutcome.skipped("no source search provider configured")
+        if await UsageService(ctx.session, ctx.settings).provider_budget_exhausted(
+            ctx.analysis.user_id
+        ):
+            return StepOutcome.skipped("monthly provider budget reached; paid step skipped")
 
         repo = AnalysisRepository(ctx.session)
         matches = [

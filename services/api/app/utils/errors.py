@@ -39,3 +39,10 @@ class NotFoundError(AppError):
 class ConflictError(AppError):
     status_code = 409
     code = "CONFLICT"
+
+
+class LimitExceededError(AppError):
+    """A configured usage limit would be exceeded (monthly count, storage, provider budget)."""
+
+    status_code = 429
+    code = "USAGE_LIMIT_EXCEEDED"

@@ -29,6 +29,7 @@ from app.services.reports.bundle import ReportBundle, evidence_lines, forensic_m
 from app.services.reports.overview import build_overview
 from app.services.reports.pdf import render_pdf
 from app.services.search.summary import summarize_matches
+from app.services.usage import UsageService
 from app.utils.errors import ConflictError, NotFoundError, ValidationError
 
 log = logging.getLogger("verixa.reports")
@@ -117,6 +118,7 @@ class ReportService:
             report.sha256 = hashlib.sha256(data).hexdigest()
             report.page_count = pages
             report.summary_json = bundle.summary_json()
+            await UsageService(self._db, self._settings).record_report(user.id, len(data))
         except Exception as exc:  # the failure is recorded, never raised as a 500 with details
             log.exception("report rendering failed analysis_id=%s", analysis_id)
             report.status = "failed"

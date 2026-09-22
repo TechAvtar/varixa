@@ -20,6 +20,7 @@ from app.models.synthesis import Synthesis
 from app.models.text_analysis import TextAnalysis
 from app.models.text_fingerprints import TextFingerprints
 from app.models.timeline_event import TimelineEvent
+from app.models.usage import Usage
 from app.models.user import User
 from app.models.user_session import UserSession
 
@@ -43,6 +44,7 @@ __all__ = [
     "TextAnalysis",
     "TextFingerprints",
     "TimelineEvent",
+    "Usage",
     "User",
     "UserSession",
 ]

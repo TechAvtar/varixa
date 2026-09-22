@@ -18,6 +18,7 @@ from app.providers.ai import (
 from app.repositories.analysis import AnalysisRepository
 from app.services.analysis.pipeline import PipelineContext, StepFailedError, StepOutcome
 from app.services.provider_calls import ProviderCallRecorder, request_hash
+from app.services.usage import UsageService
 
 
 class AIDetectionStep:
@@ -32,6 +33,10 @@ class AIDetectionStep:
             detector = build_ai_detector(ctx.settings)
         if detector is None:
             return StepOutcome.skipped("no AI detector configured")
+        if await UsageService(ctx.session, ctx.settings).provider_budget_exhausted(
+            ctx.analysis.user_id
+        ):
+            return StepOutcome.skipped("monthly provider budget reached; paid step skipped")
 
         modality: Modality
         content: bytes | str

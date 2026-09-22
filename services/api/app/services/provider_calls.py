@@ -17,9 +17,11 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.enums import ProviderCallStatus
-from app.models import ProviderCall
+from app.models import Analysis, ProviderCall
 from app.repositories.provider_calls import ProviderCallRepository
+from app.services.usage import UsageService
 
 log = logging.getLogger("verixa.providers")
 
@@ -56,6 +58,7 @@ class CallOutcome:
 
 class ProviderCallRecorder:
     def __init__(self, session: AsyncSession) -> None:
+        self._session = session
         self._repo = ProviderCallRepository(session)
 
     async def record(
@@ -87,6 +90,12 @@ class ProviderCallRecorder:
             error_json=_bounded(error),
         )
         await self._repo.add(row)
+        if analysis_id is not None:
+            owner = await self._session.get(Analysis, analysis_id)
+            if owner is not None:
+                await UsageService(self._session, get_settings()).record_provider_call(
+                    owner.user_id, estimated_cost
+                )
         log.info(
             "provider call analysis_id=%s provider=%s op=%s status=%s latency_ms=%s cost=%s",
             analysis_id,

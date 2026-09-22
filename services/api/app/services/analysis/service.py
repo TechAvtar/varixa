@@ -39,6 +39,7 @@ from app.services.authorization import assert_owns_analysis
 from app.services.image import validate_image
 from app.services.image.similarity import SimilarityMatch
 from app.services.image.validation import ImageTooLargeError
+from app.services.usage import UsageService
 from app.utils.errors import ConflictError, NotFoundError, ValidationError
 
 log = logging.getLogger("verixa.analysis")
@@ -76,6 +77,7 @@ class AnalysisService:
         self._analyses = AnalysisRepository(
             session, retention_hours=settings.raw_content_retention_hours
         )
+        self._usage = UsageService(session, settings)
 
     # -- create / read ------------------------------------------------------------
 
@@ -100,6 +102,7 @@ class AnalysisService:
             max_bytes=self._settings.max_upload_bytes,
             max_pixels=self._settings.max_image_pixels,
         )
+        await self._usage.assert_can_create(user.id, incoming_bytes=image.size_bytes)
         safe_name = _clean_filename(filename)
         analysis = Analysis(
             user_id=user.id,
@@ -129,6 +132,9 @@ class AnalysisService:
                 height=image.height,
             )
         )
+        await self._usage.record_analysis(
+            user.id, analysis_type="image", size_bytes=image.size_bytes
+        )
         await self._db.commit()
         return analysis
 
@@ -141,6 +147,7 @@ class AnalysisService:
                 f"The text exceeds the maximum of {self._settings.max_text_chars:,} characters."
             )
         data = text.encode("utf-8")
+        await self._usage.assert_can_create(user.id, incoming_bytes=len(data))
         sha256 = hashlib.sha256(data).hexdigest()
         first_line = next((ln.strip() for ln in text.splitlines() if ln.strip()), "")
         analysis = Analysis(
@@ -167,6 +174,7 @@ class AnalysisService:
                 sha256=sha256,
             )
         )
+        await self._usage.record_analysis(user.id, analysis_type="text", size_bytes=len(data))
         await self._db.commit()
         return analysis
 

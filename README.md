@@ -208,6 +208,20 @@ conservative, clamped to the rule's docs/07 ceiling so nothing can be overstated
 record. The thresholds in force are recorded in the `evidence` step details and echoed by the
 evidence endpoint.
 
+### Usage and limits
+
+`usage` rows (docs/03) hold per-user, per-calendar-month activity: analyses (image/text),
+reports, provider calls, provider cost (from each audited call's estimate) and bytes uploaded or
+generated. Current storage occupancy is computed from live rows (originals, report files,
+forensic maps with `size_bytes`) so retention and deletion are reflected immediately.
+`GET /usage` returns the current period with the limits in force and what remains;
+`GET /usage/history?months=N` lists past periods. Limits (`0` = unlimited):
+`VERIXA_USAGE_MONTHLY_ANALYSIS_LIMIT` and `VERIXA_USAGE_STORAGE_LIMIT_BYTES` refuse new analyses
+with `429 USAGE_LIMIT_EXCEEDED` / `STORAGE_LIMIT_EXCEEDED`; once
+`VERIXA_USAGE_MONTHLY_PROVIDER_COST_LIMIT` is spent the AI-detector, source-search and LLM steps
+are skipped (recorded as such) while deterministic evidence still runs. The dashboard's Usage card
+shows the meters.
+
 ### Retention and deletion
 
 `services/retention.py` implements docs/09 as four idempotent passes run by the in-process sweeper

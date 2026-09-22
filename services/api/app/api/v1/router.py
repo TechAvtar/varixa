@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.api.v1 import analysis, auth, files, health, reports
+from app.api.v1 import analysis, auth, files, health, reports, usage
 
 api_router = APIRouter()
 api_router.include_router(health.router, tags=["health"])
@@ -10,3 +10,4 @@ api_router.include_router(auth.router, tags=["auth"])
 api_router.include_router(files.router, tags=["files"])
 api_router.include_router(analysis.router, tags=["analysis"])
 api_router.include_router(reports.router, tags=["reports"])
+api_router.include_router(usage.router, tags=["usage"])
