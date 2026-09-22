@@ -3,6 +3,7 @@ import type {
   AnalysisResponse,
   EvidenceLevel,
   EvidenceListResponse,
+  EvidenceRecord,
   ImageFingerprintsResponse,
   ImageForensicsResponse,
   ImageMetadataResponse,
@@ -46,7 +47,11 @@ export interface EvidenceItem {
 
 /** Records produced by the server-side evidence engine, in the report's item shape. */
 export function fromServerEvidence(list: EvidenceListResponse): EvidenceItem[] {
-  return list.items.map((r) => ({
+  return recordsToItems(list.items);
+}
+
+export function recordsToItems(records: EvidenceRecord[]): EvidenceItem[] {
+  return records.map((r) => ({
     id: r.id,
     category: (r.category === "synthesis" ? "forensics" : r.category) as EvidenceItem["category"],
     kind: r.kind,

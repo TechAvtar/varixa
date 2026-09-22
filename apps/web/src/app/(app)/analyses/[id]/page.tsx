@@ -7,9 +7,9 @@ import type {
   ImageForensicsResponse,
   ImageMetadataResponse,
   ImageProvenanceResponse,
+  OverviewResponse,
   ProviderCallsResponse,
   SourceMatchesResponse,
-  SynthesisResponse,
   TextAnalysisResponse,
   TextFingerprintsResponse,
   TimelineResponse,
@@ -26,6 +26,7 @@ import { ELACard } from "@/components/analyses/ela-card";
 import { FingerprintsCard } from "@/components/analyses/fingerprints-card";
 import { ForensicViewer } from "@/components/analyses/forensic-viewer";
 import { ForensicsSummary } from "@/components/analyses/forensics-summary";
+import { MethodologyNotes } from "@/components/analyses/methodology-notes";
 import { MetadataCard } from "@/components/analyses/metadata-card";
 import { NoiseCard } from "@/components/analyses/noise-card";
 import { NotAvailable } from "@/components/analyses/not-available";
@@ -46,7 +47,13 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { authedRequest } from "@/lib/auth/session";
-import { deriveEvidence, type EvidenceItem, fromServerEvidence, summarise } from "@/lib/evidence";
+import {
+  deriveEvidence,
+  type EvidenceItem,
+  fromServerEvidence,
+  recordsToItems,
+  summarise,
+} from "@/lib/evidence";
 import { formatBytes, formatDateTime, formatType } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Analysis · Verixa" };
@@ -93,7 +100,7 @@ export default async function AnalysisPage({
     fileLinkResult,
     evidenceResult,
     timelineResult,
-    synthesisResult,
+    overviewResult,
   ] = await Promise.all([
     isImage ? authedRequest<ImageMetadataResponse>(`/analysis/${id}/metadata`) : null,
     isImage ? authedRequest<ImageProvenanceResponse>(`/analysis/${id}/provenance`) : null,
@@ -109,7 +116,7 @@ export default async function AnalysisPage({
       : null,
     authedRequest<EvidenceListResponse>(`/analysis/${id}/evidence`),
     active === "timeline" ? authedRequest<TimelineResponse>(`/analysis/${id}/timeline`) : null,
-    active === "overview" ? authedRequest<SynthesisResponse>(`/analysis/${id}/synthesis`) : null,
+    active === "overview" ? authedRequest<OverviewResponse>(`/analysis/${id}/overview`) : null,
   ]);
   const md = metadataResult?.ok ? metadataResult.data : null;
   const prov = provenanceResult?.ok ? provenanceResult.data : null;
@@ -124,7 +131,7 @@ export default async function AnalysisPage({
 
   const engine = evidenceResult.ok ? evidenceResult.data : null;
   const timeline = timelineResult?.ok ? timelineResult.data : null;
-  const synthesis = synthesisResult?.ok ? synthesisResult.data : null;
+  const overview = overviewResult?.ok ? overviewResult.data : null;
   const evidence = engine
     ? fromServerEvidence(engine)
     : deriveEvidence(a, md, prov, fp, txt, tfp, ai, sources, forensics);
@@ -215,7 +222,7 @@ export default async function AnalysisPage({
 
       <section role="tabpanel" aria-label={active} className="space-y-6">
         {active === "overview" ? (
-          <Overview a={a} evidence={evidence} text={txt} calls={calls} synthesis={synthesis} />
+          <Overview a={a} evidence={evidence} overview={overview} text={txt} calls={calls} />
         ) : active === "ai" ? (
           <>
             <EvidenceList
@@ -324,34 +331,56 @@ export default async function AnalysisPage({
 function Overview({
   a,
   evidence,
+  overview,
   text,
   calls,
-  synthesis,
 }: {
   a: AnalysisResponse;
   evidence: EvidenceItem[];
+  overview: OverviewResponse | null;
   text: TextAnalysisResponse | null;
   calls: ProviderCallsResponse | null;
-  synthesis: SynthesisResponse | null;
 }) {
-  const facts = evidence.filter((e) => e.kind === "fact");
-  const signals = evidence.filter((e) => e.kind === "signal");
-  const conflicts = evidence.filter((e) => e.kind === "conflict");
-  const unknowns = evidence.filter((e) => e.kind === "unknown");
+  // Server-assembled groups when the report exists; otherwise the client-side preliminary
+  // derivation, grouped by the same rule (level first, conflicts apart).
+  const verified = overview
+    ? recordsToItems(overview.verified)
+    : evidence.filter((e) => e.level === "VERIFIED" && e.kind !== "conflict");
+  const strong = overview
+    ? recordsToItems(overview.strong)
+    : evidence.filter((e) => e.level === "STRONG" && e.kind !== "conflict");
+  const probabilistic = overview
+    ? recordsToItems(overview.probabilistic)
+    : evidence.filter(
+        (e) => (e.level === "PROBABLE" || e.level === "POSSIBLE") && e.kind !== "conflict",
+      );
+  const conflicts = overview
+    ? recordsToItems(overview.conflicts)
+    : evidence.filter((e) => e.kind === "conflict");
+  const unknowns = overview
+    ? recordsToItems(overview.unknown)
+    : evidence.filter((e) => e.level === "UNKNOWN" && e.kind !== "conflict");
+  const synthesis = overview?.synthesis ?? null;
   return (
     <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
       <div className="space-y-6">
         <Group
-          title="Established facts"
-          hint="Directly determined by deterministic or cryptographic checks."
-          items={facts}
-          empty="Nothing has been established yet."
+          title="Verified facts"
+          hint="Directly established by deterministic or cryptographic checks."
+          items={verified}
+          empty="Nothing has been directly verified beyond what processing could establish."
         />
         <Group
-          title="Signals"
-          hint="Recorded values and observations worth weighing. None of these is proof."
-          items={signals}
-          empty="No signals were recorded."
+          title="Strong evidence"
+          hint="Technical observations with meaningful evidentiary value. Still not proof on their own."
+          items={strong}
+          empty="No strong evidence was recorded."
+        />
+        <Group
+          title="Probabilistic signals"
+          hint="Detector scores, heuristics and recorded values worth weighing. None of these is proof."
+          items={probabilistic}
+          empty="No probabilistic signals were recorded."
         />
         <Group
           title="Conflicts"
@@ -380,10 +409,11 @@ function Overview({
         </section>
         <Group
           title="Unknown"
-          hint="What could not be established. Absence of evidence is not evidence."
+          hint="What could not be established, and checks that found nothing. Absence of evidence is not evidence."
           items={unknowns}
           empty="Nothing is unknown."
         />
+        {overview ? <MethodologyNotes data={overview.methodology} /> : null}
       </div>
       <div className="space-y-6">
         <ProcessingSteps steps={a.steps ?? []} />

@@ -95,6 +95,45 @@ export interface SynthesisResponse {
   raw: Record<string, unknown>;
 }
 
+/** Mirrors `app/schemas/overview.py`: the report's first page, assembled server-side. */
+export interface OverviewStep {
+  name: string;
+  status: string;
+  duration_ms: number | null;
+  error_code: string | null;
+}
+
+export interface OverviewEngine {
+  provider: string;
+  model_version: string | null;
+  operations: string[];
+  calls: number;
+  cached: number;
+  failed: number;
+}
+
+export interface OverviewMethodology {
+  level_definitions: Record<string, string>;
+  notes: string[];
+  steps: OverviewStep[];
+  engines: OverviewEngine[];
+  thresholds: Record<string, unknown>;
+}
+
+export interface OverviewResponse {
+  version: string;
+  generated_at: string;
+  counts: Record<string, number>;
+  synthesis_confidence: number;
+  verified: EvidenceRecord[];
+  strong: EvidenceRecord[];
+  probabilistic: EvidenceRecord[];
+  conflicts: EvidenceRecord[];
+  unknown: EvidenceRecord[];
+  synthesis: SynthesisResponse | null;
+  methodology: OverviewMethodology;
+}
+
 export const EVIDENCE_LEVELS: readonly EvidenceLevel[] = [
   "VERIFIED",
   "STRONG",

@@ -208,6 +208,16 @@ conservative, clamped to the rule's docs/07 ceiling so nothing can be overstated
 record. The thresholds in force are recorded in the `evidence` step details and echoed by the
 evidence endpoint.
 
+### Overview
+
+`services/reports/overview.py` assembles the report's first page from stored rows only: evidence
+grouped into verified facts, strong evidence, probabilistic signals (PROBABLE and POSSIBLE),
+conflicts and unknowns (UNKNOWN records, including checks that found nothing); the synthesis when
+one exists; and methodology notes: the evidence-level definitions (docs/07), the steps that ran
+with status and duration, the engines and providers involved with versions and audited call
+counts, the thresholds in force, and the reporting principles. Served by `GET /analysis/{id}/overview`
+and rendered by the Overview tab; the PDF export (T036) renders the same structure.
+
 ### LLM synthesis (explanation layer only)
 
 `providers/llm/` holds the synthesiser adapters (`mock`, `openai` via Chat Completions with a

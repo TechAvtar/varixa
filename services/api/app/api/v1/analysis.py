@@ -1,11 +1,12 @@
 import uuid
+from collections.abc import Sequence
 from typing import Annotated
 
 from fastapi import APIRouter, File, Form, Query, UploadFile, status
 
 from app.api.deps import AnalysisSvc, AppSettings, CurrentUser, Jobs, Storage
 from app.enums import AnalysisType, EvidenceLevel
-from app.models import Analysis
+from app.models import Analysis, Evidence, Synthesis
 from app.providers.llm.base import SECTIONS as _SYNTHESIS_SECTIONS
 from app.providers.storage.base import ObjectNotFoundError
 from app.schemas.ai import AIDetectionResponse
@@ -40,6 +41,12 @@ from app.schemas.forensics import (
 )
 from app.schemas.matches import SourceMatchesResponse, SourceMatchResponse
 from app.schemas.metadata import ImageMetadataResponse, NormalizedMetadataResponse
+from app.schemas.overview import (
+    OverviewEngine,
+    OverviewMethodology,
+    OverviewResponse,
+    OverviewStep,
+)
 from app.schemas.provenance import ImageProvenanceResponse, NormalizedProvenanceResponse
 from app.schemas.provider_calls import ProviderCallResponse, ProviderCallsResponse
 from app.schemas.synthesis import (
@@ -58,6 +65,7 @@ from app.services.evidence.engine import (
 from app.services.evidence.timeline import LIMITATIONS as _TIMELINE_NOTES
 from app.services.image import ImageTooLargeError
 from app.services.image.provenance import NormalizedProvenance, provenance_limitations
+from app.services.reports.overview import OVERVIEW_VERSION, build_overview
 from app.services.synthesis.request import build_request as _build_synthesis_request
 from app.utils.errors import NotFoundError
 
@@ -439,6 +447,27 @@ async def get_analysis_matches(
     )
 
 
+def _evidence_record(r: Evidence) -> EvidenceRecordResponse:
+    d = r.details or {}
+    return EvidenceRecordResponse(
+        id=r.id,
+        rule=str(d.get("rule") or ""),
+        category=r.category,
+        level=EvidenceLevel(r.level),
+        kind=d.get("kind") or "signal",
+        claim=r.claim,
+        source=r.source,
+        confidence=float(r.confidence) if r.confidence is not None else None,
+        detail=d.get("detail"),
+        limitation=d.get("limitation"),
+        refs=[str(x) for x in (d.get("refs") or [])],
+        provider_version=d.get("provider_version"),
+        conflicts_with=[str(x) for x in (d.get("conflicts_with") or [])],
+        data=dict(d.get("data") or {}),
+        created_at=r.created_at,
+    )
+
+
 @router.get("/{analysis_id}/evidence", response_model=EvidenceListResponse)
 async def get_analysis_evidence(
     analysis_id: uuid.UUID, user: CurrentUser, analyses: AnalysisSvc, settings: AppSettings
@@ -451,27 +480,8 @@ async def get_analysis_evidence(
     items: list[EvidenceRecordResponse] = []
     counts = {level.value: 0 for level in EvidenceLevel}
     for r in rows:
-        d = r.details or {}
         counts[r.level] = counts.get(r.level, 0) + 1
-        items.append(
-            EvidenceRecordResponse(
-                id=r.id,
-                rule=str(d.get("rule") or ""),
-                category=r.category,
-                level=EvidenceLevel(r.level),
-                kind=d.get("kind") or "signal",
-                claim=r.claim,
-                source=r.source,
-                confidence=float(r.confidence) if r.confidence is not None else None,
-                detail=d.get("detail"),
-                limitation=d.get("limitation"),
-                refs=[str(x) for x in (d.get("refs") or [])],
-                provider_version=d.get("provider_version"),
-                conflicts_with=[str(x) for x in (d.get("conflicts_with") or [])],
-                data=dict(d.get("data") or {}),
-                created_at=r.created_at,
-            )
-        )
+        items.append(_evidence_record(r))
     return EvidenceListResponse(
         engine_version=str((rows[0].details or {}).get("engine_version") or ENGINE_VERSION),
         generated_at=max(r.created_at for r in rows),
@@ -535,6 +545,10 @@ async def get_analysis_synthesis(
     if row is None:
         raise NotFoundError("No synthesis has been generated for this analysis.")
     evidence = await analyses.list_evidence(user, analysis_id)
+    return _synthesis_response(row, evidence)
+
+
+def _synthesis_response(row: Synthesis, evidence: Sequence[Evidence]) -> SynthesisResponse:
     by_id = {str(e.id): e for e in evidence}
     current_fp = _build_synthesis_request(
         analysis_type="",
@@ -585,6 +599,44 @@ async def get_analysis_synthesis(
         estimated_cost=row.estimated_cost,
         limitations=_SYNTHESIS_NOTES,
         raw=row.raw_json or {},
+    )
+
+
+@router.get("/{analysis_id}/overview", response_model=OverviewResponse)
+async def get_analysis_overview(
+    analysis_id: uuid.UUID, user: CurrentUser, analyses: AnalysisSvc, settings: AppSettings
+) -> OverviewResponse:
+    """The report's first page: grouped evidence, synthesis and methodology from stored rows."""
+    analysis = await analyses.get_owned(user, analysis_id)
+    evidence = await analyses.list_evidence(user, analysis_id)
+    if not evidence:
+        raise NotFoundError("Evidence has not been generated for this analysis yet.")
+    calls, _ = await analyses.list_provider_calls(user, analysis_id)
+    synthesis_row = await analyses.get_synthesis(user, analysis_id)
+    draft = build_overview(
+        evidence_rows=evidence,
+        steps=analysis.steps,
+        provider_calls=calls,
+        thresholds=EvidenceThresholds.from_settings(settings),
+    )
+    return OverviewResponse(
+        version=OVERVIEW_VERSION,
+        generated_at=max(e.created_at for e in evidence),
+        counts=draft.counts,
+        synthesis_confidence=draft.synthesis_confidence,
+        verified=[_evidence_record(r) for r in draft.verified],
+        strong=[_evidence_record(r) for r in draft.strong],
+        probabilistic=[_evidence_record(r) for r in draft.probabilistic],
+        conflicts=[_evidence_record(r) for r in draft.conflicts],
+        unknown=[_evidence_record(r) for r in draft.unknown],
+        synthesis=_synthesis_response(synthesis_row, evidence) if synthesis_row else None,
+        methodology=OverviewMethodology(
+            level_definitions=draft.level_definitions,
+            notes=draft.methodology,
+            steps=[OverviewStep(**s.__dict__) for s in draft.steps],
+            engines=[OverviewEngine(**e.__dict__) for e in draft.engines],
+            thresholds=draft.thresholds,
+        ),
     )
 
 
