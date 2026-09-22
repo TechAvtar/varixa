@@ -19,6 +19,7 @@ dependencies = [
   "defusedxml>=0.7",
   "langdetect>=1.0.9",
   "python-multipart>=0.0.9",
+  "reportlab>=4.2",
 ]
 
 [project.optional-dependencies]
@@ -31,6 +32,7 @@ dev = [
   "ruff>=0.6",
   "mypy>=1.11",
   "boto3-stubs[s3]>=1.35",
+  "types-reportlab>=4.2",
 ]
 
 [build-system]

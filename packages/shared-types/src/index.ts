@@ -81,6 +81,12 @@ export type {
 } from "./metadata";
 export type { HealthResponse } from "./health";
 export type {
+  ReportCreate,
+  ReportFileLink,
+  ReportListResponse,
+  ReportResponse,
+} from "./report";
+export type {
   SourceKind,
   SourceMatch,
   SourceMatchesResponse,

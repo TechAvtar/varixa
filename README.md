@@ -208,6 +208,20 @@ conservative, clamped to the rule's docs/07 ceiling so nothing can be overstated
 record. The thresholds in force are recorded in the `evidence` step details and echoed by the
 evidence endpoint.
 
+### PDF export
+
+`POST /analysis/{id}/report` (`{"format": "pdf"}`) renders a completed analysis with ReportLab
+(`services/reports/pdf.py`) from a `ReportBundle` assembled out of stored rows only
+(`services/reports/service.py`): header and overall evidence summary, the docs/07 summary (LLM
+synthesis when present, then verified / strong / probabilistic / conflicts / unknown), the full
+evidence table, metadata, provenance, AI signal, forensics with the stored maps, matches, timeline,
+and methodology (levels, steps, engines, thresholds, principles). A thumbnail of the original is
+re-encoded for the header; raw uploaded bytes are never embedded. The file is stored under
+`reports/<user>/<analysis>/<report>.pdf`, recorded in `reports` (size, SHA-256, page count,
+summary), listed by `GET /analysis/{id}/reports`, described by `GET /reports/{id}` and fetched
+through the short-lived signed link from `GET /reports/{id}/pdf`. Reports are swept with the
+analysis on delete. The Overview tab has an Export card.
+
 ### Matches
 
 `GET /analysis/{id}/matches` returns every normalised match (URL, title, similarity on the

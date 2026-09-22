@@ -23,6 +23,7 @@ from app.models import (
     TextFingerprints,
     TimelineEvent,
 )
+from app.repositories.reports import ReportRepository
 
 
 class AnalysisRepository:
@@ -72,6 +73,9 @@ class AnalysisRepository:
         for artifact in (forensics.artifacts_json or []) if forensics else []:
             key = artifact.get("object_key")
             if isinstance(key, str) and key not in keys:
+                keys.append(key)
+        for key in await ReportRepository(self._session).list_object_keys(analysis_id):
+            if key not in keys:
                 keys.append(key)
         return keys
 

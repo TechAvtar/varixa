@@ -9,6 +9,8 @@ import type {
   ImageProvenanceResponse,
   OverviewResponse,
   ProviderCallsResponse,
+  ReportFileLink,
+  ReportListResponse,
   SourceMatchesResponse,
   TextAnalysisResponse,
   TextFingerprintsResponse,
@@ -35,6 +37,7 @@ import { ResamplingCard } from "@/components/analyses/resampling-card";
 import { ProviderCallsCard } from "@/components/analyses/provider-calls-card";
 import { ProvenanceCard } from "@/components/analyses/provenance-card";
 import { RawJson } from "@/components/analyses/raw-json";
+import { ReportsCard, type ReportWithLink } from "@/components/analyses/reports-card";
 import { SourceMatchesCard } from "@/components/analyses/source-matches-card";
 import { SynthesisCard } from "@/components/analyses/synthesis-card";
 import { TextFingerprintsCard } from "@/components/analyses/text-fingerprints-card";
@@ -55,6 +58,7 @@ import {
   summarise,
 } from "@/lib/evidence";
 import { formatBytes, formatDateTime, formatType } from "@/lib/format";
+import { createReport } from "./actions";
 
 export const metadata: Metadata = { title: "Analysis · Verixa" };
 export const dynamic = "force-dynamic";
@@ -68,9 +72,12 @@ export default async function AnalysisPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string; report?: string; message?: string }>;
 }) {
-  const [{ id }, { tab }] = await Promise.all([params, searchParams]);
+  const [{ id }, { tab, report: reportOutcome, message: reportMessage }] = await Promise.all([
+    params,
+    searchParams,
+  ]);
   if (!UUID.test(id)) notFound();
   const active: ReportTab = isReportTab(tab) ? tab : "overview";
 
@@ -101,6 +108,7 @@ export default async function AnalysisPage({
     evidenceResult,
     timelineResult,
     overviewResult,
+    reportsResult,
   ] = await Promise.all([
     isImage ? authedRequest<ImageMetadataResponse>(`/analysis/${id}/metadata`) : null,
     isImage ? authedRequest<ImageProvenanceResponse>(`/analysis/${id}/provenance`) : null,
@@ -117,6 +125,7 @@ export default async function AnalysisPage({
     authedRequest<EvidenceListResponse>(`/analysis/${id}/evidence`),
     active === "timeline" ? authedRequest<TimelineResponse>(`/analysis/${id}/timeline`) : null,
     active === "overview" ? authedRequest<OverviewResponse>(`/analysis/${id}/overview`) : null,
+    active === "overview" ? authedRequest<ReportListResponse>(`/analysis/${id}/reports`) : null,
   ]);
   const md = metadataResult?.ok ? metadataResult.data : null;
   const prov = provenanceResult?.ok ? provenanceResult.data : null;
@@ -132,6 +141,20 @@ export default async function AnalysisPage({
   const engine = evidenceResult.ok ? evidenceResult.data : null;
   const timeline = timelineResult?.ok ? timelineResult.data : null;
   const overview = overviewResult?.ok ? overviewResult.data : null;
+  const reportItems = reportsResult?.ok ? reportsResult.data.items : [];
+  const reports: ReportWithLink[] = await Promise.all(
+    reportItems.slice(0, 5).map(async (r) => {
+      if (r.status !== "completed") return { ...r, url: null };
+      const link = await authedRequest<ReportFileLink>(`/reports/${r.id}/pdf`);
+      return { ...r, url: link.ok ? link.data.url : null };
+    }),
+  );
+  const reportError =
+    reportOutcome === "error"
+      ? (reportMessage ?? "The report could not be generated.")
+      : reportOutcome === "failed"
+        ? "Rendering failed; the failure is recorded on the report entry below."
+        : null;
   const evidence = engine
     ? fromServerEvidence(engine)
     : deriveEvidence(a, md, prov, fp, txt, tfp, ai, sources, forensics);
@@ -222,7 +245,16 @@ export default async function AnalysisPage({
 
       <section role="tabpanel" aria-label={active} className="space-y-6">
         {active === "overview" ? (
-          <Overview a={a} evidence={evidence} overview={overview} text={txt} calls={calls} />
+          <Overview
+            a={a}
+            evidence={evidence}
+            overview={overview}
+            text={txt}
+            calls={calls}
+            reports={reports}
+            reportError={reportError}
+            createReportAction={createReport.bind(null, a.id)}
+          />
         ) : active === "ai" ? (
           <>
             <EvidenceList
@@ -334,12 +366,18 @@ function Overview({
   overview,
   text,
   calls,
+  reports,
+  reportError,
+  createReportAction,
 }: {
   a: AnalysisResponse;
   evidence: EvidenceItem[];
   overview: OverviewResponse | null;
   text: TextAnalysisResponse | null;
   calls: ProviderCallsResponse | null;
+  reports: ReportWithLink[];
+  reportError: string | null;
+  createReportAction: (formData: FormData) => Promise<void>;
 }) {
   // Server-assembled groups when the report exists; otherwise the client-side preliminary
   // derivation, grouped by the same rule (level first, conflicts apart).
@@ -416,6 +454,12 @@ function Overview({
         {overview ? <MethodologyNotes data={overview.methodology} /> : null}
       </div>
       <div className="space-y-6">
+        <ReportsCard
+          reports={reports}
+          canExport={a.status === "completed"}
+          action={createReportAction}
+          error={reportError}
+        />
         <ProcessingSteps steps={a.steps ?? []} />
         {a.type === "text" ? <TextStatsCard data={text} /> : null}
         <ProviderCallsCard data={calls} />
