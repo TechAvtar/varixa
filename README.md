@@ -137,6 +137,20 @@ Only then is the original stored (private key `uploads/{user}/{analysis}/{sha256
 analysis row committed; a rejected file leaves no record. `GET /analysis/{id}` returns a `file`
 block with the detected type, size, dimensions and SHA-256.
 
+### Forensics (heuristics)
+
+Forensic methods run as non-critical pipeline steps and write into one `image_forensics` row per
+analysis (one JSON column per method: `{method, version, applicable, observation, confidence,
+limitations, ...metrics}`). Visualisations are stored as private artifacts under
+`artifacts/<user>/<analysis>/` and served through short-lived signed URLs from
+`GET /analysis/{id}/forensics`. Every method is labelled a heuristic and never counts as proof.
+
+- **ELA** (`services/image/ela.py`, JPEG only): re-save at `VERIXA_ELA_QUALITY`, per-pixel error,
+  16 px block statistics, outlier blocks above `VERIXA_ELA_OUTLIER_SIGMA`, connected regions in
+  original pixel coordinates, and an amplified difference map (`ela.png`). A localised pattern
+  is `anomaly: true` and surfaces as POSSIBLE at most (docs/07). Other formats are recorded as
+  not applicable, not as clean.
+
 ### Provider result cache
 
 Repeatable provider results (AI detection, reverse-image and phrase search) are cached in the
@@ -212,6 +226,8 @@ All configuration is via environment variables; see the `.env.example` files. Ne
 | `VERIXA_C2PATOOL_PATH` | API | Explicit c2patool executable |
 | `VERIXA_C2PATOOL_TIMEOUT_SECONDS` | API | Per-run timeout (default 30) |
 | `VERIXA_FINGERPRINT_NEAR_THRESHOLD` | API | Max Hamming distance (bits) on pHash/dHash counted as a near duplicate (default 10) |
+| `VERIXA_ELA_QUALITY` / `VERIXA_ELA_MAX_SIDE` | API | ELA resave quality (default 95) and working-size cap (default 3000 px) |
+| `VERIXA_ELA_OUTLIER_SIGMA` / `VERIXA_ELA_ANOMALY_MIN_FRACTION` / `VERIXA_ELA_ANOMALY_MAX_FRACTION` | API | Outlier threshold and the outlier-block band that counts as localised |
 | `VERIXA_PROVIDER_CACHE_TTL_HOURS` | API | TTL for cached provider results (default 168; 0 disables) |
 | `VERIXA_AI_DETECTOR_PROVIDER` | API | `none` (default) or `mock`; real adapters register under `providers/ai` |
 | `VERIXA_AI_SCORE_HIGH` / `VERIXA_AI_SCORE_MEDIUM` | API | Score thresholds → PROBABLE / POSSIBLE (defaults 0.85 / 0.6) |

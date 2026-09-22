@@ -58,6 +58,10 @@ Every package's `__init__.py` carries a one-line responsibility docstring.
   appended to `image_pipeline_steps()`. Raise `StepFailedError(code, message)` for expected failures;
   put raw observations in the returned `details`; publish objects for later steps via `ctx.artifacts`.
 - Never mark a step completed with fabricated data; return `StepOutcome.skipped(reason)` instead.
+- Forensic methods live in `services/analysis/forensics_steps.py` and write only their own column of
+  the `image_forensics` row via `AnalysisRepository.upsert_forensics`. Generated images go to
+  `storage_keys.artifact_key(...)` and are listed in `artifacts_json` (so deletion sweeps them);
+  clients only ever receive signed URLs.
 
 ## Non-negotiables
 - Routes → Services → Repositories/Providers. No provider calls from routes.

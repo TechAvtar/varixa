@@ -1,5 +1,6 @@
 import uuid
 from collections.abc import Sequence
+from typing import Any
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +12,7 @@ from app.models import (
     AnalysisFile,
     AnalysisStep,
     ImageFingerprints,
+    ImageForensics,
     ImageMetadata,
     ImageProvenance,
     SourceMatch,
@@ -60,8 +62,15 @@ class AnalysisRepository:
         return {row[0]: row[1] for row in (await self._session.execute(stmt)).all()}
 
     async def list_object_keys(self, analysis_id: uuid.UUID) -> list[str]:
+        """Every stored object for the analysis: originals plus generated artifacts."""
         stmt = select(AnalysisFile.object_key).where(AnalysisFile.analysis_id == analysis_id)
-        return list((await self._session.execute(stmt)).scalars().all())
+        keys = list((await self._session.execute(stmt)).scalars().all())
+        forensics = await self.get_forensics(analysis_id)
+        for artifact in (forensics.artifacts_json or []) if forensics else []:
+            key = artifact.get("object_key")
+            if isinstance(key, str) and key not in keys:
+                keys.append(key)
+        return keys
 
     async def add(self, analysis: Analysis) -> Analysis:
         self._session.add(analysis)
@@ -206,6 +215,24 @@ class AnalysisRepository:
         self._session.add(provenance)
         await self._session.flush()
         return provenance
+
+    async def get_forensics(self, analysis_id: uuid.UUID) -> ImageForensics | None:
+        stmt = select(ImageForensics).where(ImageForensics.analysis_id == analysis_id)
+        return (await self._session.execute(stmt)).scalar_one_or_none()
+
+    async def upsert_forensics(self, analysis_id: uuid.UUID, **columns: Any) -> ImageForensics:
+        """Set the given ``*_json`` columns on the analysis' forensics row, creating it if needed.
+
+        Each forensic method owns one column, so re-running one method never discards another's.
+        """
+        row = await self.get_forensics(analysis_id)
+        if row is None:
+            row = ImageForensics(analysis_id=analysis_id)
+            self._session.add(row)
+        for name, value in columns.items():
+            setattr(row, name, value)
+        await self._session.flush()
+        return row
 
     async def replace_metadata(self, metadata: ImageMetadata) -> ImageMetadata:
         """Idempotent: a re-run replaces the previous row for the analysis."""

@@ -2,6 +2,7 @@ import type {
   AIDetectionResponse,
   AnalysisResponse,
   ImageFingerprintsResponse,
+  ImageForensicsResponse,
   ImageMetadataResponse,
   ImageProvenanceResponse,
   ProviderCallsResponse,
@@ -15,6 +16,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AICard } from "@/components/analyses/ai-card";
 import { AnalysisStatusBadge } from "@/components/analyses/analysis-status-badge";
+import { ELACard } from "@/components/analyses/ela-card";
 import { FingerprintsCard } from "@/components/analyses/fingerprints-card";
 import { MetadataCard } from "@/components/analyses/metadata-card";
 import { NotAvailable } from "@/components/analyses/not-available";
@@ -39,7 +41,7 @@ export const metadata: Metadata = { title: "Analysis · Verixa" };
 export const dynamic = "force-dynamic";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const UNAVAILABLE_IMAGE: ReadonlySet<ReportTab> = new Set(["forensics", "timeline"]);
+const UNAVAILABLE_IMAGE: ReadonlySet<ReportTab> = new Set(["timeline"]);
 const UNAVAILABLE_TEXT: ReadonlySet<ReportTab> = new Set([
   "metadata",
   "provenance",
@@ -80,6 +82,7 @@ export default async function AnalysisPage({
     aiResult,
     matchesResult,
     callsResult,
+    forensicsResult,
   ] = await Promise.all([
     isImage ? authedRequest<ImageMetadataResponse>(`/analysis/${id}/metadata`) : null,
     isImage ? authedRequest<ImageProvenanceResponse>(`/analysis/${id}/provenance`) : null,
@@ -89,6 +92,7 @@ export default async function AnalysisPage({
     authedRequest<AIDetectionResponse>(`/analysis/${id}/ai`),
     authedRequest<SourceMatchesResponse>(`/analysis/${id}/matches`),
     authedRequest<ProviderCallsResponse>(`/analysis/${id}/provider-calls`),
+    isImage ? authedRequest<ImageForensicsResponse>(`/analysis/${id}/forensics`) : null,
   ]);
   const md = metadataResult?.ok ? metadataResult.data : null;
   const prov = provenanceResult?.ok ? provenanceResult.data : null;
@@ -98,8 +102,9 @@ export default async function AnalysisPage({
   const ai = aiResult.ok ? aiResult.data : null;
   const sources = matchesResult.ok ? matchesResult.data : null;
   const calls = callsResult.ok ? callsResult.data : null;
+  const forensics = forensicsResult?.ok ? forensicsResult.data : null;
 
-  const evidence = deriveEvidence(a, md, prov, fp, txt, tfp, ai, sources);
+  const evidence = deriveEvidence(a, md, prov, fp, txt, tfp, ai, sources, forensics);
   const counts = summarise(evidence);
   const processing = a.status === "queued" || a.status === "processing";
 
@@ -230,10 +235,26 @@ export default async function AnalysisPage({
             ) : null}
           </>
         ) : active === "forensics" ? (
-          <NotAvailable
-            title="Forensic analysis was not run"
-            description="Error-level analysis, compression, noise, resampling and copy-move heuristics arrive in a later build. Each will carry its own method, observation, confidence and limitations."
-          />
+          <>
+            <EvidenceList
+              items={evidence.filter((e) => e.category === "forensics")}
+              empty="No forensic evidence."
+            />
+            {forensics ? (
+              <>
+                <ELACard data={forensics} />
+                <p className="text-xs text-muted-foreground">
+                  Compression, noise, resampling and copy-move heuristics arrive in later builds.
+                  Nothing is inferred for them in the meantime.
+                </p>
+              </>
+            ) : (
+              <NotAvailable
+                title="Forensic analysis was not run"
+                description="The forensic step did not produce a record for this analysis (still processing, or it failed before writing). Each method carries its own observation, confidence and limitations; nothing is inferred without one."
+              />
+            )}
+          </>
         ) : active === "matches" ? (
           <>
             <EvidenceList

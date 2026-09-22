@@ -14,6 +14,7 @@ from app.providers.provenance import (
 from app.providers.storage.base import ObjectNotFoundError
 from app.repositories.analysis import AnalysisRepository
 from app.services.analysis.ai_step import AIDetectionStep
+from app.services.analysis.forensics_steps import ELAStep
 from app.services.analysis.pipeline import (
     PipelineContext,
     PipelineStep,
@@ -243,6 +244,7 @@ def image_pipeline_steps() -> list[PipelineStep]:
         HashImageStep(),
         ExtractMetadataStep(),
         InspectProvenanceStep(),
+        ELAStep(),
         AIDetectionStep(),
         SourceSearchStep(),
     ]

@@ -6,6 +6,7 @@ import re
 import uuid
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,6 +17,7 @@ from app.models import (
     Analysis,
     AnalysisFile,
     ImageFingerprints,
+    ImageForensics,
     ImageMetadata,
     ImageProvenance,
     ProviderCall,
@@ -261,6 +263,25 @@ class AnalysisService:
     async def get_provenance(self, user: User, analysis_id: uuid.UUID) -> ImageProvenance | None:
         await self.get_owned(user, analysis_id)
         return await self._analyses.get_provenance(analysis_id)
+
+    async def get_forensics(self, user: User, analysis_id: uuid.UUID) -> ImageForensics | None:
+        await self.get_owned(user, analysis_id)
+        return await self._analyses.get_forensics(analysis_id)
+
+    async def forensic_artifact_links(
+        self, forensics: ImageForensics
+    ) -> list[tuple[dict[str, Any], str]]:
+        """Pair each stored artifact with a short-lived signed URL (keys stay internal)."""
+        links: list[tuple[dict[str, Any], str]] = []
+        for artifact in forensics.artifacts_json or []:
+            key = artifact.get("object_key")
+            if not isinstance(key, str):
+                continue
+            url = await self._storage.signed_url(
+                key, ttl_seconds=self._settings.signed_url_ttl_seconds
+            )
+            links.append((artifact, url))
+        return links
 
     async def counts(self, user: User) -> dict[str, int]:
         by_type = await self._analyses.count_by_type_for_user(user.id)

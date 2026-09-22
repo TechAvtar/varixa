@@ -25,6 +25,12 @@ from app.schemas.fingerprints import (
     TextFingerprintsResponse,
     TextFingerprintsValues,
 )
+from app.schemas.forensics import (
+    ELAFindingResponse,
+    ForensicArtifactResponse,
+    ForensicSkipped,
+    ImageForensicsResponse,
+)
 from app.schemas.matches import SourceMatchesResponse, SourceMatchResponse
 from app.schemas.metadata import ImageMetadataResponse, NormalizedMetadataResponse
 from app.schemas.provenance import ImageProvenanceResponse, NormalizedProvenanceResponse
@@ -248,6 +254,45 @@ async def get_analysis_fingerprints(
         near_threshold=settings.fingerprint_near_threshold,
         similar=similar,
         limitations=_FINGERPRINT_NOTES,
+    )
+
+
+_FORENSICS_NOTES = [
+    "Forensic methods are heuristics. Each reports what it observed, how confident the method "
+    "is by design, and its known failure modes. None of them proves manipulation on its own.",
+    "Related signals (ELA, compression, noise) are correlated and are not counted as independent "
+    "evidence.",
+]
+
+
+@router.get("/{analysis_id}/forensics", response_model=ImageForensicsResponse)
+async def get_analysis_forensics(
+    analysis_id: uuid.UUID, user: CurrentUser, analyses: AnalysisSvc, settings: AppSettings
+) -> ImageForensicsResponse:
+    row = await analyses.get_forensics(user, analysis_id)
+    if row is None:
+        raise NotFoundError("Forensic analysis has not been run for this analysis.")
+    skipped: list[ForensicSkipped] = []
+    ela_finding: ELAFindingResponse | None = None
+    if row.ela_json:
+        if row.ela_json.get("applicable"):
+            ela_finding = ELAFindingResponse.model_validate(row.ela_json)
+        else:
+            skipped.append(ForensicSkipped(method="ela", reason=str(row.ela_json.get("reason"))))
+    artifacts = [
+        ForensicArtifactResponse(
+            name=str(a.get("name")),
+            method=str(a.get("method")),
+            content_type=str(a.get("content_type")),
+            width=int(a.get("width") or 0),
+            height=int(a.get("height") or 0),
+            url=url,
+            expires_in_seconds=settings.signed_url_ttl_seconds,
+        )
+        for a, url in await analyses.forensic_artifact_links(row)
+    ]
+    return ImageForensicsResponse(
+        ela=ela_finding, skipped=skipped, artifacts=artifacts, limitations=_FORENSICS_NOTES
     )
 
 

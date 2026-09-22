@@ -66,6 +66,13 @@ class Settings(BaseSettings):
     ai_score_high: float = Field(default=0.85, ge=0.0, le=1.0)
     ai_score_medium: float = Field(default=0.6, ge=0.0, le=1.0)
 
+    # Forensics: Error Level Analysis (JPEG only). Thresholds live here, not in code.
+    ela_quality: int = Field(default=95, ge=50, le=100)
+    ela_max_side: int = Field(default=3000, ge=256, le=8000)
+    ela_outlier_sigma: float = Field(default=2.5, ge=0.5, le=10.0)
+    ela_anomaly_min_fraction: float = Field(default=0.005, ge=0.0, le=1.0)
+    ela_anomaly_max_fraction: float = Field(default=0.2, ge=0.0, le=1.0)
+
     # Persistent provider-result cache (content hash + provider/model/version). 0 disables.
     provider_cache_ttl_hours: int = Field(default=24 * 7, ge=0, le=24 * 365)
 

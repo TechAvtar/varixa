@@ -9,6 +9,7 @@ from app.models.analysis_step import AnalysisStep
 from app.models.base import Base
 from app.models.evidence import Evidence
 from app.models.image_fingerprints import ImageFingerprints
+from app.models.image_forensics import ImageForensics
 from app.models.image_metadata import ImageMetadata
 from app.models.image_provenance import ImageProvenance
 from app.models.provider_cache import ProviderCacheEntry
@@ -27,6 +28,7 @@ __all__ = [
     "Base",
     "Evidence",
     "ImageFingerprints",
+    "ImageForensics",
     "ImageMetadata",
     "ImageProvenance",
     "ProviderCacheEntry",

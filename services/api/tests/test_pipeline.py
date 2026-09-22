@@ -203,6 +203,7 @@ async def test_upload_runs_pipeline_to_completion(client: AsyncClient) -> None:
         "hashing",
         "metadata",
         "provenance",
+        "ela",
         "ai",
         "search",
     ]
@@ -254,4 +255,4 @@ async def test_worker_ignores_non_queued_analyses(client: AsyncClient) -> None:
     # Already completed by the background task; a second run must be a no-op.
     await run_analysis(analysis_id, app.state.session_factory, app.state.storage, settings)
     detail = (await client.get(f"/analysis/{analysis_id}", headers=headers)).json()
-    assert detail["status"] == "completed" and len(detail["steps"]) == 6
+    assert detail["status"] == "completed" and len(detail["steps"]) == 7

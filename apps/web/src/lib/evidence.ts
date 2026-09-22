@@ -3,6 +3,7 @@ import type {
   AnalysisResponse,
   EvidenceLevel,
   ImageFingerprintsResponse,
+  ImageForensicsResponse,
   ImageMetadataResponse,
   ImageProvenanceResponse,
   SourceMatchesResponse,
@@ -60,6 +61,7 @@ export function deriveEvidence(
   textFingerprints: TextFingerprintsResponse | null = null,
   ai: AIDetectionResponse | null = null,
   sources: SourceMatchesResponse | null = null,
+  forensics: ImageForensicsResponse | null = null,
 ): EvidenceItem[] {
   const items: EvidenceItem[] = [];
   if (a.type === "text") return deriveTextEvidence(a, text, textFingerprints, ai, sources);
@@ -236,16 +238,78 @@ export function deriveEvidence(
 
   // -- not yet available ----------------------------------------------------------------------
   items.push(aiEvidence(ai));
-  items.push({
-    id: "forensics.unavailable",
-    category: "forensics",
-    kind: "unknown",
-    level: "UNKNOWN",
-    claim: "Forensic analysis (ELA, compression, noise, resampling, copy-move) was not run.",
-    source: "forensics",
-  });
+  items.push(...forensicsEvidence(forensics));
   items.push(sourcesEvidence(sources, "reverse-image"));
 
+  return items;
+}
+
+/**
+ * docs/07: a single ELA anomaly is POSSIBLE at most. ELA, compression and noise
+ * are correlated, so later methods must not each add an independent item.
+ */
+function forensicsEvidence(f: ImageForensicsResponse | null): EvidenceItem[] {
+  if (!f) {
+    return [
+      {
+        id: "forensics.unavailable",
+        category: "forensics",
+        kind: "unknown",
+        level: "UNKNOWN",
+        claim: "Forensic analysis was not run.",
+        source: "forensics",
+      },
+    ];
+  }
+  const items: EvidenceItem[] = [];
+  const skipped = f.skipped.find((s) => s.method === "ela");
+  if (skipped) {
+    items.push({
+      id: "forensics.ela.na",
+      category: "forensics",
+      kind: "unknown",
+      level: "UNKNOWN",
+      claim: "Error Level Analysis is not applicable to this file format.",
+      source: "ela",
+      detail: skipped.reason,
+    });
+  } else if (f.ela?.anomaly) {
+    const r = f.ela.regions[0];
+    items.push({
+      id: "forensics.ela.anomaly",
+      category: "forensics",
+      kind: "signal",
+      level: "POSSIBLE",
+      claim: `ELA shows ${f.ela.regions.length} localised region(s) re-compressing differently from the rest of the image.`,
+      source: "ela",
+      detail: r
+        ? `Largest region at (${r.x}, ${r.y}), ${r.width} × ${r.height} px; ${(f.ela.outlier_block_fraction * 100).toFixed(1)}% of blocks are outliers.`
+        : undefined,
+      limitation:
+        "ELA is a heuristic: sharp detail, text and saturated colour produce the same pattern. This is not proof of editing.",
+    });
+  } else if (f.ela) {
+    items.push({
+      id: "forensics.ela.none",
+      category: "forensics",
+      kind: "signal",
+      level: "UNKNOWN",
+      claim: "ELA found no localised error-level pattern.",
+      source: "ela",
+      detail: f.ela.observation,
+      limitation:
+        "Absence of an ELA pattern is not evidence of no editing; whole-image resaves and same-quality edits leave no trace.",
+    });
+  } else {
+    items.push({
+      id: "forensics.ela.failed",
+      category: "forensics",
+      kind: "unknown",
+      level: "UNKNOWN",
+      claim: "Error Level Analysis produced no result.",
+      source: "ela",
+    });
+  }
   return items;
 }
 

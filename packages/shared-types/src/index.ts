@@ -42,6 +42,14 @@ export type {
   ProvenanceValidationFailure,
 } from "./provenance";
 export type {
+  ELAFinding,
+  ForensicArtifact,
+  ForensicConfidence,
+  ForensicRegion,
+  ForensicSkipped,
+  ImageForensicsResponse,
+} from "./forensics";
+export type {
   ImageMetadataResponse,
   NormalizedMetadata,
   ParsedTimestamp,
@@ -49,6 +57,14 @@ export type {
 } from "./metadata";
 export type { HealthResponse } from "./health";
 export type { SourceKind, SourceMatch, SourceMatchesResponse } from "./matches";
-export type { ProviderCall, ProviderCallsResponse, ProviderCallStatus } from "./provider-calls";
-export type { LanguageGuess, TextAnalysisCreate, TextAnalysisResponse } from "./text";
+export type {
+  ProviderCall,
+  ProviderCallsResponse,
+  ProviderCallStatus,
+} from "./provider-calls";
+export type {
+  LanguageGuess,
+  TextAnalysisCreate,
+  TextAnalysisResponse,
+} from "./text";
 export { TEXT_INPUT } from "./text";
