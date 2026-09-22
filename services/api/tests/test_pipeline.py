@@ -198,10 +198,14 @@ async def test_upload_runs_pipeline_to_completion(client: AsyncClient) -> None:
     detail = (await client.get(f"/analysis/{r.json()['id']}", headers=headers)).json()
     assert detail["status"] == "completed"
     assert detail["completed_at"] is not None
-    assert [s["name"] for s in detail["steps"]] == ["validate"]
-    assert detail["steps"][0]["status"] == "completed"
+    assert [s["name"] for s in detail["steps"]] == ["validate", "hashing"]
+    assert all(s["status"] == "completed" for s in detail["steps"])
     assert detail["steps"][0]["details"]["sha256"] == detail["file"]["sha256"]
     assert detail["steps"][0]["duration_ms"] is not None
+    hashes = detail["steps"][1]["details"]
+    assert hashes["sha256"] == detail["file"]["sha256"]
+    assert all(len(hashes[k]) == 16 for k in ("ahash", "dhash", "phash"))
+    assert len(hashes["md5"]) == 32
 
 
 async def test_worker_fails_analysis_when_original_vanishes(client: AsyncClient) -> None:
@@ -243,4 +247,4 @@ async def test_worker_ignores_non_queued_analyses(client: AsyncClient) -> None:
     # Already completed by the background task; a second run must be a no-op.
     await run_analysis(analysis_id, app.state.session_factory, app.state.storage, settings)
     detail = (await client.get(f"/analysis/{analysis_id}", headers=headers)).json()
-    assert detail["status"] == "completed" and len(detail["steps"]) == 1
+    assert detail["status"] == "completed" and len(detail["steps"]) == 2

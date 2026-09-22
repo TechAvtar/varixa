@@ -130,9 +130,15 @@ the response through `app/workers/dispatcher.py` (FastAPI background task in the
 returned in `GET /analysis/{id}` as `steps[]`. Non-critical step failures are recorded and the
 run continues; a critical failure fails the analysis and marks the remaining steps `skipped`.
 
-Steps today: `validate` (re-reads the stored original, checks the SHA-256 against the record and
-re-runs the upload validation). Later tasks add metadata, provenance, fingerprints, forensics, AI
-signals, source search, evidence and report steps.
+Steps today:
+
+| Step | Critical | What it records |
+| ---- | -------- | --------------- |
+| `validate` | yes | Re-reads the stored original, checks SHA-256 against the record, re-runs upload validation; format, dimensions, frames |
+| `hashing` | yes | SHA-256, MD5 (compatibility only), aHash, dHash, pHash (64-bit, imagehash-compatible) — perceptual hashes are similarity *signals*, not provenance proof |
+
+Later tasks add metadata, provenance, fingerprint persistence/matching, forensics, AI signals,
+source search, evidence and report steps.
 
 ## Object storage
 

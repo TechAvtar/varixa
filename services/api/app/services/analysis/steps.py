@@ -3,6 +3,7 @@
 from app.providers.storage.base import ObjectNotFoundError
 from app.services.analysis.pipeline import PipelineContext, StepFailedError, StepOutcome
 from app.services.image import validate_image
+from app.services.image.hashing import compute_hashes
 
 
 class ValidateImageStep:
@@ -48,6 +49,32 @@ class ValidateImageStep:
         )
 
 
-def image_pipeline_steps() -> list[ValidateImageStep]:
+class HashImageStep:
+    """Content (SHA-256, MD5) and perceptual (aHash, dHash, pHash) hashes of the verified bytes.
+
+    Deterministic and local, so it is a core step. Values are recorded in the
+    step details now; T015 persists them to ``image_fingerprints`` for matching.
+    """
+
+    name = "hashing"
+    critical = True
+
+    async def run(self, ctx: PipelineContext) -> StepOutcome:
+        image = ctx.artifacts.get("image")
+        if image is None:
+            raise StepFailedError("NO_VERIFIED_IMAGE", "Validation did not publish an image.")
+        hashes = compute_hashes(image.data)
+        ctx.artifacts["hashes"] = hashes
+        return StepOutcome.ok(
+            sha256=hashes.sha256,
+            md5=hashes.md5,
+            ahash=hashes.ahash,
+            dhash=hashes.dhash,
+            phash=hashes.phash,
+            algorithm_version="v1",  # bump if any hash definition changes
+        )
+
+
+def image_pipeline_steps() -> list[ValidateImageStep | HashImageStep]:
     """Ordered steps for an image analysis. Later tasks append metadata, C2PA, forensics, ..."""
-    return [ValidateImageStep()]
+    return [ValidateImageStep(), HashImageStep()]
