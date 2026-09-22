@@ -22,7 +22,10 @@ Every package's `__init__.py` carries a one-line responsibility docstring.
 ## Web structure (`apps/web/src`)
 - `app/` — App Router routes/layouts only; no data-fetching logic inline beyond calling `lib/`
 - `components/` — reusable UI (`components/ui` reserved for shadcn/ui, added when first needed)
-- `lib/` — API client, env, formatting helpers
+- `lib/` — API client, env, formatting helpers. `lib/api/client.ts` and `lib/auth/*` are server-only.
+- Auth: tokens live in httpOnly cookies; `proxy.ts` refreshes/guards; server actions in `app/(auth)/actions.ts`.
+  Use `getSession()` (signed_in | signed_out | unavailable) — never treat "API down" as "signed out".
+- shadcn/ui here is the base-ui flavour: link-buttons use `<Button render={<Link … />}>`, not `asChild`.
 - Types come from `@verixa/shared-types`; do not redeclare API shapes locally.
 
 ## Commands

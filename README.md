@@ -54,7 +54,13 @@ cp apps/web/.env.example apps/web/.env.local
 npm run dev:web
 ```
 
-Open <http://localhost:3000>. The home page shows live API status (or an explicit "unavailable" state).
+Open <http://localhost:3000>. Routes: `/` (status + sign-in), `/register`, `/login`, `/dashboard`.
+
+The web app never exposes tokens to the browser: server actions call the API and store the
+access/refresh tokens in httpOnly cookies; `src/proxy.ts` refreshes the access token (rotating the
+refresh token) before protected pages render and redirects guests to `/login`. Server components
+call the API with `authedRequest()` from `src/lib/auth/session.ts`. UI primitives are shadcn/ui
+(`src/components/ui`, base-ui `render` prop instead of `asChild`).
 
 ## Quality checks
 
