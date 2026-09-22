@@ -193,6 +193,13 @@ explicit `conflict` record that keeps both sides. The `evidence` step runs last 
 and replaces the analysis' rows; `GET /analysis/{id}/evidence` returns them and the report uses
 them instead of its client-side preliminary derivation once they exist.
 
+Conflicts (T031): three rules produce `kind: conflict` records that keep both sides and lower
+synthesis confidence: a validated C2PA manifest against a STRONG forensic or PROBABLE AI signal;
+a metadata capture time later than the manifest's signing time; a source published before the
+recorded capture time. Timestamps are parsed by `utils/timeparse.py` (RFC 3339, EXIF, plain
+dates); naive values are compared as if UTC with a one-minute tolerance and the record says so.
+The report shows an alert whenever conflicts exist.
+
 Configurable confidence (T030): `VERIXA_EVIDENCE_CONFIDENCE_{VERIFIED,STRONG,PROBABLE,POSSIBLE}`
 set the default confidence per level (rules with their own number, such as an AI score, keep it);
 `VERIXA_EVIDENCE_LEVEL_OVERRIDES` (JSON, rule id → level) lets a deployment make a rule more

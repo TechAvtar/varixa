@@ -179,6 +179,19 @@ export default async function AnalysisPage({
             </AlertDescription>
           </Alert>
         ) : null}
+        {engine && engine.conflicts > 0 ? (
+          <Alert role="status">
+            <AlertTitle>
+              {engine.conflicts === 1
+                ? "The evidence contains a conflict"
+                : `The evidence contains ${engine.conflicts} conflicts`}
+            </AlertTitle>
+            <AlertDescription>
+              Records point in different directions. Both sides are kept and shown under Conflicts
+              on the overview; synthesis confidence is {engine.synthesis_confidence.toFixed(2)}.
+            </AlertDescription>
+          </Alert>
+        ) : null}
         {a.status === "failed" ? (
           <Alert variant="destructive" role="alert">
             <AlertTitle>Analysis failed{a.error_code ? ` (${a.error_code})` : ""}</AlertTitle>

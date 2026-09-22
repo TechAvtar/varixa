@@ -16,10 +16,12 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
+from datetime import datetime
 from typing import Any, Literal
 
 from app.config import Settings
 from app.enums import EvidenceLevel
+from app.utils.timeparse import as_utc, parse_timestamp
 
 ENGINE_VERSION = "v1"
 
@@ -1218,11 +1220,95 @@ def _forensic_rules(o: Observations, t: EvidenceThresholds) -> list[EvidenceDraf
     return out
 
 
-def _conflict_rules(drafts: list[EvidenceDraft]) -> list[EvidenceDraft]:
-    """docs/07: keep both sides, surface the conflict, lower synthesis confidence."""
+# A recorded time must precede another by at least this much before it counts as a
+# contradiction; clock skew and rounding never should.
+TIME_CONFLICT_TOLERANCE_SECONDS = 60
+
+
+def _conflict(
+    rule: str, claim: str, a: EvidenceDraft, b: EvidenceDraft, *, detail: str, limitation: str
+) -> EvidenceDraft:
+    return EvidenceDraft(
+        rule=rule,
+        category="synthesis",
+        level=EvidenceLevel.UNKNOWN,
+        kind="conflict",
+        claim=claim,
+        source="evidence-engine",
+        confidence=None,
+        detail=detail,
+        limitation=limitation,
+        refs=[*a.refs, *b.refs],
+        conflicts_with=[a.rule, b.rule],
+    )
+
+
+def _conflict_rules(
+    drafts: list[EvidenceDraft], o: Observations | None = None
+) -> list[EvidenceDraft]:
+    """docs/07: keep both sides, surface the conflict, lower synthesis confidence.
+
+    Rules: a validated manifest against a STRONG/PROBABLE contrary signal; a recorded
+    capture time *after* the manifest's signing time; a source published *before* the
+    recorded capture time. Naive timestamps are compared as if UTC with a tolerance,
+    and the limitation says so.
+    """
     by_rule = {d.rule: d for d in drafts}
     out: list[EvidenceDraft] = []
     verified_prov = by_rule.get("provenance.valid")
+    captured = by_rule.get("metadata.captured")
+    captured_dt, captured_tz = (
+        parse_timestamp((captured.data.get("captured_at") or {}).get("parsed"))
+        if captured
+        else (None, False)
+    )
+    tol = TIME_CONFLICT_TOLERANCE_SECONDS
+
+    if verified_prov and captured and captured_dt is not None:
+        signed_dt, _ = parse_timestamp(verified_prov.data.get("signed_at"))
+        if signed_dt is not None:
+            gap = (as_utc(captured_dt) - as_utc(signed_dt)).total_seconds()
+            if gap > tol:
+                out.append(
+                    _conflict(
+                        "conflict.capture-after-signing",
+                        "Evidence conflicts: the metadata capture time is later than the "
+                        "C2PA signing time.",
+                        verified_prov,
+                        captured,
+                        detail=f"Captured {captured_dt.isoformat()} versus signed "
+                        f"{signed_dt.isoformat()} ({gap / 3600:.1f} h later).",
+                        limitation="A camera clock set wrong, an edited EXIF field or a "
+                        "missing timezone"
+                        + ("" if captured_tz else " (the capture time has none)")
+                        + " can all produce this; neither record is discarded.",
+                    )
+                )
+
+    sources = by_rule.get("sources.matches")
+    if sources and captured and captured_dt is not None and o is not None:
+        earliest: datetime | None = None
+        for m in o.search_matches:
+            dt, _ = parse_timestamp(getattr(m, "published_at", None))
+            if dt is not None and (earliest is None or as_utc(dt) < as_utc(earliest)):
+                earliest = dt
+        if earliest is not None:
+            gap = (as_utc(captured_dt) - as_utc(earliest)).total_seconds()
+            if gap > tol:
+                out.append(
+                    _conflict(
+                        "conflict.published-before-capture",
+                        "Evidence conflicts: a source reports this content published before "
+                        "the recorded capture time.",
+                        sources,
+                        captured,
+                        detail=f"Earliest reported publication {earliest.isoformat()} versus "
+                        f"capture {captured_dt.isoformat()} ({gap / 86400:.1f} days earlier).",
+                        limitation="Provider dates are as reported by the source and may be "
+                        "wrong; the match may be a look-alike; the capture time can be wrong "
+                        "or lack a timezone. Both records are retained.",
+                    )
+                )
     if verified_prov:
         opposing = [
             d
@@ -1267,7 +1353,7 @@ def build_evidence(o: Observations, t: EvidenceThresholds) -> list[EvidenceDraft
     drafts += _ai_rules(o, t)
     drafts += _source_rules(o, t)
     drafts = apply_overrides(drafts, t)
-    drafts += _conflict_rules(drafts)
+    drafts += _conflict_rules(drafts, o)
     return drafts
 
 
