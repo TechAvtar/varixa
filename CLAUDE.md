@@ -29,7 +29,12 @@ Every package's `__init__.py` carries a one-line responsibility docstring.
   client-held selection (e.g. a picked file) must be re-synced on submit — see `image-upload-form.tsx`.
 - Upload cap lives in two places: `VERIXA_MAX_UPLOAD_BYTES` (API) and `next.config.ts`
   `serverActions.bodySizeLimit` (web). Change both.
-- shadcn/ui here is the base-ui flavour: link-buttons use `<Button render={<Link … />}>`, not `asChild`.
+- Report UI: `/analyses/{id}?tab=` uses link-based tabs (`report-tabs.tsx`); sections whose
+  pipeline step does not exist render `NotAvailable` — never placeholder or fabricated findings.
+  Evidence level text is always visible next to its colour.
+- shadcn/ui here is the base-ui flavour: link-buttons use
+  `<Button nativeButton={false} render={<Link … />}>`, not `asChild` (omitting `nativeButton`
+  logs an accessibility error at runtime).
 - Types come from `@verixa/shared-types`; do not redeclare API shapes locally.
 
 ## Commands

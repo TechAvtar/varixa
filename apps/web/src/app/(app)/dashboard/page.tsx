@@ -28,7 +28,9 @@ export default async function DashboardPage() {
             Your analyses and what has been established so far.
           </p>
         </div>
-        <Button render={<Link href="/analyses/new" />}>New analysis</Button>
+        <Button nativeButton={false} render={<Link href="/analyses/new" />}>
+          New analysis
+        </Button>
       </div>
 
       <section aria-labelledby="stats-heading" className="space-y-3">
@@ -68,7 +70,11 @@ export default async function DashboardPage() {
           <EmptyState
             title="No analyses yet"
             description="Upload an image to start an evidence-backed analysis. Text analysis is coming in a later build."
-            action={<Button render={<Link href="/analyses/new" />}>Upload an image</Button>}
+            action={
+              <Button nativeButton={false} render={<Link href="/analyses/new" />}>
+                Upload an image
+              </Button>
+            }
           />
         ) : (
           <AnalysesTable items={recent.data.items} />

@@ -60,7 +60,10 @@ npm run dev:web
 ```
 
 Open <http://localhost:3000>. Routes: `/` (status + sign-in), `/register`, `/login`, `/dashboard`,
-`/analyses/new` (drag-and-drop image upload), `/analyses/{id}` (status + verified file facts).
+`/analyses/new` (drag-and-drop image upload), `/analyses/{id}?tab=` (tabbed report: overview,
+metadata, provenance, ai, forensics, matches, timeline). Until the server-side evidence engine
+lands, the overview's evidence cards are derived client-side from the deterministic step results
+(`apps/web/src/lib/evidence.ts`) and labelled preliminary.
 
 The web app never exposes tokens to the browser: server actions call the API and store the
 access/refresh tokens in httpOnly cookies; `src/proxy.ts` refreshes the access token (rotating the

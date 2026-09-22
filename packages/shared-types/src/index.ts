@@ -24,6 +24,8 @@ export type {
   UserRole,
 } from "./auth";
 export type { ApiErrorBody } from "./errors";
+export type { EvidenceLevel } from "./evidence";
+export { EVIDENCE_LEVELS } from "./evidence";
 export type { Fingerprints, ImageFingerprintsResponse, SimilarAnalysis } from "./fingerprints";
 export type {
   ImageProvenanceResponse,

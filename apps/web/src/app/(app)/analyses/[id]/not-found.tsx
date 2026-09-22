@@ -8,7 +8,7 @@ export default function AnalysisNotFound() {
       title="Analysis not found"
       description="It may have been deleted, or the link may belong to another account."
       action={
-        <Button variant="outline" render={<Link href="/dashboard" />}>
+        <Button variant="outline" nativeButton={false} render={<Link href="/dashboard" />}>
           Back to dashboard
         </Button>
       }
