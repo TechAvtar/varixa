@@ -3,6 +3,7 @@
  * Keep these in sync with the Pydantic schemas in `services/api/app/schemas/`.
  */
 
+export type { AIDetectionResponse, AILabel } from "./ai";
 export type {
   AnalysisCounts,
   AnalysisCreatedResponse,

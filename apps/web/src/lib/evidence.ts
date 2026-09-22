@@ -1,4 +1,5 @@
 import type {
+  AIDetectionResponse,
   AnalysisResponse,
   EvidenceLevel,
   ImageFingerprintsResponse,
@@ -56,9 +57,10 @@ export function deriveEvidence(
   fingerprints: ImageFingerprintsResponse | null,
   text: TextAnalysisResponse | null = null,
   textFingerprints: TextFingerprintsResponse | null = null,
+  ai: AIDetectionResponse | null = null,
 ): EvidenceItem[] {
   const items: EvidenceItem[] = [];
-  if (a.type === "text") return deriveTextEvidence(a, text, textFingerprints);
+  if (a.type === "text") return deriveTextEvidence(a, text, textFingerprints, ai);
 
   // -- file: deterministic facts about the stored bytes -------------------------------
   if (a.file) {
@@ -231,16 +233,8 @@ export function deriveEvidence(
   }
 
   // -- not yet available ----------------------------------------------------------------------
+  items.push(aiEvidence(ai));
   items.push(
-    {
-      id: "ai.unavailable",
-      category: "ai",
-      kind: "unknown",
-      level: "UNKNOWN",
-      claim: "AI-generation signals were not evaluated.",
-      source: "ai-detector",
-      limitation: "No detector ran in this build. Detector output is never proof of authorship.",
-    },
     {
       id: "forensics.unavailable",
       category: "forensics",
@@ -278,6 +272,7 @@ function deriveTextEvidence(
   a: AnalysisResponse,
   text: TextAnalysisResponse | null,
   fingerprints: TextFingerprintsResponse | null,
+  ai: AIDetectionResponse | null,
 ): EvidenceItem[] {
   const items: EvidenceItem[] = [];
   if (a.file) {
@@ -389,24 +384,63 @@ function deriveTextEvidence(
       });
     }
   }
-  items.push(
-    {
+  items.push(aiEvidence(ai), {
+    id: "sources.unavailable",
+    category: "sources",
+    kind: "unknown",
+    level: "UNKNOWN",
+    claim: "No source or phrase search was performed.",
+    source: "search",
+  });
+  return items;
+}
+
+/** Detector output per docs/07: high -> PROBABLE, medium -> POSSIBLE; never a fact. */
+function aiEvidence(ai: AIDetectionResponse | null): EvidenceItem {
+  if (!ai) {
+    return {
       id: "ai.unavailable",
       category: "ai",
       kind: "unknown",
       level: "UNKNOWN",
       claim: "AI-generation signals were not evaluated.",
       source: "ai-detector",
-      limitation: "No detector ran in this build. Detector output is never proof of authorship.",
-    },
-    {
-      id: "sources.unavailable",
-      category: "sources",
+      limitation: "No detector is configured. Detector output is never proof of authorship.",
+    };
+  }
+  const src = `ai/${ai.provider}:${ai.model}@${ai.provider_version}`;
+  if (ai.score == null) {
+    return {
+      id: "ai.noscore",
+      category: "ai",
       kind: "unknown",
       level: "UNKNOWN",
-      claim: "No source or phrase search was performed.",
-      source: "search",
-    },
-  );
-  return items;
+      claim: "The AI detector returned no usable score.",
+      source: src,
+    };
+  }
+  const pct = Math.round(ai.score * 100);
+  if (ai.evidence_level === "UNKNOWN") {
+    return {
+      id: "ai.weak",
+      category: "ai",
+      kind: "signal",
+      level: "UNKNOWN",
+      claim: `The AI detector reported a weak signal (${pct}/100, below the medium threshold).`,
+      source: src,
+      limitation:
+        "A low score does not establish human authorship; detectors miss much AI text and imagery.",
+    };
+  }
+  return {
+    id: "ai.signal",
+    category: "ai",
+    kind: "signal",
+    level: ai.evidence_level,
+    claim: `The AI detector reported a ${ai.evidence_level === "PROBABLE" ? "strong" : "medium"} AI-generation signal (${pct}/100).`,
+    source: src,
+    limitation: ai.calibrated
+      ? "Detector scores have known false-positive and false-negative rates; this is not proof of AI authorship."
+      : "The score is not calibrated and has known false-positive and false-negative rates; this is not proof of AI authorship.",
+  };
 }

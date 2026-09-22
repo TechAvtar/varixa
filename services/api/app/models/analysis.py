@@ -9,6 +9,7 @@ from app.enums import AnalysisStatus
 from app.models.base import Base, CreatedAtMixin, TZDateTime, UUIDPrimaryKeyMixin
 
 if TYPE_CHECKING:
+    from app.models.ai_detection import AIDetection
     from app.models.analysis_step import AnalysisStep
     from app.models.evidence import Evidence
     from app.models.image_fingerprints import ImageFingerprints
@@ -66,6 +67,9 @@ class Analysis(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         back_populates="analysis", cascade="all, delete-orphan", uselist=False
     )
     text_fingerprints: Mapped["TextFingerprints | None"] = relationship(
+        back_populates="analysis", cascade="all, delete-orphan", uselist=False
+    )
+    ai_detection: Mapped["AIDetection | None"] = relationship(
         back_populates="analysis", cascade="all, delete-orphan", uselist=False
     )
 

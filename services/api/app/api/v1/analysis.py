@@ -7,6 +7,7 @@ from app.api.deps import AnalysisSvc, AppSettings, CurrentUser, Jobs, Storage
 from app.enums import AnalysisType
 from app.models import Analysis
 from app.providers.storage.base import ObjectNotFoundError
+from app.schemas.ai import AIDetectionResponse
 from app.schemas.analysis import (
     MAX_TITLE_LENGTH,
     AnalysisCounts,
@@ -245,6 +246,39 @@ async def get_analysis_fingerprints(
         near_threshold=settings.fingerprint_near_threshold,
         similar=similar,
         limitations=_FINGERPRINT_NOTES,
+    )
+
+
+@router.get("/{analysis_id}/ai", response_model=AIDetectionResponse)
+async def get_analysis_ai(
+    analysis_id: uuid.UUID, user: CurrentUser, analyses: AnalysisSvc
+) -> AIDetectionResponse:
+    row = await analyses.get_ai_detection(user, analysis_id)
+    if row is None:
+        raise NotFoundError("No AI-generation signal was evaluated for this analysis.")
+    if row.score is None:
+        level = "UNKNOWN"
+    elif row.score >= row.threshold_high:
+        level = "PROBABLE"
+    elif row.score >= row.threshold_medium:
+        level = "POSSIBLE"
+    else:
+        level = "UNKNOWN"
+    return AIDetectionResponse(
+        modality=row.modality,
+        provider=row.provider,
+        model=row.model,
+        provider_version=row.provider_version,
+        score=row.score,
+        label=row.label,
+        calibrated=row.calibrated,
+        cached=row.cached,
+        latency_ms=row.latency_ms,
+        evaluated_at=row.created_at,
+        thresholds={"high": row.threshold_high, "medium": row.threshold_medium},
+        evidence_level=level,
+        raw=row.raw_json or {},
+        limitations=[str(x) for x in (row.limitations_json or [])],
     )
 
 

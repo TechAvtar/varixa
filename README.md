@@ -115,6 +115,7 @@ resources.
 | `GET /api/v1/analysis/{id}` | One analysis; 404 if missing or owned by someone else |
 | `GET /api/v1/analysis/{id}/metadata` | Normalised + raw metadata with plain-language limitations |
 | `GET /api/v1/analysis/{id}/provenance` | C2PA summary, manifests, validation status, limitations |
+| `GET /api/v1/analysis/{id}/ai` | AI-detector signal with provider/model/version, thresholds, evidence level, raw response |
 | `GET /api/v1/analysis/{id}/fingerprints` | Hashes plus exact/near duplicates among the caller's analyses |
 | `DELETE /api/v1/analysis/{id}` | Soft delete (record kept for audit) and remove stored files |
 
@@ -150,6 +151,7 @@ Steps today:
 | `validate` | yes | Re-reads the stored original, checks SHA-256 against the record, re-runs upload validation; format, dimensions, frames |
 | `hashing` | yes | SHA-256, MD5 (compatibility only), aHash, dHash, pHash (64-bit, imagehash-compatible), persisted to `image_fingerprints` (replaced on re-run); `GET /analysis/{id}/fingerprints` also lists exact/near duplicates among the user's own analyses (Hamming ≤ `VERIXA_FINGERPRINT_NEAR_THRESHOLD`) — similarity is a *signal*, not proof of origin |
 | `provenance` | no | C2PA manifests via c2patool (temp file, fixed args); presence, signature validity, stated signer, claim generator, actions, authors, validation codes; absence is UNKNOWN, issuer trust not evaluated; `GET /analysis/{id}/provenance` |
+| `ai` | no | AI-generation signal via the configured `AIDetector` adapter (`VERIXA_AI_DETECTOR_PROVIDER`: `none` skips the step; `mock` is a deterministic stand-in). Results are cached by content hash + provider/model/version, persisted to `ai_detections` with provider, model, version, score, label, thresholds and raw response; `GET /analysis/{id}/ai`. A score maps to PROBABLE/POSSIBLE/UNKNOWN per docs/07 and is never presented as proof |
 | `metadata` | no | EXIF/XMP/IPTC/ICC via ExifTool (stdin, fixed args) or Pillow fallback; raw groups preserved in `image_metadata`, normalised camera/software/timestamps/orientation/GPS-presence; `GET /analysis/{id}/metadata` |
 
 Later tasks add metadata, provenance, fingerprint persistence/matching, forensics, AI signals,
@@ -187,6 +189,8 @@ All configuration is via environment variables; see the `.env.example` files. Ne
 | `VERIXA_C2PATOOL_PATH` | API | Explicit c2patool executable |
 | `VERIXA_C2PATOOL_TIMEOUT_SECONDS` | API | Per-run timeout (default 30) |
 | `VERIXA_FINGERPRINT_NEAR_THRESHOLD` | API | Max Hamming distance (bits) on pHash/dHash counted as a near duplicate (default 10) |
+| `VERIXA_AI_DETECTOR_PROVIDER` | API | `none` (default) or `mock`; real adapters register under `providers/ai` |
+| `VERIXA_AI_SCORE_HIGH` / `VERIXA_AI_SCORE_MEDIUM` | API | Score thresholds → PROBABLE / POSSIBLE (defaults 0.85 / 0.6) |
 | `VERIXA_TEXT_NEAR_THRESHOLD` | API | Min estimated Jaccard (0–1) for a text near duplicate (default 0.5) |
 | `VERIXA_MAX_TEXT_CHARS` | API | Pasted-text cap in characters (default 200000) |
 | `VERIXA_MAX_UPLOAD_BYTES` | API | Upload size cap (default 26214400 = 25 MB); mirror it in `next.config.ts` `serverActions.bodySizeLimit` |

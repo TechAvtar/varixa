@@ -58,6 +58,14 @@ class Settings(BaseSettings):
     # Near-duplicate threshold: max Hamming distance (bits) on pHash or dHash.
     fingerprint_near_threshold: int = Field(default=10, ge=0, le=64)
 
+    # AI-generation detector. "none" disables the step (report says UNKNOWN); "mock" is a
+    # deterministic stand-in for development. Real adapters register by name in providers/ai.
+    ai_detector_provider: Literal["none", "mock"] = "none"
+    ai_detector_timeout_seconds: float = Field(default=30.0, ge=1, le=300)
+    # Score thresholds -> evidence levels (docs/07): >= high PROBABLE, >= medium POSSIBLE.
+    ai_score_high: float = Field(default=0.85, ge=0.0, le=1.0)
+    ai_score_medium: float = Field(default=0.6, ge=0.0, le=1.0)
+
     # Text near-duplicate threshold: minimum estimated Jaccard similarity (0-1) of shingle sets.
     text_near_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
 
@@ -101,6 +109,12 @@ class Settings(BaseSettings):
             raise ValueError(
                 "VERIXA_SECRET_KEY must be a random value of at least 32 characters in production"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _ai_thresholds_ordered(self) -> "Settings":
+        if self.ai_score_medium > self.ai_score_high:
+            raise ValueError("VERIXA_AI_SCORE_MEDIUM must not exceed VERIXA_AI_SCORE_HIGH")
         return self
 
     @model_validator(mode="after")

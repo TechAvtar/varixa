@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models import (
+    AIDetection,
     Analysis,
     AnalysisFile,
     AnalysisStep,
@@ -147,6 +148,18 @@ class AnalysisRepository:
             .limit(limit)
         )
         return [(row[0], row[1]) for row in (await self._session.execute(stmt)).all()]
+
+    async def get_ai_detection(self, analysis_id: uuid.UUID) -> AIDetection | None:
+        stmt = select(AIDetection).where(AIDetection.analysis_id == analysis_id)
+        return (await self._session.execute(stmt)).scalar_one_or_none()
+
+    async def replace_ai_detection(self, row: AIDetection) -> AIDetection:
+        await self._session.execute(
+            delete(AIDetection).where(AIDetection.analysis_id == row.analysis_id)
+        )
+        self._session.add(row)
+        await self._session.flush()
+        return row
 
     async def get_provenance(self, analysis_id: uuid.UUID) -> ImageProvenance | None:
         stmt = select(ImageProvenance).where(ImageProvenance.analysis_id == analysis_id)

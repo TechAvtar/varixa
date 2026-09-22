@@ -5,6 +5,7 @@ import hashlib
 from app.models import TextAnalysis, TextFingerprints
 from app.providers.storage.base import ObjectNotFoundError
 from app.repositories.analysis import AnalysisRepository
+from app.services.analysis.ai_step import AIDetectionStep
 from app.services.analysis.pipeline import (
     PipelineContext,
     PipelineStep,
@@ -156,4 +157,5 @@ def text_pipeline_steps() -> list[PipelineStep]:
         DetectLanguageStep(),
         TextStatisticsStep(),
         TextFingerprintsStep(),
+        AIDetectionStep(),
     ]

@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import Settings
 from app.enums import AnalysisStatus, AnalysisType
+from app.providers.ai import build_ai_detector
 from app.providers.metadata import build_metadata_extractor
 from app.providers.provenance import build_provenance_inspector
 from app.providers.storage.base import ObjectStorage
@@ -95,6 +96,7 @@ async def run_analysis(
             providers={
                 "metadata": build_metadata_extractor(settings),
                 "provenance": build_provenance_inspector(settings),
+                "ai_detector": build_ai_detector(settings),
             },
         )
         try:

@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import Settings
 from app.enums import AnalysisStatus, AnalysisType
 from app.models import (
+    AIDetection,
     Analysis,
     AnalysisFile,
     ImageFingerprints,
@@ -232,6 +233,10 @@ class AnalysisService:
         rank = {"exact": 0, "normalized": 1, "canonical": 2, "near": 3}
         matches.sort(key=lambda m: (rank[m[1]], -m[2]))
         return matches
+
+    async def get_ai_detection(self, user: User, analysis_id: uuid.UUID) -> AIDetection | None:
+        await self.get_owned(user, analysis_id)
+        return await self._analyses.get_ai_detection(analysis_id)
 
     async def get_provenance(self, user: User, analysis_id: uuid.UUID) -> ImageProvenance | None:
         await self.get_owned(user, analysis_id)

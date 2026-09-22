@@ -1,4 +1,5 @@
 import type {
+  AIDetectionResponse,
   AnalysisResponse,
   ImageFingerprintsResponse,
   ImageMetadataResponse,
@@ -10,6 +11,7 @@ import { EVIDENCE_LEVELS } from "@verixa/shared-types";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { AICard } from "@/components/analyses/ai-card";
 import { AnalysisStatusBadge } from "@/components/analyses/analysis-status-badge";
 import { FingerprintsCard } from "@/components/analyses/fingerprints-card";
 import { MetadataCard } from "@/components/analyses/metadata-card";
@@ -33,11 +35,10 @@ export const metadata: Metadata = { title: "Analysis · Verixa" };
 export const dynamic = "force-dynamic";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const UNAVAILABLE_IMAGE: ReadonlySet<ReportTab> = new Set(["ai", "forensics", "timeline"]);
+const UNAVAILABLE_IMAGE: ReadonlySet<ReportTab> = new Set(["forensics", "timeline"]);
 const UNAVAILABLE_TEXT: ReadonlySet<ReportTab> = new Set([
   "metadata",
   "provenance",
-  "ai",
   "forensics",
   "timeline",
 ]);
@@ -66,21 +67,23 @@ export default async function AnalysisPage({
   const a = result.data;
 
   const isImage = a.type === "image";
-  const [metadataResult, provenanceResult, fingerprintsResult, textResult, textFpResult] =
+  const [metadataResult, provenanceResult, fingerprintsResult, textResult, textFpResult, aiResult] =
     await Promise.all([
       isImage ? authedRequest<ImageMetadataResponse>(`/analysis/${id}/metadata`) : null,
       isImage ? authedRequest<ImageProvenanceResponse>(`/analysis/${id}/provenance`) : null,
       isImage ? authedRequest<ImageFingerprintsResponse>(`/analysis/${id}/fingerprints`) : null,
       isImage ? null : authedRequest<TextAnalysisResponse>(`/analysis/${id}/text`),
       isImage ? null : authedRequest<TextFingerprintsResponse>(`/analysis/${id}/fingerprints`),
+      authedRequest<AIDetectionResponse>(`/analysis/${id}/ai`),
     ]);
   const md = metadataResult?.ok ? metadataResult.data : null;
   const prov = provenanceResult?.ok ? provenanceResult.data : null;
   const fp = fingerprintsResult?.ok ? fingerprintsResult.data : null;
   const txt = textResult?.ok ? textResult.data : null;
   const tfp = textFpResult?.ok ? textFpResult.data : null;
+  const ai = aiResult.ok ? aiResult.data : null;
 
-  const evidence = deriveEvidence(a, md, prov, fp, txt, tfp);
+  const evidence = deriveEvidence(a, md, prov, fp, txt, tfp, ai);
   const counts = summarise(evidence);
   const processing = a.status === "queued" || a.status === "processing";
 
@@ -150,6 +153,21 @@ export default async function AnalysisPage({
       <section role="tabpanel" aria-label={active} className="space-y-6">
         {active === "overview" ? (
           <Overview a={a} evidence={evidence} text={txt} />
+        ) : active === "ai" ? (
+          <>
+            <EvidenceList
+              items={evidence.filter((e) => e.category === "ai")}
+              empty="No AI-detection evidence."
+            />
+            {ai ? (
+              <AICard data={ai} />
+            ) : (
+              <NotAvailable
+                title="AI-generation signals were not evaluated"
+                description="No AI detector is configured for this deployment, so nothing was scored. When one is connected its output is shown as a probabilistic signal with provider, model and version, never as proof of authorship."
+              />
+            )}
+          </>
         ) : !isImage && active === "matches" ? (
           <>
             <EvidenceList
@@ -161,11 +179,7 @@ export default async function AnalysisPage({
         ) : !isImage ? (
           <NotAvailable
             title="Not applicable to text"
-            description={
-              active === "ai"
-                ? "No AI-generation detector runs in this build. Its output will always be shown as a probabilistic signal."
-                : "This section applies to image analyses only."
-            }
+            description="This section applies to image analyses only."
           />
         ) : active === "metadata" ? (
           <>
@@ -198,11 +212,6 @@ export default async function AnalysisPage({
               </div>
             ) : null}
           </>
-        ) : active === "ai" ? (
-          <NotAvailable
-            title="AI-generation signals were not evaluated"
-            description="No AI detector runs in this build. When one is connected its output will be shown as a probabilistic signal with provider, model and version, never as proof of authorship."
-          />
         ) : active === "forensics" ? (
           <NotAvailable
             title="Forensic analysis was not run"

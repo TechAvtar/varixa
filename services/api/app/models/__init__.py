@@ -3,6 +3,7 @@
 Import this package to register every model on ``Base.metadata`` (needed by Alembic).
 """
 
+from app.models.ai_detection import AIDetection
 from app.models.analysis import Analysis, AnalysisFile
 from app.models.analysis_step import AnalysisStep
 from app.models.base import Base
@@ -17,6 +18,7 @@ from app.models.user import User
 from app.models.user_session import UserSession
 
 __all__ = [
+    "AIDetection",
     "Analysis",
     "AnalysisFile",
     "AnalysisStep",
