@@ -17,6 +17,7 @@ from app.models.provider_call import ProviderCall
 from app.models.source_match import SourceMatch, SourceSearchRun
 from app.models.text_analysis import TextAnalysis
 from app.models.text_fingerprints import TextFingerprints
+from app.models.timeline_event import TimelineEvent
 from app.models.user import User
 from app.models.user_session import UserSession
 
@@ -37,6 +38,7 @@ __all__ = [
     "SourceSearchRun",
     "TextAnalysis",
     "TextFingerprints",
+    "TimelineEvent",
     "User",
     "UserSession",
 ]

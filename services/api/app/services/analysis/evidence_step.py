@@ -1,6 +1,6 @@
 """Final pipeline step: normalise every persisted observation into evidence records."""
 
-from app.models import Evidence
+from app.models import Evidence, TimelineEvent
 from app.repositories.analysis import AnalysisRepository
 from app.repositories.provider_calls import ProviderCallRepository
 from app.services.analysis.pipeline import PipelineContext, StepOutcome
@@ -13,6 +13,7 @@ from app.services.evidence.engine import (
     summarise,
     synthesis_confidence,
 )
+from app.services.evidence.timeline import TIMELINE_VERSION, build_timeline
 
 
 class EvidenceStep:
@@ -29,7 +30,9 @@ class EvidenceStep:
         repo = AnalysisRepository(ctx.session)
         analysis = ctx.analysis
         aid = analysis.id
-        obs = Observations(analysis_type=str(analysis.type), file=ctx.file)
+        obs = Observations(
+            analysis_type=str(analysis.type), file=ctx.file, submitted_at=analysis.created_at
+        )
         obs.provider_calls = await ProviderCallRepository(ctx.session).list_for_analysis(aid)
         obs.ai = await repo.get_ai_detection(aid)
         obs.search_run, obs.search_matches = await repo.get_source_search(aid)
@@ -73,6 +76,31 @@ class EvidenceStep:
         ]
         await repo.replace_evidence(aid, rows)
         ctx.artifacts["evidence"] = drafts
+
+        # Timeline: derived from the same drafts; events point at the evidence rows by id.
+        ids_by_rule: dict[str, list[str]] = {}
+        for d, row in zip(drafts, rows, strict=True):
+            ids_by_rule.setdefault(d.rule, []).append(str(row.id))
+        events = build_timeline(obs, drafts)
+        await repo.replace_timeline(
+            aid,
+            [
+                TimelineEvent(
+                    analysis_id=aid,
+                    event_type=e.event_type,
+                    event_time=e.event_time,
+                    raw_time=(e.raw_time or "")[:64] or None,
+                    tz_known=e.tz_known,
+                    certainty=str(e.certainty),
+                    description=e.description,
+                    source=e.source[:64],
+                    source_evidence_ids=[i for r in e.source_rules for i in ids_by_rule.get(r, [])],
+                    details={"version": TIMELINE_VERSION, "rules": list(e.source_rules), **e.data},
+                )
+                for e in events
+            ],
+        )
+        ctx.artifacts["timeline"] = events
         counts = summarise(drafts)
         return StepOutcome.ok(
             engine_version=ENGINE_VERSION,
@@ -82,5 +110,7 @@ class EvidenceStep:
                 [(d.level, d.confidence, d.kind) for d in drafts], thresholds
             ),
             thresholds=thresholds.to_json(),
+            timeline_events=len(events),
+            timeline_undated=sum(1 for e in events if e.event_time is None),
             **{level.lower(): n for level, n in counts.items()},
         )

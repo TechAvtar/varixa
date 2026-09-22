@@ -36,6 +36,28 @@ export interface EvidenceListResponse {
   items: EvidenceRecord[];
 }
 
+/** Mirrors `app/schemas/timeline.py`. */
+export interface TimelineEvent {
+  id: string;
+  event_type: string;
+  /** Null when the recorded time could not be parsed; `raw_time` is always kept. */
+  event_time: string | null;
+  raw_time: string | null;
+  tz_known: boolean;
+  certainty: EvidenceLevel;
+  description: string;
+  source: string;
+  source_evidence_ids: string[];
+  data: Record<string, unknown>;
+}
+
+export interface TimelineResponse {
+  version: string;
+  generated_at: string;
+  events: TimelineEvent[];
+  limitations: string[];
+}
+
 export const EVIDENCE_LEVELS: readonly EvidenceLevel[] = [
   "VERIFIED",
   "STRONG",

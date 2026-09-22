@@ -70,6 +70,8 @@ Every package's `__init__.py` carries a one-line responsibility docstring.
   rule there with a stable `rule` id, `refs` to the raw observation and a limitation; never assign a
   level in a route, a card or an LLM prompt. Thresholds go on `EvidenceThresholds` / `Settings`.
 - Correlated signals share a family (ELA + compression). Conflicts are records, not deletions.
+- Timeline events come only from recorded times (`services/evidence/timeline.py`), never from
+  inference; keep `raw_time` and `tz_known`, and leave `event_time` null when parsing fails.
 
 ## Non-negotiables
 - Routes → Services → Repositories/Providers. No provider calls from routes.

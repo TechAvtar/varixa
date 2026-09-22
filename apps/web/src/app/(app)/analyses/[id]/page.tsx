@@ -11,6 +11,7 @@ import type {
   SourceMatchesResponse,
   TextAnalysisResponse,
   TextFingerprintsResponse,
+  TimelineResponse,
 } from "@verixa/shared-types";
 import { EVIDENCE_LEVELS } from "@verixa/shared-types";
 import type { Metadata } from "next";
@@ -35,6 +36,7 @@ import { RawJson } from "@/components/analyses/raw-json";
 import { SourceMatchesCard } from "@/components/analyses/source-matches-card";
 import { TextFingerprintsCard } from "@/components/analyses/text-fingerprints-card";
 import { TextStatsCard } from "@/components/analyses/text-stats-card";
+import { TimelineCard } from "@/components/analyses/timeline-card";
 import { isReportTab, type ReportTab, ReportTabs } from "@/components/analyses/report-tabs";
 import { EvidenceList } from "@/components/evidence/evidence-card";
 import { EvidenceLevelBadge } from "@/components/evidence/evidence-level-badge";
@@ -49,13 +51,8 @@ export const metadata: Metadata = { title: "Analysis · Verixa" };
 export const dynamic = "force-dynamic";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const UNAVAILABLE_IMAGE: ReadonlySet<ReportTab> = new Set(["timeline"]);
-const UNAVAILABLE_TEXT: ReadonlySet<ReportTab> = new Set([
-  "metadata",
-  "provenance",
-  "forensics",
-  "timeline",
-]);
+const UNAVAILABLE_IMAGE: ReadonlySet<ReportTab> = new Set([]);
+const UNAVAILABLE_TEXT: ReadonlySet<ReportTab> = new Set(["metadata", "provenance", "forensics"]);
 
 export default async function AnalysisPage({
   params,
@@ -93,6 +90,7 @@ export default async function AnalysisPage({
     forensicsResult,
     fileLinkResult,
     evidenceResult,
+    timelineResult,
   ] = await Promise.all([
     isImage ? authedRequest<ImageMetadataResponse>(`/analysis/${id}/metadata`) : null,
     isImage ? authedRequest<ImageProvenanceResponse>(`/analysis/${id}/provenance`) : null,
@@ -107,6 +105,7 @@ export default async function AnalysisPage({
       ? authedRequest<AnalysisFileLink>(`/analysis/${id}/file`)
       : null,
     authedRequest<EvidenceListResponse>(`/analysis/${id}/evidence`),
+    active === "timeline" ? authedRequest<TimelineResponse>(`/analysis/${id}/timeline`) : null,
   ]);
   const md = metadataResult?.ok ? metadataResult.data : null;
   const prov = provenanceResult?.ok ? provenanceResult.data : null;
@@ -120,6 +119,7 @@ export default async function AnalysisPage({
   const fileLink = fileLinkResult?.ok ? fileLinkResult.data : null;
 
   const engine = evidenceResult.ok ? evidenceResult.data : null;
+  const timeline = timelineResult?.ok ? timelineResult.data : null;
   const evidence = engine
     ? fromServerEvidence(engine)
     : deriveEvidence(a, md, prov, fp, txt, tfp, ai, sources, forensics);
@@ -303,10 +303,12 @@ export default async function AnalysisPage({
             <SourceMatchesCard data={sources} />
             <FingerprintsCard data={fp} />
           </>
+        ) : timeline ? (
+          <TimelineCard data={timeline} />
         ) : (
           <NotAvailable
-            title="No timeline can be reconstructed yet"
-            description="A timeline is built only from dated evidence (capture time, signing time, edit actions). The evidence engine that assembles it is a later step; nothing is inferred in the meantime."
+            title="No timeline has been built yet"
+            description="The timeline is assembled by the evidence step from recorded times only (capture, signing, edit actions, publication, discovery, submission). It appears once processing completes; nothing is inferred in the meantime."
           />
         )}
       </section>

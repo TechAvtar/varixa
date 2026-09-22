@@ -31,6 +31,8 @@ export type {
   EvidenceLevel,
   EvidenceListResponse,
   EvidenceRecord,
+  TimelineEvent,
+  TimelineResponse,
 } from "./evidence";
 export { EVIDENCE_LEVELS } from "./evidence";
 export type {

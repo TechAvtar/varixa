@@ -185,6 +185,8 @@ class Observations:
     search_matches: Sequence[Any] = ()
     forensics: Any | None = None
     provider_calls: Sequence[Any] = ()
+    # When the analysis was created (the file's arrival at Verixa); tz-aware.
+    submitted_at: datetime | None = None
 
 
 def _fmt(value: Any) -> str:

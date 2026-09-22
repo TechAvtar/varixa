@@ -42,12 +42,14 @@ from app.schemas.metadata import ImageMetadataResponse, NormalizedMetadataRespon
 from app.schemas.provenance import ImageProvenanceResponse, NormalizedProvenanceResponse
 from app.schemas.provider_calls import ProviderCallResponse, ProviderCallsResponse
 from app.schemas.text import LanguageResponse, TextAnalysisCreate, TextAnalysisResponse
+from app.schemas.timeline import TimelineEventResponse, TimelineResponse
 from app.services.evidence.engine import (
     ENGINE_VERSION,
     EvidenceThresholds,
     ai_level,
     synthesis_confidence,
 )
+from app.services.evidence.timeline import LIMITATIONS as _TIMELINE_NOTES
 from app.services.image import ImageTooLargeError
 from app.services.image.provenance import NormalizedProvenance, provenance_limitations
 from app.utils.errors import NotFoundError
@@ -473,6 +475,37 @@ async def get_analysis_evidence(
         ),
         thresholds=thresholds.to_json(),
         items=items,
+    )
+
+
+@router.get("/{analysis_id}/timeline", response_model=TimelineResponse)
+async def get_analysis_timeline(
+    analysis_id: uuid.UUID, user: CurrentUser, analyses: AnalysisSvc
+) -> TimelineResponse:
+    """Evidence-derived timeline: only times some subsystem recorded, each with its certainty."""
+    rows = await analyses.list_timeline(user, analysis_id)
+    if not rows:
+        raise NotFoundError("No timeline has been built for this analysis yet.")
+    events = [
+        TimelineEventResponse(
+            id=r.id,
+            event_type=r.event_type,
+            event_time=r.event_time,
+            raw_time=r.raw_time,
+            tz_known=r.tz_known,
+            certainty=EvidenceLevel(r.certainty),
+            description=r.description,
+            source=r.source,
+            source_evidence_ids=[uuid.UUID(str(x)) for x in (r.source_evidence_ids or [])],
+            data={k: v for k, v in (r.details or {}).items() if k not in {"version", "rules"}},
+        )
+        for r in rows
+    ]
+    return TimelineResponse(
+        version=str((rows[0].details or {}).get("version") or "v1"),
+        generated_at=max(r.created_at for r in rows),
+        events=events,
+        limitations=list(_TIMELINE_NOTES),
     )
 
 

@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from app.models.source_match import SourceMatch, SourceSearchRun
     from app.models.text_analysis import TextAnalysis
     from app.models.text_fingerprints import TextFingerprints
+    from app.models.timeline_event import TimelineEvent
     from app.models.user import User
 
 
@@ -49,6 +50,9 @@ class Analysis(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         back_populates="analysis",
         cascade="all, delete-orphan",
         order_by="AnalysisStep.position",
+    )
+    timeline_events: Mapped[list["TimelineEvent"]] = relationship(
+        back_populates="analysis", cascade="all, delete-orphan"
     )
     evidence: Mapped[list["Evidence"]] = relationship(
         back_populates="analysis", cascade="all, delete-orphan"

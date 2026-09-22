@@ -20,6 +20,7 @@ from app.models import (
     SourceSearchRun,
     TextAnalysis,
     TextFingerprints,
+    TimelineEvent,
 )
 
 
@@ -228,6 +229,27 @@ class AnalysisRepository:
     async def replace_evidence(self, analysis_id: uuid.UUID, rows: list[Evidence]) -> None:
         """Evidence is derived; a re-run replaces the whole set atomically with the run."""
         await self._session.execute(delete(Evidence).where(Evidence.analysis_id == analysis_id))
+        self._session.add_all(rows)
+        await self._session.flush()
+
+    async def list_timeline(self, analysis_id: uuid.UUID) -> Sequence[TimelineEvent]:
+        """Dated events first in time order, then undatable ones, then by creation order."""
+        stmt = (
+            select(TimelineEvent)
+            .where(TimelineEvent.analysis_id == analysis_id)
+            .order_by(
+                TimelineEvent.event_time.is_(None),
+                TimelineEvent.event_time,
+                TimelineEvent.created_at,
+                TimelineEvent.id,
+            )
+        )
+        return (await self._session.execute(stmt)).scalars().all()
+
+    async def replace_timeline(self, analysis_id: uuid.UUID, rows: list[TimelineEvent]) -> None:
+        await self._session.execute(
+            delete(TimelineEvent).where(TimelineEvent.analysis_id == analysis_id)
+        )
         self._session.add_all(rows)
         await self._session.flush()
 

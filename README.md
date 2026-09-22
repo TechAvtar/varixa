@@ -208,6 +208,17 @@ conservative, clamped to the rule's docs/07 ceiling so nothing can be overstated
 record. The thresholds in force are recorded in the `evidence` step details and echoed by the
 evidence endpoint.
 
+### Timeline
+
+`services/evidence/timeline.py` turns *recorded* times into ordered events: C2PA signing time
+and dated manifest actions (certainty = the provenance record's level), metadata capture and
+modification times (POSSIBLE), source publication dates as reported (POSSIBLE), our own source
+discovery time and the submission time (VERIFIED). Each event keeps the raw string, whether a
+timezone was recorded, its source, and the evidence row ids it came from; events whose time could
+not be parsed sort last with a null `event_time`. Rows live in `timeline_events` (replaced by
+the evidence step) and are served by `GET /analysis/{id}/timeline`; the Timeline tab renders
+them as a vertical line with level, source and raw time.
+
 ### Forensics UI
 
 The Forensics tab shows, per method, the observation, the method's design confidence, the
