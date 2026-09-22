@@ -15,7 +15,9 @@ from app.schemas.analysis import (
     AnalysisStepResponse,
 )
 from app.schemas.metadata import ImageMetadataResponse, NormalizedMetadataResponse
+from app.schemas.provenance import ImageProvenanceResponse, NormalizedProvenanceResponse
 from app.services.image import ImageTooLargeError
+from app.services.image.provenance import NormalizedProvenance, provenance_limitations
 from app.utils.errors import NotFoundError
 
 router = APIRouter(prefix="/analysis")
@@ -112,6 +114,23 @@ async def get_analysis_metadata(
         iptc=row.iptc_json or {},
         icc=row.icc_json or {},
         other={g: tags for g, tags in raw.items() if g not in _CORE_GROUPS},
+        limitations=limitations,
+    )
+
+
+@router.get("/{analysis_id}/provenance", response_model=ImageProvenanceResponse)
+async def get_analysis_provenance(
+    analysis_id: uuid.UUID, user: CurrentUser, analyses: AnalysisSvc
+) -> ImageProvenanceResponse:
+    row = await analyses.get_provenance(user, analysis_id)
+    if row is None:
+        raise NotFoundError("Provenance has not been inspected for this analysis.")
+    normalized = NormalizedProvenanceResponse.model_validate(row.normalized_json or {})
+    limitations = provenance_limitations(NormalizedProvenance(**(row.normalized_json or {})))
+    return ImageProvenanceResponse(
+        normalized=normalized,
+        manifests=row.manifests_json or {},
+        validation_status=(row.validation_json or {}).get("status", []),
         limitations=limitations,
     )
 

@@ -1,9 +1,14 @@
-import type { AnalysisResponse, ImageMetadataResponse } from "@verixa/shared-types";
+import type {
+  AnalysisResponse,
+  ImageMetadataResponse,
+  ImageProvenanceResponse,
+} from "@verixa/shared-types";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AnalysisStatusBadge } from "@/components/analyses/analysis-status-badge";
 import { MetadataCard } from "@/components/analyses/metadata-card";
+import { ProvenanceCard } from "@/components/analyses/provenance-card";
 import { ProcessingSteps } from "@/components/analyses/processing-steps";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -31,8 +36,12 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
     );
   }
   const a = result.data;
-  const metadataResult = await authedRequest<ImageMetadataResponse>(`/analysis/${id}/metadata`);
+  const [metadataResult, provenanceResult] = await Promise.all([
+    authedRequest<ImageMetadataResponse>(`/analysis/${id}/metadata`),
+    authedRequest<ImageProvenanceResponse>(`/analysis/${id}/provenance`),
+  ]);
   const metadata = metadataResult.ok ? metadataResult.data : null;
+  const provenance = provenanceResult.ok ? provenanceResult.data : null;
 
   return (
     <div className="space-y-8">
@@ -81,6 +90,7 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
 
       <ProcessingSteps steps={a.steps ?? []} />
 
+      {a.type === "image" ? <ProvenanceCard provenance={provenance} /> : null}
       {a.type === "image" ? <MetadataCard metadata={metadata} /> : null}
 
       <Card>

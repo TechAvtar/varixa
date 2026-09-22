@@ -25,6 +25,12 @@ export type {
 } from "./auth";
 export type { ApiErrorBody } from "./errors";
 export type {
+  ImageProvenanceResponse,
+  NormalizedProvenance,
+  ProvenanceAction,
+  ProvenanceValidationFailure,
+} from "./provenance";
+export type {
   ImageMetadataResponse,
   NormalizedMetadata,
   ParsedTimestamp,

@@ -5,7 +5,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models import Analysis, AnalysisFile, AnalysisStep, ImageMetadata
+from app.models import Analysis, AnalysisFile, AnalysisStep, ImageMetadata, ImageProvenance
 
 
 class AnalysisRepository:
@@ -69,6 +69,18 @@ class AnalysisRepository:
     async def get_metadata(self, analysis_id: uuid.UUID) -> ImageMetadata | None:
         stmt = select(ImageMetadata).where(ImageMetadata.analysis_id == analysis_id)
         return (await self._session.execute(stmt)).scalar_one_or_none()
+
+    async def get_provenance(self, analysis_id: uuid.UUID) -> ImageProvenance | None:
+        stmt = select(ImageProvenance).where(ImageProvenance.analysis_id == analysis_id)
+        return (await self._session.execute(stmt)).scalar_one_or_none()
+
+    async def replace_provenance(self, provenance: ImageProvenance) -> ImageProvenance:
+        await self._session.execute(
+            delete(ImageProvenance).where(ImageProvenance.analysis_id == provenance.analysis_id)
+        )
+        self._session.add(provenance)
+        await self._session.flush()
+        return provenance
 
     async def replace_metadata(self, metadata: ImageMetadata) -> ImageMetadata:
         """Idempotent: a re-run replaces the previous row for the analysis."""

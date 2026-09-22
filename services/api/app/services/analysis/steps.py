@@ -1,17 +1,28 @@
 """Concrete pipeline steps for image analyses. Each is small and independently testable."""
 
-from app.models import ImageMetadata
+from app.models import ImageMetadata, ImageProvenance
 from app.providers.metadata import (
     MetadataExtractionError,
     MetadataExtractor,
     build_metadata_extractor,
 )
+from app.providers.provenance import (
+    ProvenanceInspectionError,
+    ProvenanceInspector,
+    build_provenance_inspector,
+)
 from app.providers.storage.base import ObjectNotFoundError
 from app.repositories.analysis import AnalysisRepository
-from app.services.analysis.pipeline import PipelineContext, StepFailedError, StepOutcome
+from app.services.analysis.pipeline import (
+    PipelineContext,
+    PipelineStep,
+    StepFailedError,
+    StepOutcome,
+)
 from app.services.image import validate_image
 from app.services.image.hashing import compute_hashes
 from app.services.image.metadata import normalize_metadata, to_utc_or_none
+from app.services.image.provenance import normalize_provenance
 
 
 class ValidateImageStep:
@@ -138,6 +149,59 @@ class ExtractMetadataStep:
         )
 
 
-def image_pipeline_steps() -> list[ValidateImageStep | HashImageStep | ExtractMetadataStep]:
-    """Ordered steps for an image analysis. Later tasks append C2PA, forensics, ..."""
-    return [ValidateImageStep(), HashImageStep(), ExtractMetadataStep()]
+class InspectProvenanceStep:
+    """C2PA / Content Credentials via c2patool. Absence is UNKNOWN, never a red flag.
+
+    Non-critical: most images carry no credentials, and an engine failure must
+    not discard the deterministic evidence already gathered.
+    """
+
+    name = "provenance"
+    critical = False
+
+    async def run(self, ctx: PipelineContext) -> StepOutcome:
+        image = ctx.artifacts.get("image")
+        if image is None:
+            raise StepFailedError("NO_VERIFIED_IMAGE", "Validation did not publish an image.")
+        inspector: ProvenanceInspector = ctx.providers.get(
+            "provenance"
+        ) or build_provenance_inspector(ctx.settings)
+        try:
+            raw = await inspector.inspect(image.data, extension=image.extension)
+        except ProvenanceInspectionError as exc:
+            raise StepFailedError("PROVENANCE_ENGINE_FAILED", str(exc)) from exc
+
+        normalized = normalize_provenance(raw)
+        row = ImageProvenance(
+            analysis_id=ctx.analysis.id,
+            engine=raw.engine,
+            engine_version=raw.engine_version,
+            has_c2pa=normalized.has_c2pa,
+            valid_signature=normalized.valid_signature,
+            signer=normalized.signer,
+            signed_at=normalized.signed_at,
+            claim_generator=normalized.claim_generator,
+            manifests_json=(raw.summary or {}).get("manifests") if raw.summary else None,
+            claims_json={"actions": normalized.actions, "authors": normalized.authors}
+            if normalized.has_c2pa
+            else None,
+            validation_json={"status": raw.validation_status} if raw.present else None,
+            normalized_json=normalized.to_json(),
+            raw_json={"summary": raw.summary, "detailed": raw.detailed} if raw.present else None,
+        )
+        await AnalysisRepository(ctx.session).replace_provenance(row)
+        ctx.artifacts["provenance"] = normalized
+        return StepOutcome.ok(
+            engine=raw.engine,
+            engine_version=raw.engine_version,
+            has_c2pa=normalized.has_c2pa,
+            valid_signature=normalized.valid_signature,
+            signer=normalized.signer,
+            manifest_count=normalized.manifest_count,
+            validation_failures=len(normalized.validation_failures),
+        )
+
+
+def image_pipeline_steps() -> list[PipelineStep]:
+    """Ordered steps for an image analysis. Later tasks append forensics, AI, search, ..."""
+    return [ValidateImageStep(), HashImageStep(), ExtractMetadataStep(), InspectProvenanceStep()]

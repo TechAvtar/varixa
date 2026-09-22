@@ -8,6 +8,7 @@ from app.models.analysis_step import AnalysisStep
 from app.models.base import Base
 from app.models.evidence import Evidence
 from app.models.image_metadata import ImageMetadata
+from app.models.image_provenance import ImageProvenance
 from app.models.provider_call import ProviderCall
 from app.models.user import User
 from app.models.user_session import UserSession
@@ -19,6 +20,7 @@ __all__ = [
     "Base",
     "Evidence",
     "ImageMetadata",
+    "ImageProvenance",
     "ProviderCall",
     "User",
     "UserSession",

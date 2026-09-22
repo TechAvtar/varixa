@@ -50,6 +50,11 @@ class Settings(BaseSettings):
     exiftool_path: str | None = None
     exiftool_timeout_seconds: float = Field(default=30.0, ge=1, le=300)
 
+    # C2PA / Content Credentials engine: "auto" uses c2patool when installed, else none.
+    provenance_engine: Literal["auto", "c2patool", "none"] = "auto"
+    c2patool_path: str | None = None
+    c2patool_timeout_seconds: float = Field(default=30.0, ge=1, le=300)
+
     # Upload limits (untrusted input). Pixels are checked from the header before decoding.
     max_upload_bytes: int = Field(default=25 * 1024 * 1024, ge=1024)
     max_image_pixels: int = Field(default=40_000_000, ge=10_000)
@@ -114,6 +119,8 @@ class Settings(BaseSettings):
             self.data_dir.mkdir(parents=True, exist_ok=True)
         if self.storage_backend == "local" and self.storage_local_path is not None:
             self.storage_local_path.mkdir(parents=True, exist_ok=True)
+        # Scratch space for engines that can only read files (c2patool).
+        (self.data_dir / "tmp").mkdir(parents=True, exist_ok=True)
 
 
 @lru_cache

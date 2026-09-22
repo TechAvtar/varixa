@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.config import Settings
 from app.enums import AnalysisStatus, AnalysisType
 from app.providers.metadata import build_metadata_extractor
+from app.providers.provenance import build_provenance_inspector
 from app.providers.storage.base import ObjectStorage
 from app.repositories.analysis import AnalysisRepository
 from app.services.analysis.pipeline import PipelineContext, PipelineRunner
@@ -86,7 +87,10 @@ async def run_analysis(
             session=session,
             storage=storage,
             settings=settings,
-            providers={"metadata": build_metadata_extractor(settings)},
+            providers={
+                "metadata": build_metadata_extractor(settings),
+                "provenance": build_provenance_inspector(settings),
+            },
         )
         try:
             result = await PipelineRunner(image_pipeline_steps()).run(ctx)

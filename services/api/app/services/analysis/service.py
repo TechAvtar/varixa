@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.enums import AnalysisStatus, AnalysisType
-from app.models import Analysis, AnalysisFile, ImageMetadata, User
+from app.models import Analysis, AnalysisFile, ImageMetadata, ImageProvenance, User
 from app.providers.storage.base import ObjectStorage
 from app.repositories.analysis import AnalysisRepository
 from app.services import storage_keys
@@ -123,6 +123,10 @@ class AnalysisService:
     async def get_metadata(self, user: User, analysis_id: uuid.UUID) -> ImageMetadata | None:
         await self.get_owned(user, analysis_id)  # ownership first; existence never leaks
         return await self._analyses.get_metadata(analysis_id)
+
+    async def get_provenance(self, user: User, analysis_id: uuid.UUID) -> ImageProvenance | None:
+        await self.get_owned(user, analysis_id)
+        return await self._analyses.get_provenance(analysis_id)
 
     async def counts(self, user: User) -> dict[str, int]:
         by_type = await self._analyses.count_by_type_for_user(user.id)
