@@ -3,7 +3,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, File, Form, Query, UploadFile, status
 
-from app.api.deps import AnalysisSvc, AppSettings, CurrentUser
+from app.api.deps import AnalysisSvc, AppSettings, CurrentUser, Jobs
 from app.models import Analysis
 from app.schemas.analysis import (
     MAX_TITLE_LENGTH,
@@ -12,6 +12,7 @@ from app.schemas.analysis import (
     AnalysisFileResponse,
     AnalysisListResponse,
     AnalysisResponse,
+    AnalysisStepResponse,
 )
 from app.services.image import ImageTooLargeError
 
@@ -40,6 +41,7 @@ async def create_image_analysis(
     user: CurrentUser,
     analyses: AnalysisSvc,
     settings: AppSettings,
+    jobs: Jobs,
     file: Annotated[UploadFile, File()],
     title: Annotated[str | None, Form(max_length=MAX_TITLE_LENGTH)] = None,
 ) -> AnalysisCreatedResponse:
@@ -48,6 +50,7 @@ async def create_image_analysis(
     analysis = await analyses.create_image_analysis(
         user, data=data, filename=file.filename, title=title
     )
+    jobs.dispatch(analysis.id)
     return AnalysisCreatedResponse(id=analysis.id, status=analysis.status, type=analysis.type)
 
 
@@ -85,4 +88,5 @@ def _to_response(analysis: Analysis) -> AnalysisResponse:
     response = AnalysisResponse.model_validate(analysis)
     if analysis.files:
         response.file = AnalysisFileResponse.model_validate(analysis.files[0])
+    response.steps = [AnalysisStepResponse.model_validate(s) for s in analysis.steps]
     return response

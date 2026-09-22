@@ -3,7 +3,7 @@
 import uuid
 from typing import Annotated
 
-from fastapi import Depends, Request
+from fastapi import BackgroundTasks, Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +15,7 @@ from app.services.analysis import AnalysisService
 from app.services.auth import AuthService
 from app.utils import security
 from app.utils.errors import UnauthorizedError
+from app.workers import BackgroundTaskDispatcher, Dispatcher
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -28,6 +29,18 @@ def get_storage(request: Request) -> ObjectStorage:
 
 
 Storage = Annotated[ObjectStorage, Depends(get_storage)]
+
+
+def get_dispatcher(
+    request: Request, tasks: BackgroundTasks, storage: Storage, settings: AppSettings
+) -> Dispatcher:
+    override: Dispatcher | None = getattr(request.app.state, "dispatcher", None)
+    return override or BackgroundTaskDispatcher(
+        tasks, request.app.state.session_factory, storage, settings
+    )
+
+
+Jobs = Annotated[Dispatcher, Depends(get_dispatcher)]
 
 
 def get_auth_service(session: DbSession, settings: AppSettings) -> AuthService:

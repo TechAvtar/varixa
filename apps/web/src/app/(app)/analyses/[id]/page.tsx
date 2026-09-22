@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AnalysisStatusBadge } from "@/components/analyses/analysis-status-badge";
+import { ProcessingSteps } from "@/components/analyses/processing-steps";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -48,12 +49,21 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
         </div>
       </div>
 
-      {a.status === "queued" ? (
+      {a.status === "queued" || a.status === "processing" ? (
         <Alert>
-          <AlertTitle>Queued</AlertTitle>
+          <AlertTitle>{a.status === "queued" ? "Queued" : "Processing"}</AlertTitle>
           <AlertDescription>
-            The file is stored and waiting for processing. Evidence extraction (metadata,
-            provenance, forensics) is not enabled in this build yet, so no findings are shown.
+            The file is stored and being processed. Reload this page to see progress; it does not
+            refresh automatically.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+      {a.status === "completed" ? (
+        <Alert>
+          <AlertTitle>Processing complete</AlertTitle>
+          <AlertDescription>
+            Only file validation runs in this build. Metadata, provenance, forensic and source
+            findings are not yet produced, so no evidence is shown.
           </AlertDescription>
         </Alert>
       ) : null}
@@ -65,6 +75,8 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
           </AlertDescription>
         </Alert>
       ) : null}
+
+      <ProcessingSteps steps={a.steps ?? []} />
 
       <Card>
         <CardHeader>

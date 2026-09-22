@@ -10,7 +10,9 @@ export type {
   AnalysisListResponse,
   AnalysisResponse,
   AnalysisStatus,
+  AnalysisStepResponse,
   AnalysisType,
+  StepStatus,
 } from "./analysis";
 export { IMAGE_UPLOAD } from "./analysis";
 export type {

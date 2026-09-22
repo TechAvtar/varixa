@@ -46,6 +46,12 @@ Every package's `__init__.py` carries a one-line responsibility docstring.
 - Routes get the user via `app.api.deps.CurrentUser`; ownership via
   `app.services.authorization.assert_owns_analysis` (404 for foreign resources, never 403).
 
+## Pipeline
+- New processing work = a `PipelineStep` in `services/analysis/steps.py` (name, `critical`, `run(ctx)`),
+  appended to `image_pipeline_steps()`. Raise `StepFailedError(code, message)` for expected failures;
+  put raw observations in the returned `details`; publish objects for later steps via `ctx.artifacts`.
+- Never mark a step completed with fabricated data; return `StepOutcome.skipped(reason)` instead.
+
 ## Non-negotiables
 - Routes → Services → Repositories/Providers. No provider calls from routes.
 - Every schema change ships with an Alembic migration.

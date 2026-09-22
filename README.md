@@ -121,6 +121,19 @@ Only then is the original stored (private key `uploads/{user}/{analysis}/{sha256
 analysis row committed; a rejected file leaves no record. `GET /analysis/{id}` returns a `file`
 block with the detected type, size, dimensions and SHA-256.
 
+### Processing pipeline
+
+Uploads are processed by a step pipeline (`app/services/analysis/pipeline.py`) dispatched after
+the response through `app/workers/dispatcher.py` (FastAPI background task in the MVP; the
+`Dispatcher` interface is the seam for a real queue). Every step is persisted in
+`analysis_steps` with status, timing, a stable `error_code` and non-sensitive `details`, and is
+returned in `GET /analysis/{id}` as `steps[]`. Non-critical step failures are recorded and the
+run continues; a critical failure fails the analysis and marks the remaining steps `skipped`.
+
+Steps today: `validate` (re-reads the stored original, checks the SHA-256 against the record and
+re-runs the upload validation). Later tasks add metadata, provenance, fingerprints, forensics, AI
+signals, source search, evidence and report steps.
+
 ## Object storage
 
 All uploads, derived artifacts and reports go through `app.providers.storage.ObjectStorage`

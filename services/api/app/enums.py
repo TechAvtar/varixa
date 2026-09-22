@@ -39,3 +39,10 @@ class ProviderCallStatus(StrEnum):
     FAILED = "failed"
     TIMEOUT = "timeout"
     SKIPPED = "skipped"
+
+
+class StepStatus(StrEnum):
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    SKIPPED = "skipped"

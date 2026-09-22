@@ -1,9 +1,10 @@
 import uuid
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.enums import AnalysisStatus, AnalysisType
+from app.enums import AnalysisStatus, AnalysisType, StepStatus
 
 MAX_TITLE_LENGTH = 300
 
@@ -21,6 +22,19 @@ class AnalysisFileResponse(BaseModel):
     height: int | None
 
 
+class AnalysisStepResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    name: str
+    status: StepStatus
+    started_at: datetime | None
+    finished_at: datetime | None
+    duration_ms: int | None
+    error_code: str | None
+    error_message: str | None
+    details: dict[str, Any] | None
+
+
 class AnalysisResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -33,6 +47,7 @@ class AnalysisResponse(BaseModel):
     created_at: datetime
     completed_at: datetime | None
     file: AnalysisFileResponse | None = None
+    steps: list[AnalysisStepResponse] = Field(default_factory=list)
 
 
 class AnalysisCreatedResponse(BaseModel):

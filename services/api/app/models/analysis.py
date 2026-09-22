@@ -9,6 +9,7 @@ from app.enums import AnalysisStatus
 from app.models.base import Base, CreatedAtMixin, TZDateTime, UUIDPrimaryKeyMixin
 
 if TYPE_CHECKING:
+    from app.models.analysis_step import AnalysisStep
     from app.models.evidence import Evidence
     from app.models.provider_call import ProviderCall
     from app.models.user import User
@@ -35,6 +36,11 @@ class Analysis(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     user: Mapped["User"] = relationship(back_populates="analyses")
     files: Mapped[list["AnalysisFile"]] = relationship(
         back_populates="analysis", cascade="all, delete-orphan"
+    )
+    steps: Mapped[list["AnalysisStep"]] = relationship(
+        back_populates="analysis",
+        cascade="all, delete-orphan",
+        order_by="AnalysisStep.position",
     )
     evidence: Mapped[list["Evidence"]] = relationship(
         back_populates="analysis", cascade="all, delete-orphan"

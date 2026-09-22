@@ -2,6 +2,19 @@
 
 export type AnalysisType = "image" | "text";
 export type AnalysisStatus = "queued" | "processing" | "completed" | "failed";
+export type StepStatus = "running" | "completed" | "failed" | "skipped";
+
+/** One independently identifiable pipeline step (mirrors `AnalysisStepResponse`). */
+export interface AnalysisStepResponse {
+  name: string;
+  status: StepStatus;
+  started_at: string | null;
+  finished_at: string | null;
+  duration_ms: number | null;
+  error_code: string | null;
+  error_message: string | null;
+  details: Record<string, unknown> | null;
+}
 
 /** Client-safe view of the stored original; storage keys are never exposed. */
 export interface AnalysisFileResponse {
@@ -23,6 +36,7 @@ export interface AnalysisResponse {
   created_at: string;
   completed_at: string | null;
   file: AnalysisFileResponse | null;
+  steps: AnalysisStepResponse[];
 }
 
 export interface AnalysisCreatedResponse {

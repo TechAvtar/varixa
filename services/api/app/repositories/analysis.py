@@ -5,7 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models import Analysis, AnalysisFile
+from app.models import Analysis, AnalysisFile, AnalysisStep
 
 
 class AnalysisRepository:
@@ -18,7 +18,7 @@ class AnalysisRepository:
         stmt = (
             select(Analysis)
             .where(Analysis.id == analysis_id, Analysis.deleted_at.is_(None))
-            .options(selectinload(Analysis.files))
+            .options(selectinload(Analysis.files), selectinload(Analysis.steps))
             .execution_options(populate_existing=True)
         )
         return (await self._session.execute(stmt)).scalar_one_or_none()
@@ -31,7 +31,7 @@ class AnalysisRepository:
             await self._session.execute(select(func.count()).select_from(base.subquery()))
         ).scalar_one()
         stmt = (
-            base.options(selectinload(Analysis.files))
+            base.options(selectinload(Analysis.files), selectinload(Analysis.steps))
             .order_by(Analysis.created_at.desc(), Analysis.id.desc())
             .offset(offset)
             .limit(limit)
@@ -60,3 +60,8 @@ class AnalysisRepository:
         self._session.add(file)
         await self._session.flush()
         return file
+
+    async def add_step(self, step: AnalysisStep) -> AnalysisStep:
+        self._session.add(step)
+        await self._session.flush()
+        return step

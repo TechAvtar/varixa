@@ -50,6 +50,7 @@ class ValidatedImage:
     pil_format: str
     width: int
     height: int
+    frames: int = 1
 
     @property
     def size_bytes(self) -> int:
@@ -105,9 +106,11 @@ def validate_image(data: bytes, *, max_bytes: int, max_pixels: int) -> Validated
         raise InvalidImageError("The uploaded image is malformed or truncated.") from exc
 
     # verify() invalidates the handle; decode once to ensure pixels are actually readable.
+    frames = 1
     try:
         with Image.open(io.BytesIO(data)) as img:
             img.load()
+            frames = max(1, int(getattr(img, "n_frames", 1)))
     except (OSError, SyntaxError, ValueError, Image.DecompressionBombError) as exc:
         raise InvalidImageError("The uploaded image could not be decoded.") from exc
 
@@ -120,4 +123,5 @@ def validate_image(data: bytes, *, max_bytes: int, max_pixels: int) -> Validated
         pil_format=fmt,
         width=width,
         height=height,
+        frames=frames,
     )
