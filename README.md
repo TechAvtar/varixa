@@ -208,6 +208,17 @@ conservative, clamped to the rule's docs/07 ceiling so nothing can be overstated
 record. The thresholds in force are recorded in the `evidence` step details and echoed by the
 evidence endpoint.
 
+### Matches
+
+`GET /analysis/{id}/matches` returns every normalised match (URL, title, similarity on the
+provider's scale, provider, source kind, matched phrase, reported publication date, discovery
+time, raw provider record) plus a deterministic `summary` (`services/search/summary.py`: count,
+distinct domains most frequent first, kinds, similarity range, how many matches carry a reported
+date and the earliest of them, labelled as reported). The Matches tab lists them with sort
+(provider rank, similarity, reported date) and kind/domain filters; every match carries the
+POSSIBLE badge (docs/07) and the view says plainly that a match shows discovery, not origin.
+Account-level duplicates (fingerprints) sit below it.
+
 ### Overview
 
 `services/reports/overview.py` assembles the report's first page from stored rows only: evidence

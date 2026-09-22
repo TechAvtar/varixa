@@ -80,7 +80,12 @@ export type {
   RawTagGroup,
 } from "./metadata";
 export type { HealthResponse } from "./health";
-export type { SourceKind, SourceMatch, SourceMatchesResponse } from "./matches";
+export type {
+  SourceKind,
+  SourceMatch,
+  SourceMatchesResponse,
+  SourceMatchesSummary,
+} from "./matches";
 export type {
   ProviderCall,
   ProviderCallsResponse,

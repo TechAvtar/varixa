@@ -39,7 +39,11 @@ from app.schemas.forensics import (
     NoiseFindingResponse,
     ResamplingFindingResponse,
 )
-from app.schemas.matches import SourceMatchesResponse, SourceMatchResponse
+from app.schemas.matches import (
+    SourceMatchesResponse,
+    SourceMatchesSummary,
+    SourceMatchResponse,
+)
 from app.schemas.metadata import ImageMetadataResponse, NormalizedMetadataResponse
 from app.schemas.overview import (
     OverviewEngine,
@@ -66,6 +70,7 @@ from app.services.evidence.timeline import LIMITATIONS as _TIMELINE_NOTES
 from app.services.image import ImageTooLargeError
 from app.services.image.provenance import NormalizedProvenance, provenance_limitations
 from app.services.reports.overview import OVERVIEW_VERSION, build_overview
+from app.services.search.summary import summarize_matches
 from app.services.synthesis.request import build_request as _build_synthesis_request
 from app.utils.errors import NotFoundError
 
@@ -443,6 +448,7 @@ async def get_analysis_matches(
             )
             for m in matches
         ],
+        summary=SourceMatchesSummary(**summarize_matches(matches).__dict__),
         limitations=[str(x) for x in (run.limitations_json or [])],
     )
 
