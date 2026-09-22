@@ -12,6 +12,7 @@ from app.services.analysis.pipeline import (
     StepFailedError,
     StepOutcome,
 )
+from app.services.analysis.search_step import SourceSearchStep
 from app.services.text import (
     compute_statistics,
     compute_structure,
@@ -158,4 +159,5 @@ def text_pipeline_steps() -> list[PipelineStep]:
         TextStatisticsStep(),
         TextFingerprintsStep(),
         AIDetectionStep(),
+        SourceSearchStep(),
     ]

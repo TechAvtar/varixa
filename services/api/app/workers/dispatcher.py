@@ -17,6 +17,7 @@ from app.enums import AnalysisStatus, AnalysisType
 from app.providers.ai import build_ai_detector
 from app.providers.metadata import build_metadata_extractor
 from app.providers.provenance import build_provenance_inspector
+from app.providers.search import build_image_source_search, build_text_source_search
 from app.providers.storage.base import ObjectStorage
 from app.repositories.analysis import AnalysisRepository
 from app.services.analysis.pipeline import PipelineContext, PipelineRunner
@@ -97,6 +98,8 @@ async def run_analysis(
                 "metadata": build_metadata_extractor(settings),
                 "provenance": build_provenance_inspector(settings),
                 "ai_detector": build_ai_detector(settings),
+                "image_search": build_image_source_search(settings),
+                "text_search": build_text_source_search(settings),
             },
         )
         try:

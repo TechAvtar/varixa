@@ -4,6 +4,7 @@ import type {
   ImageFingerprintsResponse,
   ImageMetadataResponse,
   ImageProvenanceResponse,
+  SourceMatchesResponse,
   TextAnalysisResponse,
   TextFingerprintsResponse,
 } from "@verixa/shared-types";
@@ -19,6 +20,7 @@ import { NotAvailable } from "@/components/analyses/not-available";
 import { ProcessingSteps } from "@/components/analyses/processing-steps";
 import { ProvenanceCard } from "@/components/analyses/provenance-card";
 import { RawJson } from "@/components/analyses/raw-json";
+import { SourceMatchesCard } from "@/components/analyses/source-matches-card";
 import { TextFingerprintsCard } from "@/components/analyses/text-fingerprints-card";
 import { TextStatsCard } from "@/components/analyses/text-stats-card";
 import { isReportTab, type ReportTab, ReportTabs } from "@/components/analyses/report-tabs";
@@ -67,23 +69,32 @@ export default async function AnalysisPage({
   const a = result.data;
 
   const isImage = a.type === "image";
-  const [metadataResult, provenanceResult, fingerprintsResult, textResult, textFpResult, aiResult] =
-    await Promise.all([
-      isImage ? authedRequest<ImageMetadataResponse>(`/analysis/${id}/metadata`) : null,
-      isImage ? authedRequest<ImageProvenanceResponse>(`/analysis/${id}/provenance`) : null,
-      isImage ? authedRequest<ImageFingerprintsResponse>(`/analysis/${id}/fingerprints`) : null,
-      isImage ? null : authedRequest<TextAnalysisResponse>(`/analysis/${id}/text`),
-      isImage ? null : authedRequest<TextFingerprintsResponse>(`/analysis/${id}/fingerprints`),
-      authedRequest<AIDetectionResponse>(`/analysis/${id}/ai`),
-    ]);
+  const [
+    metadataResult,
+    provenanceResult,
+    fingerprintsResult,
+    textResult,
+    textFpResult,
+    aiResult,
+    matchesResult,
+  ] = await Promise.all([
+    isImage ? authedRequest<ImageMetadataResponse>(`/analysis/${id}/metadata`) : null,
+    isImage ? authedRequest<ImageProvenanceResponse>(`/analysis/${id}/provenance`) : null,
+    isImage ? authedRequest<ImageFingerprintsResponse>(`/analysis/${id}/fingerprints`) : null,
+    isImage ? null : authedRequest<TextAnalysisResponse>(`/analysis/${id}/text`),
+    isImage ? null : authedRequest<TextFingerprintsResponse>(`/analysis/${id}/fingerprints`),
+    authedRequest<AIDetectionResponse>(`/analysis/${id}/ai`),
+    authedRequest<SourceMatchesResponse>(`/analysis/${id}/matches`),
+  ]);
   const md = metadataResult?.ok ? metadataResult.data : null;
   const prov = provenanceResult?.ok ? provenanceResult.data : null;
   const fp = fingerprintsResult?.ok ? fingerprintsResult.data : null;
   const txt = textResult?.ok ? textResult.data : null;
   const tfp = textFpResult?.ok ? textFpResult.data : null;
   const ai = aiResult.ok ? aiResult.data : null;
+  const sources = matchesResult.ok ? matchesResult.data : null;
 
-  const evidence = deriveEvidence(a, md, prov, fp, txt, tfp, ai);
+  const evidence = deriveEvidence(a, md, prov, fp, txt, tfp, ai, sources);
   const counts = summarise(evidence);
   const processing = a.status === "queued" || a.status === "processing";
 
@@ -174,6 +185,7 @@ export default async function AnalysisPage({
               items={evidence.filter((e) => e.category === "matches" || e.category === "sources")}
               empty="No match evidence."
             />
+            <SourceMatchesCard data={sources} />
             <TextFingerprintsCard data={tfp} />
           </>
         ) : !isImage ? (
@@ -223,6 +235,7 @@ export default async function AnalysisPage({
               items={evidence.filter((e) => e.category === "matches" || e.category === "sources")}
               empty="No match evidence."
             />
+            <SourceMatchesCard data={sources} />
             <FingerprintsCard data={fp} />
           </>
         ) : (

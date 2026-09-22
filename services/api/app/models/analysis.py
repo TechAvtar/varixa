@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from app.models.image_metadata import ImageMetadata
     from app.models.image_provenance import ImageProvenance
     from app.models.provider_call import ProviderCall
+    from app.models.source_match import SourceMatch, SourceSearchRun
     from app.models.text_analysis import TextAnalysis
     from app.models.text_fingerprints import TextFingerprints
     from app.models.user import User
@@ -70,6 +71,12 @@ class Analysis(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         back_populates="analysis", cascade="all, delete-orphan", uselist=False
     )
     ai_detection: Mapped["AIDetection | None"] = relationship(
+        back_populates="analysis", cascade="all, delete-orphan", uselist=False
+    )
+    source_matches: Mapped[list["SourceMatch"]] = relationship(
+        back_populates="analysis", cascade="all, delete-orphan", order_by="SourceMatch.rank"
+    )
+    source_search_run: Mapped["SourceSearchRun | None"] = relationship(
         back_populates="analysis", cascade="all, delete-orphan", uselist=False
     )
 

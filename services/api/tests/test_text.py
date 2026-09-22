@@ -120,9 +120,11 @@ async def test_create_text_analysis_runs_pipeline(client: AsyncClient) -> None:
         "statistics",
         "fingerprints",
         "ai",
+        "search",
     ]
     assert all(s["status"] == "completed" for s in detail["steps"][:4])
     assert detail["steps"][4]["status"] == "skipped"  # no detector configured
+    assert detail["steps"][5]["status"] == "skipped"  # no search provider configured
     assert detail["file"]["mime_type"] == "text/plain" and detail["file"]["size_bytes"] == len(
         ENGLISH.encode()
     )

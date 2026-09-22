@@ -20,6 +20,7 @@ from app.services.analysis.pipeline import (
     StepFailedError,
     StepOutcome,
 )
+from app.services.analysis.search_step import SourceSearchStep
 from app.services.image import validate_image
 from app.services.image.hashing import compute_hashes
 from app.services.image.metadata import normalize_metadata, to_utc_or_none
@@ -224,4 +225,5 @@ def image_pipeline_steps() -> list[PipelineStep]:
         ExtractMetadataStep(),
         InspectProvenanceStep(),
         AIDetectionStep(),
+        SourceSearchStep(),
     ]

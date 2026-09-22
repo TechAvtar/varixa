@@ -13,6 +13,8 @@ from app.models import (
     ImageFingerprints,
     ImageMetadata,
     ImageProvenance,
+    SourceMatch,
+    SourceSearchRun,
     TextAnalysis,
     TextFingerprints,
 )
@@ -160,6 +162,38 @@ class AnalysisRepository:
         self._session.add(row)
         await self._session.flush()
         return row
+
+    async def get_source_search(
+        self, analysis_id: uuid.UUID
+    ) -> tuple[SourceSearchRun | None, Sequence[SourceMatch]]:
+        run = (
+            await self._session.execute(
+                select(SourceSearchRun).where(SourceSearchRun.analysis_id == analysis_id)
+            )
+        ).scalar_one_or_none()
+        matches = (
+            (
+                await self._session.execute(
+                    select(SourceMatch)
+                    .where(SourceMatch.analysis_id == analysis_id)
+                    .order_by(SourceMatch.rank)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        return run, matches
+
+    async def replace_source_search(self, run: SourceSearchRun, matches: list[SourceMatch]) -> None:
+        await self._session.execute(
+            delete(SourceMatch).where(SourceMatch.analysis_id == run.analysis_id)
+        )
+        await self._session.execute(
+            delete(SourceSearchRun).where(SourceSearchRun.analysis_id == run.analysis_id)
+        )
+        self._session.add(run)
+        self._session.add_all(matches)
+        await self._session.flush()
 
     async def get_provenance(self, analysis_id: uuid.UUID) -> ImageProvenance | None:
         stmt = select(ImageProvenance).where(ImageProvenance.analysis_id == analysis_id)

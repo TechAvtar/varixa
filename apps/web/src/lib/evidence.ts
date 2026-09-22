@@ -5,6 +5,7 @@ import type {
   ImageFingerprintsResponse,
   ImageMetadataResponse,
   ImageProvenanceResponse,
+  SourceMatchesResponse,
   TextAnalysisResponse,
   TextFingerprintsResponse,
 } from "@verixa/shared-types";
@@ -58,9 +59,10 @@ export function deriveEvidence(
   text: TextAnalysisResponse | null = null,
   textFingerprints: TextFingerprintsResponse | null = null,
   ai: AIDetectionResponse | null = null,
+  sources: SourceMatchesResponse | null = null,
 ): EvidenceItem[] {
   const items: EvidenceItem[] = [];
-  if (a.type === "text") return deriveTextEvidence(a, text, textFingerprints, ai);
+  if (a.type === "text") return deriveTextEvidence(a, text, textFingerprints, ai, sources);
 
   // -- file: deterministic facts about the stored bytes -------------------------------
   if (a.file) {
@@ -234,24 +236,15 @@ export function deriveEvidence(
 
   // -- not yet available ----------------------------------------------------------------------
   items.push(aiEvidence(ai));
-  items.push(
-    {
-      id: "forensics.unavailable",
-      category: "forensics",
-      kind: "unknown",
-      level: "UNKNOWN",
-      claim: "Forensic analysis (ELA, compression, noise, resampling, copy-move) was not run.",
-      source: "forensics",
-    },
-    {
-      id: "sources.unavailable",
-      category: "sources",
-      kind: "unknown",
-      level: "UNKNOWN",
-      claim: "No reverse or source search was performed.",
-      source: "search",
-    },
-  );
+  items.push({
+    id: "forensics.unavailable",
+    category: "forensics",
+    kind: "unknown",
+    level: "UNKNOWN",
+    claim: "Forensic analysis (ELA, compression, noise, resampling, copy-move) was not run.",
+    source: "forensics",
+  });
+  items.push(sourcesEvidence(sources, "reverse-image"));
 
   return items;
 }
@@ -273,6 +266,7 @@ function deriveTextEvidence(
   text: TextAnalysisResponse | null,
   fingerprints: TextFingerprintsResponse | null,
   ai: AIDetectionResponse | null,
+  sources: SourceMatchesResponse | null,
 ): EvidenceItem[] {
   const items: EvidenceItem[] = [];
   if (a.file) {
@@ -384,15 +378,52 @@ function deriveTextEvidence(
       });
     }
   }
-  items.push(aiEvidence(ai), {
-    id: "sources.unavailable",
-    category: "sources",
-    kind: "unknown",
-    level: "UNKNOWN",
-    claim: "No source or phrase search was performed.",
-    source: "search",
-  });
+  items.push(aiEvidence(ai), sourcesEvidence(sources, "phrase"));
   return items;
+}
+
+/** Search results per docs/07: a reverse/phrase match is POSSIBLE; no search is UNKNOWN. */
+function sourcesEvidence(
+  sources: SourceMatchesResponse | null,
+  kind: "reverse-image" | "phrase",
+): EvidenceItem {
+  if (!sources) {
+    return {
+      id: "sources.unavailable",
+      category: "sources",
+      kind: "unknown",
+      level: "UNKNOWN",
+      claim: `No ${kind} search was performed.`,
+      source: "search",
+      limitation: "No source-search provider is configured.",
+    };
+  }
+  const src = `search/${sources.provider}@${sources.provider_version}`;
+  if (sources.matches.length === 0) {
+    return {
+      id: "sources.none",
+      category: "sources",
+      kind: "unknown",
+      level: "UNKNOWN",
+      claim: `The ${kind} search returned no matches.`,
+      source: src,
+      limitation:
+        "The provider's index is not the whole web; no matches is not evidence of originality.",
+    };
+  }
+  const withDates = sources.matches.filter((m) => m.published_at).length;
+  return {
+    id: "sources.matches",
+    category: "sources",
+    kind: "signal",
+    level: "POSSIBLE",
+    claim: `The ${kind} search found ${sources.matches.length} similar ${sources.matches.length === 1 ? "source" : "sources"}${withDates ? ` (${withDates} with a reported date)` : ""}.`,
+    source: src,
+    limitation:
+      kind === "phrase"
+        ? "Shared wording can come from quotation, common phrasing or the same upstream source; a phrase match is not plagiarism."
+        : "A reverse-image hit shows where similar content was found, not where it came from or which copy is earlier.",
+  };
 }
 
 /** Detector output per docs/07: high -> PROBABLE, medium -> POSSIBLE; never a fact. */

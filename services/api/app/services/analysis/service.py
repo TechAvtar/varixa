@@ -18,6 +18,8 @@ from app.models import (
     ImageFingerprints,
     ImageMetadata,
     ImageProvenance,
+    SourceMatch,
+    SourceSearchRun,
     TextAnalysis,
     TextFingerprints,
     User,
@@ -237,6 +239,12 @@ class AnalysisService:
     async def get_ai_detection(self, user: User, analysis_id: uuid.UUID) -> AIDetection | None:
         await self.get_owned(user, analysis_id)
         return await self._analyses.get_ai_detection(analysis_id)
+
+    async def get_source_search(
+        self, user: User, analysis_id: uuid.UUID
+    ) -> tuple[SourceSearchRun | None, Sequence[SourceMatch]]:
+        await self.get_owned(user, analysis_id)
+        return await self._analyses.get_source_search(analysis_id)
 
     async def get_provenance(self, user: User, analysis_id: uuid.UUID) -> ImageProvenance | None:
         await self.get_owned(user, analysis_id)

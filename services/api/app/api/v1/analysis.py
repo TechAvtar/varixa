@@ -25,6 +25,7 @@ from app.schemas.fingerprints import (
     TextFingerprintsResponse,
     TextFingerprintsValues,
 )
+from app.schemas.matches import SourceMatchesResponse, SourceMatchResponse
 from app.schemas.metadata import ImageMetadataResponse, NormalizedMetadataResponse
 from app.schemas.provenance import ImageProvenanceResponse, NormalizedProvenanceResponse
 from app.schemas.text import LanguageResponse, TextAnalysisCreate, TextAnalysisResponse
@@ -279,6 +280,39 @@ async def get_analysis_ai(
         evidence_level=level,
         raw=row.raw_json or {},
         limitations=[str(x) for x in (row.limitations_json or [])],
+    )
+
+
+@router.get("/{analysis_id}/matches", response_model=SourceMatchesResponse)
+async def get_analysis_matches(
+    analysis_id: uuid.UUID, user: CurrentUser, analyses: AnalysisSvc
+) -> SourceMatchesResponse:
+    run, matches = await analyses.get_source_search(user, analysis_id)
+    if run is None:
+        raise NotFoundError("No source search was performed for this analysis.")
+    return SourceMatchesResponse(
+        modality=run.modality,
+        provider=run.provider,
+        provider_version=run.provider_version,
+        searched_at=run.created_at,
+        queried_phrases=[str(p) for p in (run.queried_phrases_json or [])],
+        matches=[
+            SourceMatchResponse(
+                rank=m.rank,
+                provider=m.provider,
+                url=m.url,
+                title=m.title,
+                snippet=m.snippet,
+                similarity=m.similarity,
+                source_kind=m.source_kind,
+                matched_phrase=m.matched_phrase,
+                published_at=m.published_at,
+                discovered_at=m.discovered_at,
+                raw=m.raw_json or {},
+            )
+            for m in matches
+        ],
+        limitations=[str(x) for x in (run.limitations_json or [])],
     )
 
 

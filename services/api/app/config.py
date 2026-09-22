@@ -66,6 +66,11 @@ class Settings(BaseSettings):
     ai_score_high: float = Field(default=0.85, ge=0.0, le=1.0)
     ai_score_medium: float = Field(default=0.6, ge=0.0, le=1.0)
 
+    # Reverse-image / phrase source search. "none" skips the step; "mock" is a stand-in.
+    source_search_provider: Literal["none", "mock"] = "none"
+    source_search_timeout_seconds: float = Field(default=30.0, ge=1, le=300)
+    text_search_max_phrases: int = Field(default=5, ge=1, le=20)
+
     # Text near-duplicate threshold: minimum estimated Jaccard similarity (0-1) of shingle sets.
     text_near_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
 
