@@ -74,8 +74,8 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
         <Alert>
           <AlertTitle>Processing complete</AlertTitle>
           <AlertDescription>
-            Validation, hashing and metadata extraction run in this build. Provenance, forensic and
-            source findings are not yet produced.
+            Validation, hashing, metadata and provenance run in this build. Forensic and source
+            findings are not yet produced.
           </AlertDescription>
         </Alert>
       ) : null}
