@@ -16,6 +16,7 @@ from app.repositories.analysis import AnalysisRepository
 from app.services.analysis.ai_step import AIDetectionStep
 from app.services.analysis.forensics_steps import (
     CompressionStep,
+    CopyMoveStep,
     ELAStep,
     NoiseStep,
     ResamplingStep,
@@ -253,6 +254,7 @@ def image_pipeline_steps() -> list[PipelineStep]:
         CompressionStep(),
         ResamplingStep(),
         NoiseStep(),
+        CopyMoveStep(),
         AIDetectionStep(),
         SourceSearchStep(),
     ]

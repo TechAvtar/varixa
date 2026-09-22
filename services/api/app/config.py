@@ -85,6 +85,12 @@ class Settings(BaseSettings):
     noise_anomaly_min_fraction: float = Field(default=0.005, ge=0.0, le=1.0)
     noise_anomaly_max_fraction: float = Field(default=0.25, ge=0.0, le=1.0)
 
+    # Forensics: copy-move block matching (working size, matching block pairs per displacement,
+    # minimum displacement so overlapping neighbours never count).
+    copy_move_max_side: int = Field(default=1024, ge=256, le=4096)
+    copy_move_min_matches: int = Field(default=200, ge=10, le=100_000)
+    copy_move_min_shift: int = Field(default=32, ge=16, le=1024)
+
     # Persistent provider-result cache (content hash + provider/model/version). 0 disables.
     provider_cache_ttl_hours: int = Field(default=24 * 7, ge=0, le=24 * 365)
 

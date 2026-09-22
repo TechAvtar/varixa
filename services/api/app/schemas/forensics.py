@@ -137,6 +137,41 @@ class NoiseFindingResponse(BaseModel):
     limitations: list[str]
 
 
+class CloneMatchResponse(BaseModel):
+    """A source region that reappears displaced by (shift_x, shift_y); original pixel coords."""
+
+    source_x: int
+    source_y: int
+    target_x: int
+    target_y: int
+    width: int
+    height: int
+    shift_x: int
+    shift_y: int
+    pairs: int
+    density: float
+
+
+class CopyMoveFindingResponse(BaseModel):
+    method: Literal["copy_move"] = "copy_move"
+    version: str
+    observation: str
+    confidence: Confidence
+    measured: bool
+    width: int
+    height: int
+    working_width: int
+    working_height: int
+    downscaled: bool
+    blocks_total: int
+    blocks_textured: int
+    candidate_pairs: int
+    matches: list[CloneMatchResponse]
+    # Translated duplicate region(s) found. Repeated real content gives the same signal.
+    detected: bool
+    limitations: list[str]
+
+
 class ForensicSkipped(BaseModel):
     method: str
     reason: str
@@ -158,6 +193,7 @@ class ImageForensicsResponse(BaseModel):
     compression: CompressionFindingResponse | None
     resampling: ResamplingFindingResponse | None
     noise: NoiseFindingResponse | None
+    copy_move: CopyMoveFindingResponse | None
     skipped: list[ForensicSkipped]
     artifacts: list[ForensicArtifactResponse]
     limitations: list[str]

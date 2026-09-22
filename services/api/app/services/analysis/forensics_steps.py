@@ -7,16 +7,18 @@ other. Visualisations are stored as private artifacts under the owner's prefix.
 
 import asyncio
 import io
+from typing import Any
 
 from PIL import Image
 
 from app.repositories.analysis import AnalysisRepository
 from app.services import storage_keys
 from app.services.analysis.pipeline import PipelineContext, StepFailedError, StepOutcome
-from app.services.image import compression, ela, noise, resampling
+from app.services.image import compression, copy_move, ela, noise, resampling
 
 ELA_ARTIFACT = "ela.png"
 NOISE_ARTIFACT = "noise.png"
+COPY_MOVE_ARTIFACT = "copy_move.png"
 
 
 class CompressionStep:
@@ -141,6 +143,74 @@ class NoiseStep:
             regions=len(result.regions),
             anomaly=result.anomaly,
             artifact=NOISE_ARTIFACT if result.visualization_png else None,
+        )
+
+
+def _record_artifact(row: Any, *, name: str, method: str, key: str, png: bytes) -> None:
+    """Replace this method's entry in the row's artifact list (never exposed as a raw key)."""
+    with Image.open(io.BytesIO(png)) as vis:
+        vw, vh = vis.size
+    others = [a for a in (row.artifacts_json or []) if a.get("method") != method]
+    row.artifacts_json = [
+        *others,
+        {
+            "name": name,
+            "method": method,
+            "object_key": key,
+            "content_type": "image/png",
+            "width": vw,
+            "height": vh,
+        },
+    ]
+
+
+class CopyMoveStep:
+    """Translated-duplicate (cloning) detection by block matching. Non-critical.
+
+    Persists ``copy_move_json`` and a mask of matched source (grey) and target
+    (white) blocks as ``copy_move.png`` at the working size.
+    """
+
+    name = "copy_move"
+    critical = False
+
+    async def run(self, ctx: PipelineContext) -> StepOutcome:
+        image = ctx.artifacts.get("image")
+        if image is None:
+            raise StepFailedError("NO_VERIFIED_IMAGE", "Validation did not publish an image.")
+        s = ctx.settings
+        result = await asyncio.to_thread(
+            copy_move.analyze_copy_move,
+            image.data,
+            max_side=s.copy_move_max_side,
+            min_matches=s.copy_move_min_matches,
+            min_shift=s.copy_move_min_shift,
+        )
+        repo = AnalysisRepository(ctx.session)
+        row = await repo.upsert_forensics(ctx.analysis.id, copy_move_json=result.to_json())
+        if result.visualization_png:
+            key = storage_keys.artifact_key(
+                ctx.analysis.user_id, ctx.analysis.id, COPY_MOVE_ARTIFACT
+            )
+            await ctx.storage.put(key, result.visualization_png, content_type="image/png")
+            _record_artifact(
+                row,
+                name=COPY_MOVE_ARTIFACT,
+                method=copy_move.METHOD,
+                key=key,
+                png=result.visualization_png,
+            )
+            await ctx.session.flush()
+        ctx.artifacts["copy_move"] = result
+        return StepOutcome.ok(
+            version=copy_move.COPY_MOVE_VERSION,
+            measured=result.measured,
+            downscaled=result.downscaled,
+            blocks_textured=result.blocks_textured,
+            candidate_pairs=result.candidate_pairs,
+            matches=len(result.matches),
+            detected=result.detected,
+            artifact=COPY_MOVE_ARTIFACT if result.visualization_png else None,
         )
 
 

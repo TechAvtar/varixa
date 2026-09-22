@@ -443,6 +443,45 @@ function forensicsEvidence(f: ImageForensicsResponse | null): EvidenceItem[] {
       detail: n.observation,
     });
   }
+
+  const cm = f.copy_move;
+  if (cm?.detected) {
+    const m = cm.matches[0];
+    items.push({
+      id: "forensics.copy-move.detected",
+      category: "forensics",
+      kind: "signal",
+      level: "POSSIBLE",
+      claim: `${cm.matches.length} region(s) of the image reappear elsewhere in the same image, shifted by a constant offset.`,
+      source: "copy_move",
+      detail: m
+        ? `Largest: ${m.width} × ${m.height} px at (${m.source_x}, ${m.source_y}) reappears at (${m.target_x}, ${m.target_y}); ${m.pairs} matching block pairs.`
+        : undefined,
+      limitation:
+        "Tiles, brickwork, text and identical products repeat legitimately. Consistent with cloning, not proof of it.",
+    });
+  } else if (cm?.measured) {
+    items.push({
+      id: "forensics.copy-move.none",
+      category: "forensics",
+      kind: "signal",
+      level: "UNKNOWN",
+      claim: "No translated duplicate regions were found.",
+      source: "copy_move",
+      detail: cm.observation,
+      limitation:
+        "Rotated, scaled or retouched copies and clones inside flat areas are not detected.",
+    });
+  } else if (cm) {
+    items.push({
+      id: "forensics.copy-move.unmeasured",
+      category: "forensics",
+      kind: "unknown",
+      level: "UNKNOWN",
+      claim: "The image is too small for block matching.",
+      source: "copy_move",
+    });
+  }
   return items;
 }
 

@@ -27,6 +27,7 @@ from app.schemas.fingerprints import (
 )
 from app.schemas.forensics import (
     CompressionFindingResponse,
+    CopyMoveFindingResponse,
     ELAFindingResponse,
     ForensicArtifactResponse,
     ForensicSkipped,
@@ -308,6 +309,14 @@ async def get_analysis_forensics(
             skipped.append(
                 ForensicSkipped(method="noise", reason=str(row.noise_json.get("reason")))
             )
+    copy_move_finding: CopyMoveFindingResponse | None = None
+    if row.copy_move_json:
+        if row.copy_move_json.get("applicable"):
+            copy_move_finding = CopyMoveFindingResponse.model_validate(row.copy_move_json)
+        else:
+            skipped.append(
+                ForensicSkipped(method="copy_move", reason=str(row.copy_move_json.get("reason")))
+            )
     artifacts = [
         ForensicArtifactResponse(
             name=str(a.get("name")),
@@ -325,6 +334,7 @@ async def get_analysis_forensics(
         compression=compression_finding,
         resampling=resampling_finding,
         noise=noise_finding,
+        copy_move=copy_move_finding,
         skipped=skipped,
         artifacts=artifacts,
         limitations=_FORENSICS_NOTES,

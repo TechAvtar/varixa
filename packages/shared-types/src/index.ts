@@ -43,8 +43,10 @@ export type {
 } from "./provenance";
 export type {
   BlockGrid,
+  CloneMatch,
   CompressionEncoding,
   CompressionFinding,
+  CopyMoveFinding,
   ELAFinding,
   ForensicArtifact,
   ForensicConfidence,

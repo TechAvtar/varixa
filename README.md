@@ -170,6 +170,13 @@ limitations, ...metrics}`). Visualisations are stored as private artifacts under
   more than `VERIXA_NOISE_OUTLIER_K` × IQR (with absolute and relative floors) from the
   baseline are `anomaly` → POSSIBLE. A block-level noise map is stored as `noise.png`.
 
+- **Copy-move** (`services/image/copy_move.py`, any format): block matching at every pixel
+  position of a ≤ `VERIXA_COPY_MOVE_MAX_SIDE` working copy (integral-image 4×4 pooled
+  features, quantised, packed and sorted; near-identical sorted neighbours become candidate
+  pairs). A displacement shared by ≥ `VERIXA_COPY_MOVE_MIN_MATCHES` spatially coherent pairs at
+  least `VERIXA_COPY_MOVE_MIN_SHIFT` px apart is `detected` → POSSIBLE. Translated copies only;
+  flat blocks excluded; mask of source/target blocks stored as `copy_move.png`.
+
 ### Provider result cache
 
 Repeatable provider results (AI detection, reverse-image and phrase search) are cached in the
@@ -250,6 +257,7 @@ All configuration is via environment variables; see the `.env.example` files. Ne
 | `VERIXA_COMPRESSION_GRID_MIN_STRENGTH` | API | Minimum relative strength of an 8 px periodicity to count as a block grid (default 0.08) |
 | `VERIXA_RESAMPLING_MIN_PEAK_RATIO` | API | Spectral peak / local-background ratio that counts as a resampling trace (default 5.0) |
 | `VERIXA_NOISE_BLOCK_SIZE` / `VERIXA_NOISE_OUTLIER_K` / `VERIXA_NOISE_ANOMALY_MIN|MAX_FRACTION` | API | Noise-consistency block size (32), outlier threshold in IQR multiples (3.0) and anomaly band |
+| `VERIXA_COPY_MOVE_MAX_SIDE` / `VERIXA_COPY_MOVE_MIN_MATCHES` / `VERIXA_COPY_MOVE_MIN_SHIFT` | API | Copy-move working size (1024), block pairs per displacement (200) and minimum displacement (32 px) |
 | `VERIXA_PROVIDER_CACHE_TTL_HOURS` | API | TTL for cached provider results (default 168; 0 disables) |
 | `VERIXA_AI_DETECTOR_PROVIDER` | API | `none` (default) or `mock`; real adapters register under `providers/ai` |
 | `VERIXA_AI_SCORE_HIGH` / `VERIXA_AI_SCORE_MEDIUM` | API | Score thresholds → PROBABLE / POSSIBLE (defaults 0.85 / 0.6) |

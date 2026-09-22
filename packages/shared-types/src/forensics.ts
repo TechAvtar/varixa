@@ -131,6 +131,40 @@ export interface NoiseFinding {
   limitations: string[];
 }
 
+/** A source region that reappears displaced by (shift_x, shift_y); original pixel coords. */
+export interface CloneMatch {
+  source_x: number;
+  source_y: number;
+  target_x: number;
+  target_y: number;
+  width: number;
+  height: number;
+  shift_x: number;
+  shift_y: number;
+  pairs: number;
+  density: number;
+}
+
+export interface CopyMoveFinding {
+  method: "copy_move";
+  version: string;
+  observation: string;
+  confidence: ForensicConfidence;
+  measured: boolean;
+  width: number;
+  height: number;
+  working_width: number;
+  working_height: number;
+  downscaled: boolean;
+  blocks_total: number;
+  blocks_textured: number;
+  candidate_pairs: number;
+  matches: CloneMatch[];
+  /** Translated duplicate region(s) found. Repeated real content gives the same signal. */
+  detected: boolean;
+  limitations: string[];
+}
+
 export interface ForensicSkipped {
   method: string;
   reason: string;
@@ -152,6 +186,7 @@ export interface ImageForensicsResponse {
   compression: CompressionFinding | null;
   resampling: ResamplingFinding | null;
   noise: NoiseFinding | null;
+  copy_move: CopyMoveFinding | null;
   skipped: ForensicSkipped[];
   artifacts: ForensicArtifact[];
   limitations: string[];
