@@ -24,6 +24,7 @@ export type {
   UserRole,
 } from "./auth";
 export type { ApiErrorBody } from "./errors";
+export type { Fingerprints, ImageFingerprintsResponse, SimilarAnalysis } from "./fingerprints";
 export type {
   ImageProvenanceResponse,
   NormalizedProvenance,

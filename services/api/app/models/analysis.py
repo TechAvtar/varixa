@@ -11,6 +11,7 @@ from app.models.base import Base, CreatedAtMixin, TZDateTime, UUIDPrimaryKeyMixi
 if TYPE_CHECKING:
     from app.models.analysis_step import AnalysisStep
     from app.models.evidence import Evidence
+    from app.models.image_fingerprints import ImageFingerprints
     from app.models.image_metadata import ImageMetadata
     from app.models.image_provenance import ImageProvenance
     from app.models.provider_call import ProviderCall
@@ -54,6 +55,9 @@ class Analysis(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         back_populates="analysis", cascade="all, delete-orphan", uselist=False
     )
     image_provenance: Mapped["ImageProvenance | None"] = relationship(
+        back_populates="analysis", cascade="all, delete-orphan", uselist=False
+    )
+    image_fingerprints: Mapped["ImageFingerprints | None"] = relationship(
         back_populates="analysis", cascade="all, delete-orphan", uselist=False
     )
 

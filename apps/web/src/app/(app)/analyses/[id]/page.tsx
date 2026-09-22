@@ -1,5 +1,6 @@
 import type {
   AnalysisResponse,
+  ImageFingerprintsResponse,
   ImageMetadataResponse,
   ImageProvenanceResponse,
 } from "@verixa/shared-types";
@@ -7,6 +8,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AnalysisStatusBadge } from "@/components/analyses/analysis-status-badge";
+import { FingerprintsCard } from "@/components/analyses/fingerprints-card";
 import { MetadataCard } from "@/components/analyses/metadata-card";
 import { ProvenanceCard } from "@/components/analyses/provenance-card";
 import { ProcessingSteps } from "@/components/analyses/processing-steps";
@@ -36,12 +38,14 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
     );
   }
   const a = result.data;
-  const [metadataResult, provenanceResult] = await Promise.all([
+  const [metadataResult, provenanceResult, fingerprintsResult] = await Promise.all([
     authedRequest<ImageMetadataResponse>(`/analysis/${id}/metadata`),
     authedRequest<ImageProvenanceResponse>(`/analysis/${id}/provenance`),
+    authedRequest<ImageFingerprintsResponse>(`/analysis/${id}/fingerprints`),
   ]);
   const metadata = metadataResult.ok ? metadataResult.data : null;
   const provenance = provenanceResult.ok ? provenanceResult.data : null;
+  const fingerprints = fingerprintsResult.ok ? fingerprintsResult.data : null;
 
   return (
     <div className="space-y-8">
@@ -92,6 +96,7 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
 
       {a.type === "image" ? <ProvenanceCard provenance={provenance} /> : null}
       {a.type === "image" ? <MetadataCard metadata={metadata} /> : null}
+      {a.type === "image" ? <FingerprintsCard data={fingerprints} /> : null}
 
       <Card>
         <CardHeader>

@@ -5,7 +5,14 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models import Analysis, AnalysisFile, AnalysisStep, ImageMetadata, ImageProvenance
+from app.models import (
+    Analysis,
+    AnalysisFile,
+    AnalysisStep,
+    ImageFingerprints,
+    ImageMetadata,
+    ImageProvenance,
+)
 
 
 class AnalysisRepository:
@@ -69,6 +76,35 @@ class AnalysisRepository:
     async def get_metadata(self, analysis_id: uuid.UUID) -> ImageMetadata | None:
         stmt = select(ImageMetadata).where(ImageMetadata.analysis_id == analysis_id)
         return (await self._session.execute(stmt)).scalar_one_or_none()
+
+    async def get_fingerprints(self, analysis_id: uuid.UUID) -> ImageFingerprints | None:
+        stmt = select(ImageFingerprints).where(ImageFingerprints.analysis_id == analysis_id)
+        return (await self._session.execute(stmt)).scalar_one_or_none()
+
+    async def replace_fingerprints(self, fp: ImageFingerprints) -> ImageFingerprints:
+        await self._session.execute(
+            delete(ImageFingerprints).where(ImageFingerprints.analysis_id == fp.analysis_id)
+        )
+        self._session.add(fp)
+        await self._session.flush()
+        return fp
+
+    async def list_user_fingerprints(
+        self, user_id: uuid.UUID, *, exclude_analysis_id: uuid.UUID, limit: int = 5000
+    ) -> Sequence[tuple[ImageFingerprints, Analysis]]:
+        """Fingerprints of the user's other live analyses (candidates for similarity)."""
+        stmt = (
+            select(ImageFingerprints, Analysis)
+            .join(Analysis, Analysis.id == ImageFingerprints.analysis_id)
+            .where(
+                Analysis.user_id == user_id,
+                Analysis.deleted_at.is_(None),
+                Analysis.id != exclude_analysis_id,
+            )
+            .order_by(Analysis.created_at.desc())
+            .limit(limit)
+        )
+        return [(row[0], row[1]) for row in (await self._session.execute(stmt)).all()]
 
     async def get_provenance(self, analysis_id: uuid.UUID) -> ImageProvenance | None:
         stmt = select(ImageProvenance).where(ImageProvenance.analysis_id == analysis_id)

@@ -1,6 +1,6 @@
 """Concrete pipeline steps for image analyses. Each is small and independently testable."""
 
-from app.models import ImageMetadata, ImageProvenance
+from app.models import ImageFingerprints, ImageMetadata, ImageProvenance
 from app.providers.metadata import (
     MetadataExtractionError,
     MetadataExtractor,
@@ -23,6 +23,8 @@ from app.services.image import validate_image
 from app.services.image.hashing import compute_hashes
 from app.services.image.metadata import normalize_metadata, to_utc_or_none
 from app.services.image.provenance import normalize_provenance
+
+HASH_ALGORITHM_VERSION = "v1"  # bump if any hash definition changes
 
 
 class ValidateImageStep:
@@ -72,7 +74,7 @@ class HashImageStep:
     """Content (SHA-256, MD5) and perceptual (aHash, dHash, pHash) hashes of the verified bytes.
 
     Deterministic and local, so it is a core step. Values are recorded in the
-    step details now; T015 persists them to ``image_fingerprints`` for matching.
+    step details and persisted to ``image_fingerprints`` (replaced on re-run).
     """
 
     name = "hashing"
@@ -84,13 +86,24 @@ class HashImageStep:
             raise StepFailedError("NO_VERIFIED_IMAGE", "Validation did not publish an image.")
         hashes = compute_hashes(image.data)
         ctx.artifacts["hashes"] = hashes
+        await AnalysisRepository(ctx.session).replace_fingerprints(
+            ImageFingerprints(
+                analysis_id=ctx.analysis.id,
+                sha256=hashes.sha256,
+                md5=hashes.md5,
+                phash=hashes.phash,
+                dhash=hashes.dhash,
+                ahash=hashes.ahash,
+                algorithm_version=HASH_ALGORITHM_VERSION,
+            )
+        )
         return StepOutcome.ok(
             sha256=hashes.sha256,
             md5=hashes.md5,
             ahash=hashes.ahash,
             dhash=hashes.dhash,
             phash=hashes.phash,
-            algorithm_version="v1",  # bump if any hash definition changes
+            algorithm_version=HASH_ALGORITHM_VERSION,
         )
 
 

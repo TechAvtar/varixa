@@ -10,12 +10,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.enums import AnalysisStatus, AnalysisType
-from app.models import Analysis, AnalysisFile, ImageMetadata, ImageProvenance, User
+from app.models import (
+    Analysis,
+    AnalysisFile,
+    ImageFingerprints,
+    ImageMetadata,
+    ImageProvenance,
+    User,
+)
 from app.providers.storage.base import ObjectStorage
 from app.repositories.analysis import AnalysisRepository
 from app.services import storage_keys
 from app.services.authorization import assert_owns_analysis
 from app.services.image import validate_image
+from app.services.image.similarity import SimilarityMatch, compare
 from app.utils.errors import ConflictError
 
 log = logging.getLogger("verixa.analysis")
@@ -123,6 +131,28 @@ class AnalysisService:
     async def get_metadata(self, user: User, analysis_id: uuid.UUID) -> ImageMetadata | None:
         await self.get_owned(user, analysis_id)  # ownership first; existence never leaks
         return await self._analyses.get_metadata(analysis_id)
+
+    async def get_fingerprints(
+        self, user: User, analysis_id: uuid.UUID
+    ) -> ImageFingerprints | None:
+        await self.get_owned(user, analysis_id)
+        return await self._analyses.get_fingerprints(analysis_id)
+
+    async def find_similar(
+        self, user: User, fingerprints: ImageFingerprints
+    ) -> list[tuple[Analysis, SimilarityMatch]]:
+        """Exact and near duplicates among the *same user's* live analyses, best first."""
+        threshold = self._settings.fingerprint_near_threshold
+        candidates = await self._analyses.list_user_fingerprints(
+            user.id, exclude_analysis_id=fingerprints.analysis_id
+        )
+        matches: list[tuple[Analysis, SimilarityMatch]] = []
+        for other_fp, other_analysis in candidates:
+            match = compare(fingerprints, other_fp, near_threshold=threshold)
+            if match is not None:
+                matches.append((other_analysis, match))
+        matches.sort(key=lambda m: (m[1].score, m[0].created_at), reverse=False)
+        return matches
 
     async def get_provenance(self, user: User, analysis_id: uuid.UUID) -> ImageProvenance | None:
         await self.get_owned(user, analysis_id)

@@ -14,6 +14,11 @@ from app.schemas.analysis import (
     AnalysisResponse,
     AnalysisStepResponse,
 )
+from app.schemas.fingerprints import (
+    FingerprintsResponse,
+    ImageFingerprintsResponse,
+    SimilarAnalysisResponse,
+)
 from app.schemas.metadata import ImageMetadataResponse, NormalizedMetadataResponse
 from app.schemas.provenance import ImageProvenanceResponse, NormalizedProvenanceResponse
 from app.services.image import ImageTooLargeError
@@ -115,6 +120,42 @@ async def get_analysis_metadata(
         icc=row.icc_json or {},
         other={g: tags for g, tags in raw.items() if g not in _CORE_GROUPS},
         limitations=limitations,
+    )
+
+
+_FINGERPRINT_NOTES = [
+    "Identical SHA-256 means identical bytes. A near match means the pictures look alike "
+    "(recompression, resizing, light edits); it does not say which came first or where the "
+    "image originated.",
+    "Only your own analyses are compared. Web-scale reverse search is a separate step.",
+]
+
+
+@router.get("/{analysis_id}/fingerprints", response_model=ImageFingerprintsResponse)
+async def get_analysis_fingerprints(
+    analysis_id: uuid.UUID, user: CurrentUser, analyses: AnalysisSvc, settings: AppSettings
+) -> ImageFingerprintsResponse:
+    fp = await analyses.get_fingerprints(user, analysis_id)
+    if fp is None:
+        raise NotFoundError("Fingerprints have not been computed for this analysis.")
+    similar = [
+        SimilarAnalysisResponse(
+            analysis_id=other.id,
+            title=other.title,
+            created_at=other.created_at,
+            relation=match.relation,
+            sha256_match=match.sha256_match,
+            phash_distance=match.phash_distance,
+            dhash_distance=match.dhash_distance,
+            ahash_distance=match.ahash_distance,
+        )
+        for other, match in await analyses.find_similar(user, fp)
+    ]
+    return ImageFingerprintsResponse(
+        fingerprints=FingerprintsResponse.model_validate(fp),
+        near_threshold=settings.fingerprint_near_threshold,
+        similar=similar,
+        limitations=_FINGERPRINT_NOTES,
     )
 
 

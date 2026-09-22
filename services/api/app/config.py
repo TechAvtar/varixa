@@ -55,6 +55,9 @@ class Settings(BaseSettings):
     c2patool_path: str | None = None
     c2patool_timeout_seconds: float = Field(default=30.0, ge=1, le=300)
 
+    # Near-duplicate threshold: max Hamming distance (bits) on pHash or dHash.
+    fingerprint_near_threshold: int = Field(default=10, ge=0, le=64)
+
     # Upload limits (untrusted input). Pixels are checked from the header before decoding.
     max_upload_bytes: int = Field(default=25 * 1024 * 1024, ge=1024)
     max_image_pixels: int = Field(default=40_000_000, ge=10_000)
