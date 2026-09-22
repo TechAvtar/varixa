@@ -6,8 +6,8 @@ A non-owner gets the same 404 as a missing resource so existence is never leaked
 import uuid
 from typing import Protocol
 
+from app.enums import UserRole
 from app.models import User
-from app.models.enums import UserRole
 from app.utils.errors import NotFoundError
 
 ANALYSIS_NOT_FOUND = "Analysis not found."

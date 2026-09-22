@@ -6,8 +6,8 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.enums import AnalysisStatus, AnalysisType
 from app.models import Analysis, AnalysisFile, User
-from app.models.enums import AnalysisStatus, AnalysisType
 from app.providers.storage.local import LocalObjectStorage
 from app.services.analysis import AnalysisService
 from app.utils.errors import ConflictError, NotFoundError
@@ -138,14 +138,16 @@ async def test_soft_delete_removes_stored_files(
     a = await service.create(user, type=AnalysisType.IMAGE, title=None)
     key = f"uploads/{user.id}/{a.id}/{'0' * 64}.jpg"
     await storage.put(key, b"jpeg", content_type="image/jpeg")
-    session.add(AnalysisFile(analysis_id=a.id, object_key=key, sha256="0" * 64))
+    analysis_id = a.id
+    session.add(AnalysisFile(analysis_id=analysis_id, object_key=key, sha256="0" * 64))
     await session.commit()
-    session.expire_all()
+    session.expire_all()  # force the service to reload everything it needs
 
-    await service.soft_delete(user, a.id)
+    await service.soft_delete(user, analysis_id)
 
     assert not await storage.exists(key)
-    row = (await session.execute(select(Analysis).where(Analysis.id == a.id))).scalar_one()
+    stmt = select(Analysis).where(Analysis.id == analysis_id)
+    row = (await session.execute(stmt)).scalar_one()
     assert row.deleted_at is not None  # record kept for audit; hidden from reads
 
 

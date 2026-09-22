@@ -3,7 +3,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.enums import AnalysisStatus, AnalysisType
+from app.enums import AnalysisStatus, AnalysisType
 
 
 class AnalysisResponse(BaseModel):

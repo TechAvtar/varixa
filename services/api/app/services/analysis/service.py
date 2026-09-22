@@ -7,12 +7,12 @@ from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.enums import AnalysisStatus, AnalysisType
 from app.models import Analysis, User
-from app.models.enums import AnalysisStatus, AnalysisType
 from app.providers.storage.base import ObjectStorage
 from app.repositories.analysis import AnalysisRepository
 from app.services.authorization import assert_owns_analysis
-from app.utils.errors import ConflictError, NotFoundError
+from app.utils.errors import ConflictError
 
 log = logging.getLogger("verixa.analysis")
 
@@ -37,7 +37,10 @@ class AnalysisService:
 
     async def create(self, user: User, *, type: AnalysisType, title: str | None) -> Analysis:
         analysis = Analysis(
-            user_id=user.id, type=type, status=AnalysisStatus.QUEUED, title=title or None
+            user_id=user.id,
+            type=type,
+            status=AnalysisStatus.QUEUED,
+            title=(title or "").strip()[:300] or None,
         )
         await self._analyses.add(analysis)
         await self._db.commit()
@@ -96,9 +99,9 @@ class AnalysisService:
         await self._db.commit()
 
         failures = 0
-        for file in analysis.files:
+        for key in await self._analyses.list_object_keys(analysis.id):
             try:
-                await self._storage.delete(file.object_key)
+                await self._storage.delete(key)
             except Exception:  # storage failures must not resurrect the record
                 failures += 1
         if failures:
@@ -106,7 +109,3 @@ class AnalysisService:
             log.warning(
                 "storage cleanup incomplete analysis_id=%s failed_objects=%d", analysis.id, failures
             )
-
-
-def not_found() -> NotFoundError:
-    return NotFoundError("Analysis not found.")

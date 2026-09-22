@@ -10,14 +10,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.database import create_engine
-from app.models import Analysis, AnalysisFile, Evidence, ProviderCall, User
-from app.models.enums import (
+from app.enums import (
     AnalysisStatus,
     AnalysisType,
     EvidenceLevel,
     ProviderCallStatus,
     UserRole,
 )
+from app.models import Analysis, AnalysisFile, Evidence, ProviderCall, User
 from tests.conftest import alembic_config
 
 EXPECTED_TABLES = {"users", "analyses", "analysis_files", "evidence", "provider_calls"}

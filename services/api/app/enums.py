@@ -1,4 +1,8 @@
-"""Domain enumerations stored as short strings (portable across DB engines)."""
+"""Domain enumerations shared by models, schemas and services.
+
+Stored as short strings (portable across DB engines). Lives at the app root so
+every layer may import it without crossing a layering boundary.
+"""
 
 from enum import StrEnum
 

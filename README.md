@@ -88,6 +88,18 @@ returned in the `X-Request-ID` response header. Analysis endpoints must call
 `services.authorization.assert_owns_analysis`, which answers 404 for both missing and foreign
 resources.
 
+## Analyses
+
+| Endpoint | Purpose |
+| -------- | ------- |
+| `GET /api/v1/analysis?page=&page_size=` | Caller's analyses, newest first (soft-deleted hidden) |
+| `GET /api/v1/analysis/counts` | `{total, image, text}` for the dashboard |
+| `GET /api/v1/analysis/{id}` | One analysis; 404 if missing or owned by someone else |
+| `DELETE /api/v1/analysis/{id}` | Soft delete (record kept for audit) and remove stored files |
+
+Status lifecycle: `queued → processing → completed | failed`; illegal moves return
+`409 INVALID_TRANSITION`. Creation endpoints arrive with image upload (T010) and text (T017).
+
 ## Object storage
 
 All uploads, derived artifacts and reports go through `app.providers.storage.ObjectStorage`

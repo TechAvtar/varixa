@@ -3,7 +3,6 @@ from collections.abc import Sequence
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.models import Analysis, AnalysisFile
 
@@ -15,11 +14,7 @@ class AnalysisRepository:
         self._session = session
 
     async def get(self, analysis_id: uuid.UUID) -> Analysis | None:
-        stmt = (
-            select(Analysis)
-            .where(Analysis.id == analysis_id, Analysis.deleted_at.is_(None))
-            .options(selectinload(Analysis.files))
-        )
+        stmt = select(Analysis).where(Analysis.id == analysis_id, Analysis.deleted_at.is_(None))
         return (await self._session.execute(stmt)).scalar_one_or_none()
 
     async def list_for_user(
@@ -44,6 +39,10 @@ class AnalysisRepository:
             .group_by(Analysis.type)
         )
         return {row[0]: row[1] for row in (await self._session.execute(stmt)).all()}
+
+    async def list_object_keys(self, analysis_id: uuid.UUID) -> list[str]:
+        stmt = select(AnalysisFile.object_key).where(AnalysisFile.analysis_id == analysis_id)
+        return list((await self._session.execute(stmt)).scalars().all())
 
     async def add(self, analysis: Analysis) -> Analysis:
         self._session.add(analysis)

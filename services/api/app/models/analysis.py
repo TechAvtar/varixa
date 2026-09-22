@@ -5,8 +5,8 @@ from typing import TYPE_CHECKING
 from sqlalchemy import BigInteger, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.enums import AnalysisStatus
 from app.models.base import Base, CreatedAtMixin, TZDateTime, UUIDPrimaryKeyMixin
-from app.models.enums import AnalysisStatus
 
 if TYPE_CHECKING:
     from app.models.evidence import Evidence

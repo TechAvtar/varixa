@@ -3,8 +3,8 @@ from dataclasses import dataclass
 
 import pytest
 
+from app.enums import UserRole
 from app.models import User
-from app.models.enums import UserRole
 from app.services.authorization import assert_owns_analysis
 from app.utils.errors import NotFoundError
 

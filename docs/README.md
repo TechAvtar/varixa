@@ -14,3 +14,4 @@ Implementation tasks live in `../TASKS/`.
 | T005 Database | done | Async SQLAlchemy 2 engine/session; models users, analyses, analysis_files, evidence, provider_calls; Alembic (SQLite batch mode, PG JSONB variant); `/health` reports DB readiness |
 | T006 Authentication | done | Argon2id passwords; JWT access + rotating hashed refresh tokens (`user_sessions`); `/auth/*` routes; `CurrentUser` dependency; ownership helper; error envelope + request ids |
 | T007 Storage | done | `ObjectStorage` interface; local filesystem adapter with HMAC-signed download route; S3 adapter (boto3, optional extra); key validation + layout helpers |
+| T008 Analysis CRUD | done | `AnalysisService` (create, owner-scoped get/list/counts, guarded status transitions, soft delete + storage cleanup); `GET/DELETE /analysis`, `/analysis/counts`; enums moved to `app/enums.py` |
