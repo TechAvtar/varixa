@@ -51,6 +51,8 @@ export type {
   ForensicRegion,
   ForensicSkipped,
   ImageForensicsResponse,
+  NoiseFinding,
+  NoiseRegion,
   ResamplingFinding,
   SpectralPeak,
 } from "./forensics";

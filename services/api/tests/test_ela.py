@@ -59,7 +59,7 @@ def test_spliced_region_is_localised_and_flagged() -> None:
     # The pasted patch sits at (300, 200) 96x80; the bounding box must cover most of it.
     assert 260 <= top.x <= 310 and 160 <= top.y <= 210
     assert top.x + top.width >= 380 and top.y + top.height >= 265
-    assert top.mean_error > r.mean_error
+    assert top.value > r.mean_error
     assert "localised region" in r.observation
 
 
@@ -125,8 +125,7 @@ async def test_jpeg_upload_runs_ela_and_exposes_findings(
     assert f["ela"]["method"] == "ela" and f["ela"]["anomaly"] is True
     assert f["ela"]["confidence"] == "low" and f["ela"]["limitations"]
     assert f["skipped"] == [] and f["limitations"]
-    assert len(f["artifacts"]) == 1
-    art = f["artifacts"][0]
+    art = next(a for a in f["artifacts"] if a["method"] == "ela")
     assert art["method"] == "ela" and art["content_type"] == "image/png"
     assert art["url"].startswith("http") and "sig=" in art["url"] and "object_key" not in art
 
@@ -151,7 +150,7 @@ async def test_non_jpeg_is_recorded_as_not_applicable(
     step = next(s for s in body["steps"] if s["name"] == "ela")
     assert step["status"] == "skipped" and body["status"] == "completed"
     f = (await client.get(f"/analysis/{aid}/forensics", headers=headers)).json()
-    assert f["ela"] is None and f["artifacts"] == []
+    assert f["ela"] is None and not any(a["method"] == "ela" for a in f["artifacts"])
     assert f["skipped"] == [{"method": "ela", "reason": ela.NOT_APPLICABLE_REASON}]
 
 
@@ -187,9 +186,8 @@ async def test_delete_removes_ela_artifact(
     )
     aid = r.json()["id"]
     await _wait_completed(client, headers, aid)
-    url = (await client.get(f"/analysis/{aid}/forensics", headers=headers)).json()["artifacts"][0][
-        "url"
-    ]
+    arts = (await client.get(f"/analysis/{aid}/forensics", headers=headers)).json()["artifacts"]
+    url = next(a for a in arts if a["method"] == "ela")["url"]
     assert (await client.get(url)).status_code == 200
     assert (await client.delete(f"/analysis/{aid}", headers=headers)).status_code == 204
     assert (await client.get(url)).status_code == 404

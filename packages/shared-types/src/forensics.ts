@@ -101,6 +101,36 @@ export interface ResamplingFinding {
   limitations: string[];
 }
 
+/** Bounding box in original image pixels; `sigma` is the region's mean noise estimate. */
+export interface NoiseRegion {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  blocks: number;
+  sigma: number;
+}
+
+export interface NoiseFinding {
+  method: "noise";
+  version: string;
+  observation: string;
+  confidence: ForensicConfidence;
+  measured: boolean;
+  width: number;
+  height: number;
+  block_size: number;
+  blocks_total: number;
+  blocks_smooth: number;
+  baseline_sigma: number;
+  spread_sigma: number;
+  outlier_fraction: number;
+  regions: NoiseRegion[];
+  /** Compact regions whose noise level departs from the baseline. Never proof on its own. */
+  anomaly: boolean;
+  limitations: string[];
+}
+
 export interface ForensicSkipped {
   method: string;
   reason: string;
@@ -121,6 +151,7 @@ export interface ImageForensicsResponse {
   ela: ELAFinding | null;
   compression: CompressionFinding | null;
   resampling: ResamplingFinding | null;
+  noise: NoiseFinding | null;
   skipped: ForensicSkipped[];
   artifacts: ForensicArtifact[];
   limitations: string[];

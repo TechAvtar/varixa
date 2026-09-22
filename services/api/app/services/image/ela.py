@@ -13,13 +13,14 @@ are reported as POSSIBLE at most and never on their own as manipulation.
 """
 
 import io
-from collections import deque
 from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
 from PIL import Image
+
+from app.services.image.regions import Region, connected_regions
 
 ELA_VERSION = "v1"
 METHOD = "ela"
@@ -51,28 +52,6 @@ NOT_APPLICABLE_REASON = (
 
 
 @dataclass(frozen=True)
-class ELARegion:
-    """A connected cluster of outlier blocks, in *original* image pixel coordinates."""
-
-    x: int
-    y: int
-    width: int
-    height: int
-    blocks: int
-    mean_error: float
-
-    def to_json(self) -> dict[str, Any]:
-        return {
-            "x": self.x,
-            "y": self.y,
-            "width": self.width,
-            "height": self.height,
-            "blocks": self.blocks,
-            "mean_error": self.mean_error,
-        }
-
-
-@dataclass(frozen=True)
 class ELAResult:
     quality: int
     original_width: int
@@ -87,7 +66,7 @@ class ELAResult:
     block_size: int
     outlier_sigma: float
     outlier_block_fraction: float
-    regions: list[ELARegion]
+    regions: list[Region]
     anomaly: bool
     observation: str
     # The amplified difference map, PNG-encoded (working size). Never contains the original.
@@ -114,7 +93,7 @@ class ELAResult:
             "block_size": self.block_size,
             "outlier_sigma": self.outlier_sigma,
             "outlier_block_fraction": self.outlier_block_fraction,
-            "regions": [r.to_json() for r in self.regions],
+            "regions": [r.to_json("mean_error") for r in self.regions],
             "anomaly": self.anomaly,
             "confidence": self.confidence,
             "observation": self.observation,
@@ -174,47 +153,6 @@ def _block_means(err: NDArray[np.float32], block: int) -> NDArray[np.float32]:
     return np.asarray(sums / np.maximum(counts, 1), dtype=np.float32)
 
 
-def _regions(
-    mask: NDArray[np.bool_], means: NDArray[np.float32], block: int, scale_x: float, scale_y: float
-) -> list[ELARegion]:
-    """4-connected components of the outlier mask, largest first, in original pixel coords."""
-    bh, bw = mask.shape
-    seen = np.zeros_like(mask, dtype=bool)
-    found: list[ELARegion] = []
-    for sy in range(bh):
-        for sx in range(bw):
-            if not mask[sy, sx] or seen[sy, sx]:
-                continue
-            queue: deque[tuple[int, int]] = deque([(sy, sx)])
-            seen[sy, sx] = True
-            cells: list[tuple[int, int]] = []
-            while queue:
-                y, x = queue.popleft()
-                cells.append((y, x))
-                for ny, nx in ((y - 1, x), (y + 1, x), (y, x - 1), (y, x + 1)):
-                    if 0 <= ny < bh and 0 <= nx < bw and mask[ny, nx] and not seen[ny, nx]:
-                        seen[ny, nx] = True
-                        queue.append((ny, nx))
-            if len(cells) < MIN_REGION_BLOCKS:
-                continue
-            ys = [c[0] for c in cells]
-            xs = [c[1] for c in cells]
-            x0, x1 = min(xs) * block, (max(xs) + 1) * block
-            y0, y1 = min(ys) * block, (max(ys) + 1) * block
-            found.append(
-                ELARegion(
-                    x=round(x0 * scale_x),
-                    y=round(y0 * scale_y),
-                    width=max(1, round((x1 - x0) * scale_x)),
-                    height=max(1, round((y1 - y0) * scale_y)),
-                    blocks=len(cells),
-                    mean_error=round(float(np.mean([means[y, x] for y, x in cells])), 2),
-                )
-            )
-    found.sort(key=lambda r: r.blocks, reverse=True)
-    return found[:MAX_REGIONS]
-
-
 def _observation(
     *, anomaly: bool, fraction: float, regions: int, mean_error: float, downscaled: bool
 ) -> str:
@@ -272,7 +210,15 @@ def compute_ela(
     fraction = float(mask.mean()) if mask.size else 0.0
 
     ww, wh = rgb.size
-    regions = _regions(mask, means, block_size, ow / ww, oh / wh)
+    regions = connected_regions(
+        mask,
+        means,
+        block=block_size,
+        scale_x=ow / ww,
+        scale_y=oh / wh,
+        min_blocks=MIN_REGION_BLOCKS,
+        max_regions=MAX_REGIONS,
+    )
     anomaly = anomaly_min_fraction <= fraction <= anomaly_max_fraction and len(regions) > 0
 
     # Amplified difference map: scale so the 99th percentile is near full brightness.

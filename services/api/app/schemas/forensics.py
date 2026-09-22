@@ -106,6 +106,37 @@ class ResamplingFindingResponse(BaseModel):
     limitations: list[str]
 
 
+class NoiseRegionResponse(BaseModel):
+    """Bounding box in original image pixels; ``sigma`` is the region's mean noise estimate."""
+
+    x: int
+    y: int
+    width: int
+    height: int
+    blocks: int
+    sigma: float
+
+
+class NoiseFindingResponse(BaseModel):
+    method: Literal["noise"] = "noise"
+    version: str
+    observation: str
+    confidence: Confidence
+    measured: bool
+    width: int
+    height: int
+    block_size: int
+    blocks_total: int
+    blocks_smooth: int
+    baseline_sigma: float
+    spread_sigma: float
+    outlier_fraction: float
+    regions: list[NoiseRegionResponse]
+    # Compact regions whose noise level departs from the baseline. Never proof on its own.
+    anomaly: bool
+    limitations: list[str]
+
+
 class ForensicSkipped(BaseModel):
     method: str
     reason: str
@@ -126,6 +157,7 @@ class ImageForensicsResponse(BaseModel):
     ela: ELAFindingResponse | None
     compression: CompressionFindingResponse | None
     resampling: ResamplingFindingResponse | None
+    noise: NoiseFindingResponse | None
     skipped: list[ForensicSkipped]
     artifacts: list[ForensicArtifactResponse]
     limitations: list[str]

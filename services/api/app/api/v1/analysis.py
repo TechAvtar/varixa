@@ -31,6 +31,7 @@ from app.schemas.forensics import (
     ForensicArtifactResponse,
     ForensicSkipped,
     ImageForensicsResponse,
+    NoiseFindingResponse,
     ResamplingFindingResponse,
 )
 from app.schemas.matches import SourceMatchesResponse, SourceMatchResponse
@@ -299,6 +300,14 @@ async def get_analysis_forensics(
             skipped.append(
                 ForensicSkipped(method="resampling", reason=str(row.resampling_json.get("reason")))
             )
+    noise_finding: NoiseFindingResponse | None = None
+    if row.noise_json:
+        if row.noise_json.get("applicable"):
+            noise_finding = NoiseFindingResponse.model_validate(row.noise_json)
+        else:
+            skipped.append(
+                ForensicSkipped(method="noise", reason=str(row.noise_json.get("reason")))
+            )
     artifacts = [
         ForensicArtifactResponse(
             name=str(a.get("name")),
@@ -315,6 +324,7 @@ async def get_analysis_forensics(
         ela=ela_finding,
         compression=compression_finding,
         resampling=resampling_finding,
+        noise=noise_finding,
         skipped=skipped,
         artifacts=artifacts,
         limitations=_FORENSICS_NOTES,

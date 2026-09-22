@@ -403,6 +403,46 @@ function forensicsEvidence(f: ImageForensicsResponse | null): EvidenceItem[] {
       source: "resampling",
     });
   }
+
+  const n = f.noise;
+  if (n?.anomaly) {
+    const reg = n.regions[0];
+    items.push({
+      id: "forensics.noise.anomaly",
+      category: "forensics",
+      kind: "signal",
+      level: "POSSIBLE",
+      claim: `Noise level differs from the rest of the image in ${n.regions.length} compact region(s).`,
+      source: "noise",
+      detail: reg
+        ? `Baseline about ${n.baseline_sigma} grey levels; largest region at (${reg.x}, ${reg.y}), ${reg.width} × ${reg.height} px, about ${reg.sigma}.`
+        : undefined,
+      limitation:
+        "Depth of field, sky versus foliage and in-camera denoising produce the same differences. Not proof of editing.",
+    });
+  } else if (n?.measured && n.blocks_smooth > 0) {
+    items.push({
+      id: "forensics.noise.consistent",
+      category: "forensics",
+      kind: "signal",
+      level: "UNKNOWN",
+      claim: "Noise level is consistent across the smooth areas that could be compared.",
+      source: "noise",
+      detail: n.observation,
+      limitation:
+        "Only smooth areas are compared; strong compression flattens noise and hides differences.",
+    });
+  } else if (n) {
+    items.push({
+      id: "forensics.noise.unmeasured",
+      category: "forensics",
+      kind: "unknown",
+      level: "UNKNOWN",
+      claim: "Noise consistency could not be measured.",
+      source: "noise",
+      detail: n.observation,
+    });
+  }
   return items;
 }
 

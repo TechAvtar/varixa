@@ -6,13 +6,17 @@ other. Visualisations are stored as private artifacts under the owner's prefix.
 """
 
 import asyncio
+import io
+
+from PIL import Image
 
 from app.repositories.analysis import AnalysisRepository
 from app.services import storage_keys
 from app.services.analysis.pipeline import PipelineContext, StepFailedError, StepOutcome
-from app.services.image import compression, ela, resampling
+from app.services.image import compression, ela, noise, resampling
 
 ELA_ARTIFACT = "ela.png"
+NOISE_ARTIFACT = "noise.png"
 
 
 class CompressionStep:
@@ -82,6 +86,61 @@ class ResamplingStep:
             peak_ratio=result.peak_ratio,
             peaks=len(result.peaks),
             detected=result.detected,
+        )
+
+
+class NoiseStep:
+    """Block-wise noise-level consistency over smooth areas (any format). Non-critical.
+
+    Persists ``noise_json`` and a block-level noise map as ``noise.png``.
+    """
+
+    name = "noise"
+    critical = False
+
+    async def run(self, ctx: PipelineContext) -> StepOutcome:
+        image = ctx.artifacts.get("image")
+        if image is None:
+            raise StepFailedError("NO_VERIFIED_IMAGE", "Validation did not publish an image.")
+        s = ctx.settings
+        result = await asyncio.to_thread(
+            noise.analyze_noise,
+            image.data,
+            block_size=s.noise_block_size,
+            outlier_k=s.noise_outlier_k,
+            anomaly_min_fraction=s.noise_anomaly_min_fraction,
+            anomaly_max_fraction=s.noise_anomaly_max_fraction,
+        )
+        repo = AnalysisRepository(ctx.session)
+        row = await repo.upsert_forensics(ctx.analysis.id, noise_json=result.to_json())
+        if result.visualization_png:
+            key = storage_keys.artifact_key(ctx.analysis.user_id, ctx.analysis.id, NOISE_ARTIFACT)
+            await ctx.storage.put(key, result.visualization_png, content_type="image/png")
+            with Image.open(io.BytesIO(result.visualization_png)) as vis:
+                vw, vh = vis.size
+            others = [a for a in (row.artifacts_json or []) if a.get("method") != noise.METHOD]
+            row.artifacts_json = [
+                *others,
+                {
+                    "name": NOISE_ARTIFACT,
+                    "method": noise.METHOD,
+                    "object_key": key,
+                    "content_type": "image/png",
+                    "width": vw,
+                    "height": vh,
+                },
+            ]
+            await ctx.session.flush()
+        ctx.artifacts["noise"] = result
+        return StepOutcome.ok(
+            version=noise.NOISE_VERSION,
+            measured=result.measured,
+            baseline_sigma=result.baseline_sigma,
+            blocks_smooth=result.blocks_smooth,
+            outlier_fraction=result.outlier_fraction,
+            regions=len(result.regions),
+            anomaly=result.anomaly,
+            artifact=NOISE_ARTIFACT if result.visualization_png else None,
         )
 
 

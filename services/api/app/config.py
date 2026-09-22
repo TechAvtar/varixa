@@ -79,6 +79,12 @@ class Settings(BaseSettings):
     # Forensics: resampling spectral-peak threshold (peak magnitude / local background).
     resampling_min_peak_ratio: float = Field(default=5.0, ge=1.0, le=100.0)
 
+    # Forensics: noise consistency (block size, outlier multiple of the IQR, anomaly band).
+    noise_block_size: int = Field(default=32, ge=16, le=128)
+    noise_outlier_k: float = Field(default=3.0, ge=0.5, le=20.0)
+    noise_anomaly_min_fraction: float = Field(default=0.005, ge=0.0, le=1.0)
+    noise_anomaly_max_fraction: float = Field(default=0.25, ge=0.0, le=1.0)
+
     # Persistent provider-result cache (content hash + provider/model/version). 0 disables.
     provider_cache_ttl_hours: int = Field(default=24 * 7, ge=0, le=24 * 365)
 

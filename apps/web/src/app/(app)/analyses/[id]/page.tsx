@@ -20,6 +20,7 @@ import { CompressionCard } from "@/components/analyses/compression-card";
 import { ELACard } from "@/components/analyses/ela-card";
 import { FingerprintsCard } from "@/components/analyses/fingerprints-card";
 import { MetadataCard } from "@/components/analyses/metadata-card";
+import { NoiseCard } from "@/components/analyses/noise-card";
 import { NotAvailable } from "@/components/analyses/not-available";
 import { ProcessingSteps } from "@/components/analyses/processing-steps";
 import { ResamplingCard } from "@/components/analyses/resampling-card";
@@ -247,9 +248,10 @@ export default async function AnalysisPage({
                 <ELACard data={forensics} />
                 <CompressionCard data={forensics} />
                 <ResamplingCard data={forensics} />
+                <NoiseCard data={forensics} />
                 <p className="text-xs text-muted-foreground">
-                  Noise and copy-move heuristics arrive in later builds. Nothing is inferred for
-                  them in the meantime.
+                  The copy-move heuristic arrives in a later build. Nothing is inferred for them in
+                  the meantime.
                 </p>
               </>
             ) : (
