@@ -142,6 +142,7 @@ async def test_soft_delete_removes_stored_files(
     session.add(AnalysisFile(analysis_id=analysis_id, object_key=key, sha256="0" * 64))
     await session.commit()
     session.expire_all()  # force the service to reload everything it needs
+    await session.refresh(user)  # a request would carry a freshly loaded user
 
     await service.soft_delete(user, analysis_id)
 
