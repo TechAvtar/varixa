@@ -1,5 +1,6 @@
 import type {
   AIDetectionResponse,
+  AnalysisFileLink,
   AnalysisResponse,
   ImageFingerprintsResponse,
   ImageForensicsResponse,
@@ -20,6 +21,8 @@ import { CompressionCard } from "@/components/analyses/compression-card";
 import { CopyMoveCard } from "@/components/analyses/copy-move-card";
 import { ELACard } from "@/components/analyses/ela-card";
 import { FingerprintsCard } from "@/components/analyses/fingerprints-card";
+import { ForensicViewer } from "@/components/analyses/forensic-viewer";
+import { ForensicsSummary } from "@/components/analyses/forensics-summary";
 import { MetadataCard } from "@/components/analyses/metadata-card";
 import { NoiseCard } from "@/components/analyses/noise-card";
 import { NotAvailable } from "@/components/analyses/not-available";
@@ -87,6 +90,7 @@ export default async function AnalysisPage({
     matchesResult,
     callsResult,
     forensicsResult,
+    fileLinkResult,
   ] = await Promise.all([
     isImage ? authedRequest<ImageMetadataResponse>(`/analysis/${id}/metadata`) : null,
     isImage ? authedRequest<ImageProvenanceResponse>(`/analysis/${id}/provenance`) : null,
@@ -97,6 +101,9 @@ export default async function AnalysisPage({
     authedRequest<SourceMatchesResponse>(`/analysis/${id}/matches`),
     authedRequest<ProviderCallsResponse>(`/analysis/${id}/provider-calls`),
     isImage ? authedRequest<ImageForensicsResponse>(`/analysis/${id}/forensics`) : null,
+    isImage && active === "forensics"
+      ? authedRequest<AnalysisFileLink>(`/analysis/${id}/file`)
+      : null,
   ]);
   const md = metadataResult?.ok ? metadataResult.data : null;
   const prov = provenanceResult?.ok ? provenanceResult.data : null;
@@ -107,6 +114,7 @@ export default async function AnalysisPage({
   const sources = matchesResult.ok ? matchesResult.data : null;
   const calls = callsResult.ok ? callsResult.data : null;
   const forensics = forensicsResult?.ok ? forensicsResult.data : null;
+  const fileLink = fileLinkResult?.ok ? fileLinkResult.data : null;
 
   const evidence = deriveEvidence(a, md, prov, fp, txt, tfp, ai, sources, forensics);
   const counts = summarise(evidence);
@@ -246,6 +254,8 @@ export default async function AnalysisPage({
             />
             {forensics ? (
               <>
+                <ForensicsSummary data={forensics} />
+                <ForensicViewer data={forensics} original={fileLink} />
                 <ELACard data={forensics} />
                 <CompressionCard data={forensics} />
                 <ResamplingCard data={forensics} />

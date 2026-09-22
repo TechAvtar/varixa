@@ -9,6 +9,16 @@ from app.enums import AnalysisStatus, AnalysisType, StepStatus
 MAX_TITLE_LENGTH = 300
 
 
+class AnalysisFileLinkResponse(BaseModel):
+    """Short-lived signed URL for the stored original (owner only). Never a storage key."""
+
+    url: str
+    expires_in_seconds: int
+    mime_type: str | None
+    width: int | None
+    height: int | None
+
+
 class AnalysisFileResponse(BaseModel):
     """Client-safe view of the stored original. The storage key is never exposed."""
 

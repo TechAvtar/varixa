@@ -7,6 +7,7 @@ export type { AIDetectionResponse, AILabel } from "./ai";
 export type {
   AnalysisCounts,
   AnalysisCreatedResponse,
+  AnalysisFileLink,
   AnalysisFileResponse,
   AnalysisListResponse,
   AnalysisResponse,

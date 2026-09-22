@@ -36,7 +36,7 @@ from app.services.image import validate_image
 from app.services.image.similarity import SimilarityMatch, compare
 from app.services.image.validation import ImageTooLargeError
 from app.services.text.fingerprints import estimate_jaccard
-from app.utils.errors import ConflictError, ValidationError
+from app.utils.errors import ConflictError, NotFoundError, ValidationError
 
 log = logging.getLogger("verixa.analysis")
 
@@ -263,6 +263,19 @@ class AnalysisService:
     async def get_provenance(self, user: User, analysis_id: uuid.UUID) -> ImageProvenance | None:
         await self.get_owned(user, analysis_id)
         return await self._analyses.get_provenance(analysis_id)
+
+    async def original_file_link(self, user: User, analysis_id: uuid.UUID) -> tuple[str, Any]:
+        """Signed, short-lived URL for the stored original plus its file record (owner only)."""
+        analysis = await self.get_owned(user, analysis_id)
+        if not analysis.files:
+            raise NotFoundError("This analysis has no stored file.")
+        file = analysis.files[0]
+        url = await self._storage.signed_url(
+            file.object_key,
+            ttl_seconds=self._settings.signed_url_ttl_seconds,
+            filename=file.original_filename,
+        )
+        return url, file
 
     async def get_forensics(self, user: User, analysis_id: uuid.UUID) -> ImageForensics | None:
         await self.get_owned(user, analysis_id)

@@ -12,6 +12,7 @@ from app.schemas.analysis import (
     MAX_TITLE_LENGTH,
     AnalysisCounts,
     AnalysisCreatedResponse,
+    AnalysisFileLinkResponse,
     AnalysisFileResponse,
     AnalysisListResponse,
     AnalysisResponse,
@@ -167,6 +168,21 @@ _RECORDED_NOTE = (
     "Metadata values are recorded by software and can be altered; they are not verified facts."
 )
 _PILLOW_NOTE = "Extracted with Pillow (reduced coverage): MakerNotes and IPTC were not decoded."
+
+
+@router.get("/{analysis_id}/file", response_model=AnalysisFileLinkResponse)
+async def get_analysis_file_link(
+    analysis_id: uuid.UUID, user: CurrentUser, analyses: AnalysisSvc, settings: AppSettings
+) -> AnalysisFileLinkResponse:
+    """A short-lived signed link to the stored original, for the owner's own viewer."""
+    url, file = await analyses.original_file_link(user, analysis_id)
+    return AnalysisFileLinkResponse(
+        url=url,
+        expires_in_seconds=settings.signed_url_ttl_seconds,
+        mime_type=file.mime_type,
+        width=file.width,
+        height=file.height,
+    )
 
 
 @router.get("/{analysis_id}/metadata", response_model=ImageMetadataResponse)

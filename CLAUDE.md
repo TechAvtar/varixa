@@ -62,6 +62,8 @@ Every package's `__init__.py` carries a one-line responsibility docstring.
   the `image_forensics` row via `AnalysisRepository.upsert_forensics`. Generated images go to
   `storage_keys.artifact_key(...)` and are listed in `artifacts_json` (so deletion sweeps them);
   clients only ever receive signed URLs.
+- Forensic region coordinates are always in *original* pixels (methods that downscale convert
+  back); map artifacts are at the method's working size. `forensic-viewer.tsx` relies on both.
 
 ## Non-negotiables
 - Routes → Services → Repositories/Providers. No provider calls from routes.

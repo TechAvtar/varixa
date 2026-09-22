@@ -17,6 +17,15 @@ export interface AnalysisStepResponse {
 }
 
 /** Client-safe view of the stored original; storage keys are never exposed. */
+/** Short-lived signed URL for the stored original (owner only). */
+export interface AnalysisFileLink {
+  url: string;
+  expires_in_seconds: number;
+  mime_type: string | null;
+  width: number | null;
+  height: number | null;
+}
+
 export interface AnalysisFileResponse {
   original_filename: string | null;
   mime_type: string | null;

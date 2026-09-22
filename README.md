@@ -177,6 +177,18 @@ limitations, ...metrics}`). Visualisations are stored as private artifacts under
   least `VERIXA_COPY_MOVE_MIN_SHIFT` px apart is `detected` → POSSIBLE. Translated copies only;
   flat blocks excluded; mask of source/target blocks stored as `copy_move.png`.
 
+### Forensics UI
+
+The Forensics tab shows, per method, the observation, the method's design confidence, the
+visualisation (when the method produces one) and its limitations. Above the cards: a summary
+table of every method's outcome, and a viewer that draws each method's regions (ELA outliers,
+noise regions, copy-move source → target) over the original image and can blend the ELA, noise
+and copy-move maps in with adjustable opacity. The original is fetched through
+`GET /analysis/{id}/file`, a short-lived signed link for the owner only. On the web side the
+docs/07 rule "multiple independent forensic anomalies → STRONG" is applied preliminarily: ELA and
+compression count as one correlated family; noise and copy-move are independent; resampling
+never counts as an anomaly.
+
 ### Provider result cache
 
 Repeatable provider results (AI detection, reverse-image and phrase search) are cached in the

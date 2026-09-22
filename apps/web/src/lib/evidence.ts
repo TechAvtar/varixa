@@ -482,6 +482,28 @@ function forensicsEvidence(f: ImageForensicsResponse | null): EvidenceItem[] {
       source: "copy_move",
     });
   }
+
+  // docs/07: several *independent* anomalies are STRONG. ELA and the compression grid are one
+  // correlated family; noise and copy-move are independent of it and of each other. Resampling
+  // is routine processing history and never counts as an anomaly.
+  const families: string[] = [];
+  if (f.ela?.anomaly || f.compression?.anomaly) families.push("error level / compression");
+  if (n?.anomaly) families.push("noise");
+  if (cm?.detected) families.push("copy-move");
+  if (families.length >= 2) {
+    items.unshift({
+      id: "forensics.multiple",
+      category: "forensics",
+      kind: "signal",
+      level: "STRONG",
+      claim: `${families.length} independent forensic methods flag anomalies (${families.join(", ")}).`,
+      source: "forensics",
+      detail:
+        "Independent heuristics agreeing raises the weight of the observation. Each remains a heuristic with the failure modes listed on its card.",
+      limitation:
+        "Repeated content, depth of field and detail-rich areas can trip more than one method on an unedited photo. Strong is not proof.",
+    });
+  }
   return items;
 }
 
