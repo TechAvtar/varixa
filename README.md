@@ -108,6 +108,8 @@ resources.
 | Endpoint | Purpose |
 | -------- | ------- |
 | `POST /api/v1/analysis/image` | Multipart `file` (+ optional `title`). Returns `201 {id, status, type}` |
+| `POST /api/v1/analysis/text` | JSON `{text, title?}`; original stored verbatim; returns `201 {id, status, type}` |
+| `GET /api/v1/analysis/{id}/text` | Excerpts, normalisation report, language guess, statistics, structure, limitations |
 | `GET /api/v1/analysis?page=&page_size=` | Caller's analyses, newest first (soft-deleted hidden) |
 | `GET /api/v1/analysis/counts` | `{total, image, text}` for the dashboard |
 | `GET /api/v1/analysis/{id}` | One analysis; 404 if missing or owned by someone else |
@@ -185,6 +187,7 @@ All configuration is via environment variables; see the `.env.example` files. Ne
 | `VERIXA_C2PATOOL_PATH` | API | Explicit c2patool executable |
 | `VERIXA_C2PATOOL_TIMEOUT_SECONDS` | API | Per-run timeout (default 30) |
 | `VERIXA_FINGERPRINT_NEAR_THRESHOLD` | API | Max Hamming distance (bits) on pHash/dHash counted as a near duplicate (default 10) |
+| `VERIXA_MAX_TEXT_CHARS` | API | Pasted-text cap in characters (default 200000) |
 | `VERIXA_MAX_UPLOAD_BYTES` | API | Upload size cap (default 26214400 = 25 MB); mirror it in `next.config.ts` `serverActions.bodySizeLimit` |
 | `VERIXA_MAX_IMAGE_PIXELS` | API | Width × height cap checked from the header (default 40 MP) |
 | `VERIXA_DATA_DIR` | API | Root for local runtime data (default `./data`, git-ignored) |

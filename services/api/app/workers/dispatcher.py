@@ -21,6 +21,7 @@ from app.repositories.analysis import AnalysisRepository
 from app.services.analysis.pipeline import PipelineContext, PipelineRunner
 from app.services.analysis.service import AnalysisService
 from app.services.analysis.steps import image_pipeline_steps
+from app.services.analysis.text_steps import text_pipeline_steps
 
 log = logging.getLogger("verixa.worker")
 
@@ -74,7 +75,11 @@ async def run_analysis(
         if analysis is None or analysis.status != AnalysisStatus.QUEUED:
             log.info("skip dispatch analysis_id=%s (missing or not queued)", analysis_id)
             return
-        if analysis.type != AnalysisType.IMAGE:
+        if analysis.type == AnalysisType.IMAGE:
+            steps = image_pipeline_steps()
+        elif analysis.type == AnalysisType.TEXT:
+            steps = text_pipeline_steps()
+        else:
             await service.mark_failed(
                 analysis, code="UNSUPPORTED_TYPE", message="No pipeline exists for this type."
             )
@@ -93,7 +98,7 @@ async def run_analysis(
             },
         )
         try:
-            result = await PipelineRunner(image_pipeline_steps()).run(ctx)
+            result = await PipelineRunner(steps).run(ctx)
         except Exception:
             log.exception("pipeline crashed analysis_id=%s", analysis_id)
             await service.mark_failed(

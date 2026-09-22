@@ -3,6 +3,7 @@ import type {
   ImageFingerprintsResponse,
   ImageMetadataResponse,
   ImageProvenanceResponse,
+  TextAnalysisResponse,
 } from "@verixa/shared-types";
 import { EVIDENCE_LEVELS } from "@verixa/shared-types";
 import type { Metadata } from "next";
@@ -15,6 +16,7 @@ import { NotAvailable } from "@/components/analyses/not-available";
 import { ProcessingSteps } from "@/components/analyses/processing-steps";
 import { ProvenanceCard } from "@/components/analyses/provenance-card";
 import { RawJson } from "@/components/analyses/raw-json";
+import { TextStatsCard } from "@/components/analyses/text-stats-card";
 import { isReportTab, type ReportTab, ReportTabs } from "@/components/analyses/report-tabs";
 import { EvidenceList } from "@/components/evidence/evidence-card";
 import { EvidenceLevelBadge } from "@/components/evidence/evidence-level-badge";
@@ -29,7 +31,15 @@ export const metadata: Metadata = { title: "Analysis · Verixa" };
 export const dynamic = "force-dynamic";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const UNAVAILABLE: ReadonlySet<ReportTab> = new Set(["ai", "forensics", "timeline"]);
+const UNAVAILABLE_IMAGE: ReadonlySet<ReportTab> = new Set(["ai", "forensics", "timeline"]);
+const UNAVAILABLE_TEXT: ReadonlySet<ReportTab> = new Set([
+  "metadata",
+  "provenance",
+  "ai",
+  "forensics",
+  "matches",
+  "timeline",
+]);
 
 export default async function AnalysisPage({
   params,
@@ -54,16 +64,19 @@ export default async function AnalysisPage({
   }
   const a = result.data;
 
-  const [metadataResult, provenanceResult, fingerprintsResult] = await Promise.all([
-    authedRequest<ImageMetadataResponse>(`/analysis/${id}/metadata`),
-    authedRequest<ImageProvenanceResponse>(`/analysis/${id}/provenance`),
-    authedRequest<ImageFingerprintsResponse>(`/analysis/${id}/fingerprints`),
+  const isImage = a.type === "image";
+  const [metadataResult, provenanceResult, fingerprintsResult, textResult] = await Promise.all([
+    isImage ? authedRequest<ImageMetadataResponse>(`/analysis/${id}/metadata`) : null,
+    isImage ? authedRequest<ImageProvenanceResponse>(`/analysis/${id}/provenance`) : null,
+    isImage ? authedRequest<ImageFingerprintsResponse>(`/analysis/${id}/fingerprints`) : null,
+    isImage ? null : authedRequest<TextAnalysisResponse>(`/analysis/${id}/text`),
   ]);
-  const md = metadataResult.ok ? metadataResult.data : null;
-  const prov = provenanceResult.ok ? provenanceResult.data : null;
-  const fp = fingerprintsResult.ok ? fingerprintsResult.data : null;
+  const md = metadataResult?.ok ? metadataResult.data : null;
+  const prov = provenanceResult?.ok ? provenanceResult.data : null;
+  const fp = fingerprintsResult?.ok ? fingerprintsResult.data : null;
+  const txt = textResult?.ok ? textResult.data : null;
 
-  const evidence = deriveEvidence(a, md, prov, fp);
+  const evidence = deriveEvidence(a, md, prov, fp, txt);
   const counts = summarise(evidence);
   const processing = a.status === "queued" || a.status === "processing";
 
@@ -123,12 +136,27 @@ export default async function AnalysisPage({
           </Alert>
         ) : null}
 
-        <ReportTabs analysisId={a.id} active={active} unavailable={UNAVAILABLE} />
+        <ReportTabs
+          analysisId={a.id}
+          active={active}
+          unavailable={isImage ? UNAVAILABLE_IMAGE : UNAVAILABLE_TEXT}
+        />
       </header>
 
       <section role="tabpanel" aria-label={active} className="space-y-6">
         {active === "overview" ? (
-          <Overview a={a} evidence={evidence} />
+          <Overview a={a} evidence={evidence} text={txt} />
+        ) : !isImage ? (
+          <NotAvailable
+            title="Not applicable to text"
+            description={
+              active === "matches"
+                ? "Source and phrase matching for text arrives with the text fingerprint and search steps."
+                : active === "ai"
+                  ? "No AI-generation detector runs in this build. Its output will always be shown as a probabilistic signal."
+                  : "This section applies to image analyses only."
+            }
+          />
         ) : active === "metadata" ? (
           <>
             <EvidenceList
@@ -189,7 +217,15 @@ export default async function AnalysisPage({
   );
 }
 
-function Overview({ a, evidence }: { a: AnalysisResponse; evidence: EvidenceItem[] }) {
+function Overview({
+  a,
+  evidence,
+  text,
+}: {
+  a: AnalysisResponse;
+  evidence: EvidenceItem[];
+  text: TextAnalysisResponse | null;
+}) {
   const facts = evidence.filter((e) => e.kind === "fact");
   const signals = evidence.filter((e) => e.kind === "signal");
   const unknowns = evidence.filter((e) => e.kind === "unknown");
@@ -223,6 +259,7 @@ function Overview({ a, evidence }: { a: AnalysisResponse; evidence: EvidenceItem
       </div>
       <div className="space-y-6">
         <ProcessingSteps steps={a.steps ?? []} />
+        {a.type === "text" ? <TextStatsCard data={text} /> : null}
         <Card>
           <CardHeader>
             <CardTitle>File</CardTitle>

@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from app.models.image_metadata import ImageMetadata
     from app.models.image_provenance import ImageProvenance
     from app.models.provider_call import ProviderCall
+    from app.models.text_analysis import TextAnalysis
     from app.models.user import User
 
 
@@ -58,6 +59,9 @@ class Analysis(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         back_populates="analysis", cascade="all, delete-orphan", uselist=False
     )
     image_fingerprints: Mapped["ImageFingerprints | None"] = relationship(
+        back_populates="analysis", cascade="all, delete-orphan", uselist=False
+    )
+    text_analysis: Mapped["TextAnalysis | None"] = relationship(
         back_populates="analysis", cascade="all, delete-orphan", uselist=False
     )
 

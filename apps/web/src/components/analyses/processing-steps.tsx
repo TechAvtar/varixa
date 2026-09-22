@@ -5,6 +5,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 /** Human labels for pipeline step names; unknown names fall back to the raw name. */
 const STEP_LABELS: Record<string, string> = {
   validate: "Validating file",
+  normalize: "Normalising text",
+  language: "Detecting language",
+  statistics: "Measuring text",
   hashing: "Computing hashes",
   metadata: "Extracting metadata",
   provenance: "Checking provenance",

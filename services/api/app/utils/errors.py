@@ -16,6 +16,11 @@ class AppError(Exception):
             self.code = code
 
 
+class ValidationError(AppError):
+    status_code = 422
+    code = "VALIDATION_ERROR"
+
+
 class UnauthorizedError(AppError):
     status_code = 401
     code = "UNAUTHORIZED"

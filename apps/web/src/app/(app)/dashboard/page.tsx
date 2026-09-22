@@ -69,7 +69,7 @@ export default async function DashboardPage() {
         ) : recent.data.items.length === 0 ? (
           <EmptyState
             title="No analyses yet"
-            description="Upload an image to start an evidence-backed analysis. Text analysis is coming in a later build."
+            description="Upload an image or paste text to start an evidence-backed analysis."
             action={
               <Button nativeButton={false} render={<Link href="/analyses/new" />}>
                 Upload an image

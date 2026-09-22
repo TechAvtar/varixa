@@ -30,6 +30,7 @@ def settings(tmp_path: Path) -> Settings:
         cors_origins=["http://testserver"],
         data_dir=tmp_path / "data",
         max_upload_bytes=1024 * 1024,  # small cap keeps oversize tests fast
+        max_text_chars=100_000,
     )
 
 

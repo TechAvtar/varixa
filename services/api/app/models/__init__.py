@@ -11,6 +11,7 @@ from app.models.image_fingerprints import ImageFingerprints
 from app.models.image_metadata import ImageMetadata
 from app.models.image_provenance import ImageProvenance
 from app.models.provider_call import ProviderCall
+from app.models.text_analysis import TextAnalysis
 from app.models.user import User
 from app.models.user_session import UserSession
 
@@ -24,6 +25,7 @@ __all__ = [
     "ImageMetadata",
     "ImageProvenance",
     "ProviderCall",
+    "TextAnalysis",
     "User",
     "UserSession",
 ]

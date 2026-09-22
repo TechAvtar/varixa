@@ -12,6 +12,7 @@ from app.models import (
     ImageFingerprints,
     ImageMetadata,
     ImageProvenance,
+    TextAnalysis,
 )
 
 
@@ -105,6 +106,18 @@ class AnalysisRepository:
             .limit(limit)
         )
         return [(row[0], row[1]) for row in (await self._session.execute(stmt)).all()]
+
+    async def get_text_analysis(self, analysis_id: uuid.UUID) -> TextAnalysis | None:
+        stmt = select(TextAnalysis).where(TextAnalysis.analysis_id == analysis_id)
+        return (await self._session.execute(stmt)).scalar_one_or_none()
+
+    async def replace_text_analysis(self, row: TextAnalysis) -> TextAnalysis:
+        await self._session.execute(
+            delete(TextAnalysis).where(TextAnalysis.analysis_id == row.analysis_id)
+        )
+        self._session.add(row)
+        await self._session.flush()
+        return row
 
     async def get_provenance(self, analysis_id: uuid.UUID) -> ImageProvenance | None:
         stmt = select(ImageProvenance).where(ImageProvenance.analysis_id == analysis_id)

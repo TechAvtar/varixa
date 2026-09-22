@@ -1,5 +1,6 @@
 """Analysis lifecycle: create, read (owner-scoped), status transitions, soft delete."""
 
+import hashlib
 import logging
 import re
 import uuid
@@ -16,6 +17,7 @@ from app.models import (
     ImageFingerprints,
     ImageMetadata,
     ImageProvenance,
+    TextAnalysis,
     User,
 )
 from app.providers.storage.base import ObjectStorage
@@ -24,7 +26,8 @@ from app.services import storage_keys
 from app.services.authorization import assert_owns_analysis
 from app.services.image import validate_image
 from app.services.image.similarity import SimilarityMatch, compare
-from app.utils.errors import ConflictError
+from app.services.image.validation import ImageTooLargeError
+from app.utils.errors import ConflictError, ValidationError
 
 log = logging.getLogger("verixa.analysis")
 
@@ -114,6 +117,48 @@ class AnalysisService:
         )
         await self._db.commit()
         return analysis
+
+    async def create_text_analysis(self, user: User, *, text: str, title: str | None) -> Analysis:
+        """Store the pasted text privately, exactly as received, and create the record."""
+        if not text.strip():
+            raise ValidationError("The text is empty.")
+        if len(text) > self._settings.max_text_chars:
+            raise ImageTooLargeError(
+                f"The text exceeds the maximum of {self._settings.max_text_chars:,} characters."
+            )
+        data = text.encode("utf-8")
+        sha256 = hashlib.sha256(data).hexdigest()
+        first_line = next((ln.strip() for ln in text.splitlines() if ln.strip()), "")
+        analysis = Analysis(
+            user_id=user.id,
+            type=AnalysisType.TEXT,
+            status=AnalysisStatus.QUEUED,
+            title=_clean_title(title) or _clean_title(first_line[:120]),
+        )
+        await self._analyses.add(analysis)
+        key = storage_keys.upload_key(user.id, analysis.id, sha256, "txt")
+        try:
+            await self._storage.put(key, data, content_type="text/plain; charset=utf-8")
+        except Exception:
+            await self._db.rollback()
+            log.exception("text storage failed analysis_id=%s", analysis.id)
+            raise
+        await self._analyses.add_file(
+            AnalysisFile(
+                analysis_id=analysis.id,
+                object_key=key,
+                original_filename=None,
+                mime_type="text/plain",
+                size_bytes=len(data),
+                sha256=sha256,
+            )
+        )
+        await self._db.commit()
+        return analysis
+
+    async def get_text_analysis(self, user: User, analysis_id: uuid.UUID) -> TextAnalysis | None:
+        await self.get_owned(user, analysis_id)
+        return await self._analyses.get_text_analysis(analysis_id)
 
     async def get_owned(self, user: User, analysis_id: uuid.UUID) -> Analysis:
         analysis = await self._analyses.get(analysis_id)

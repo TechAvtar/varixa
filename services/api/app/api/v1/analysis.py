@@ -3,8 +3,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, File, Form, Query, UploadFile, status
 
-from app.api.deps import AnalysisSvc, AppSettings, CurrentUser, Jobs
+from app.api.deps import AnalysisSvc, AppSettings, CurrentUser, Jobs, Storage
 from app.models import Analysis
+from app.providers.storage.base import ObjectNotFoundError
 from app.schemas.analysis import (
     MAX_TITLE_LENGTH,
     AnalysisCounts,
@@ -21,6 +22,7 @@ from app.schemas.fingerprints import (
 )
 from app.schemas.metadata import ImageMetadataResponse, NormalizedMetadataResponse
 from app.schemas.provenance import ImageProvenanceResponse, NormalizedProvenanceResponse
+from app.schemas.text import LanguageResponse, TextAnalysisCreate, TextAnalysisResponse
 from app.services.image import ImageTooLargeError
 from app.services.image.provenance import NormalizedProvenance, provenance_limitations
 from app.utils.errors import NotFoundError
@@ -61,6 +63,58 @@ async def create_image_analysis(
     )
     jobs.dispatch(analysis.id)
     return AnalysisCreatedResponse(id=analysis.id, status=analysis.status, type=analysis.type)
+
+
+@router.post("/text", response_model=AnalysisCreatedResponse, status_code=status.HTTP_201_CREATED)
+async def create_text_analysis(
+    body: TextAnalysisCreate, user: CurrentUser, analyses: AnalysisSvc, jobs: Jobs
+) -> AnalysisCreatedResponse:
+    """Accept pasted text (JSON). The original is stored exactly as received."""
+    analysis = await analyses.create_text_analysis(user, text=body.text, title=body.title)
+    jobs.dispatch(analysis.id)
+    return AnalysisCreatedResponse(id=analysis.id, status=analysis.status, type=analysis.type)
+
+
+_TEXT_NOTES = [
+    "Statistics describe the text; they cannot establish who or what wrote it.",
+    "Language detection is a statistical guess with an uncalibrated probability.",
+    "Hidden or formatting characters are reported and removed only in the normalised copy; "
+    "the original is preserved unchanged.",
+]
+_EXCERPT_CHARS = 4000
+
+
+@router.get("/{analysis_id}/text", response_model=TextAnalysisResponse)
+async def get_analysis_text(
+    analysis_id: uuid.UUID, user: CurrentUser, analyses: AnalysisSvc, storage: Storage
+) -> TextAnalysisResponse:
+    row = await analyses.get_text_analysis(user, analysis_id)
+    if row is None:
+        raise NotFoundError("Text analysis is not available for this analysis.")
+    analysis = await analyses.get_owned(user, analysis_id)
+    original = ""
+    original_sha = None
+    if analysis.files:
+        original_sha = analysis.files[0].sha256
+        try:
+            data, _ = await storage.get(analysis.files[0].object_key)
+            original = data.decode("utf-8", "replace")
+        except ObjectNotFoundError:
+            original = ""
+    truncated = len(original) > _EXCERPT_CHARS or len(row.normalized_text) > _EXCERPT_CHARS
+    return TextAnalysisResponse(
+        original_excerpt=original[:_EXCERPT_CHARS],
+        normalized_excerpt=row.normalized_text[:_EXCERPT_CHARS],
+        excerpt_chars=_EXCERPT_CHARS,
+        truncated=truncated,
+        original_sha256=original_sha,
+        normalized_sha256=row.normalized_sha256,
+        normalization=row.normalization_json or {},
+        language=LanguageResponse.model_validate(row.language_json) if row.language_json else None,
+        statistics=row.statistics_json or {},
+        structure=row.structure_json or {},
+        limitations=_TEXT_NOTES,
+    )
 
 
 @router.get("", response_model=AnalysisListResponse)

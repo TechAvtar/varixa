@@ -4,6 +4,7 @@ import type {
   ImageFingerprintsResponse,
   ImageMetadataResponse,
   ImageProvenanceResponse,
+  TextAnalysisResponse,
 } from "@verixa/shared-types";
 
 /**
@@ -17,7 +18,8 @@ export type EvidenceKind = "fact" | "signal" | "unknown";
 
 export interface EvidenceItem {
   id: string;
-  category: "file" | "provenance" | "metadata" | "matches" | "ai" | "forensics" | "sources";
+  category:
+    "file" | "provenance" | "metadata" | "matches" | "ai" | "forensics" | "sources" | "text";
   kind: EvidenceKind;
   level: EvidenceLevel;
   claim: string;
@@ -51,8 +53,10 @@ export function deriveEvidence(
   metadata: ImageMetadataResponse | null,
   provenance: ImageProvenanceResponse | null,
   fingerprints: ImageFingerprintsResponse | null,
+  text: TextAnalysisResponse | null = null,
 ): EvidenceItem[] {
   const items: EvidenceItem[] = [];
+  if (a.type === "text") return deriveTextEvidence(a, text);
 
   // -- file: deterministic facts about the stored bytes -------------------------------
   if (a.file) {
@@ -266,4 +270,113 @@ export function summarise(items: EvidenceItem[]): Record<EvidenceLevel, number> 
   };
   for (const i of items) counts[i.level] += 1;
   return counts;
+}
+
+function deriveTextEvidence(
+  a: AnalysisResponse,
+  text: TextAnalysisResponse | null,
+): EvidenceItem[] {
+  const items: EvidenceItem[] = [];
+  if (a.file) {
+    items.push({
+      id: "text.identity",
+      category: "file",
+      kind: "fact",
+      level: "VERIFIED",
+      claim: `The submitted text is ${a.file.size_bytes ?? "?"} bytes of UTF-8 with SHA-256 ${a.file.sha256.slice(0, 12)}…`,
+      source: "storage",
+      detail: "Stored exactly as received; the normalised working copy is hashed separately.",
+    });
+  }
+  if (!text) {
+    items.push({
+      id: "text.unprocessed",
+      category: "text",
+      kind: "unknown",
+      level: "UNKNOWN",
+      claim: "Text statistics are not available yet.",
+      source: "text",
+    });
+  } else {
+    const s = text.statistics;
+    items.push({
+      id: "text.stats",
+      category: "text",
+      kind: "fact",
+      level: "VERIFIED",
+      claim: `${Number(s.word_count ?? 0).toLocaleString()} words, ${Number(
+        s.sentence_count ?? 0,
+      ).toLocaleString()} sentences, ${Number(s.paragraph_count ?? 0).toLocaleString()} paragraphs.`,
+      source: "statistics",
+      detail: "Deterministic counts over the normalised text.",
+    });
+    if (text.language?.language) {
+      items.push({
+        id: "text.language",
+        category: "text",
+        kind: "signal",
+        level: (text.language.confidence ?? 0) >= 0.9 ? "PROBABLE" : "POSSIBLE",
+        claim: `The text is most likely written in "${text.language.language}" (p≈${text.language.confidence?.toFixed(2)}).`,
+        source: `language/${text.language.engine}`,
+        limitation: "Statistical detection; short or mixed-language texts are often misclassified.",
+      });
+    } else {
+      items.push({
+        id: "text.language.unknown",
+        category: "text",
+        kind: "unknown",
+        level: "UNKNOWN",
+        claim: "The language could not be determined.",
+        source: "language",
+        limitation: text.language?.reason ?? undefined,
+      });
+    }
+    const hidden =
+      Number(text.normalization.zero_width_removed ?? 0) +
+      Number(text.normalization.bidi_controls_removed ?? 0) +
+      Number(text.normalization.control_chars_removed ?? 0);
+    if (hidden > 0) {
+      items.push({
+        id: "text.hidden",
+        category: "text",
+        kind: "signal",
+        level: "POSSIBLE",
+        claim: `${hidden} hidden or control characters were present in the original text.`,
+        source: "normalize",
+        limitation:
+          "Such characters can come from ordinary copy-paste, but also from watermarking or obfuscation.",
+      });
+    }
+    if (Number(s.repeated_sentence_count ?? 0) > 0) {
+      items.push({
+        id: "text.repetition",
+        category: "text",
+        kind: "signal",
+        level: "POSSIBLE",
+        claim: `${s.repeated_sentence_count} sentence(s) are repeated verbatim.`,
+        source: "statistics",
+        limitation: "Repetition is a stylistic observation, not evidence of machine authorship.",
+      });
+    }
+  }
+  items.push(
+    {
+      id: "ai.unavailable",
+      category: "ai",
+      kind: "unknown",
+      level: "UNKNOWN",
+      claim: "AI-generation signals were not evaluated.",
+      source: "ai-detector",
+      limitation: "No detector ran in this build. Detector output is never proof of authorship.",
+    },
+    {
+      id: "sources.unavailable",
+      category: "sources",
+      kind: "unknown",
+      level: "UNKNOWN",
+      claim: "No source or phrase search was performed.",
+      source: "search",
+    },
+  );
+  return items;
 }
