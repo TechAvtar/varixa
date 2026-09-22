@@ -1,76 +1,76 @@
-"""Detection cache hooks. Keyed by content identity + provider/model/version.
+"""Detection caching: repeats of the same content through the same model cost nothing.
 
-Repeating the same content through the same model must not cost another
-provider call. The MVP ships an in-process cache; T022 adds a persistent one
-behind the same interface.
+``CachedAIDetector`` wraps any detector with a ``ProviderResultCache`` (the
+persistent DB cache in production, in-memory in tests). Results are stored as
+plain JSON and rebuilt into ``DetectionResult`` on a hit.
 """
 
-import hashlib
-from collections import OrderedDict
-from dataclasses import replace
-from typing import Any, Protocol
+from dataclasses import asdict, replace
+from typing import Any
 
 from app.providers.ai.base import AIDetector, DetectionResult, Modality
+from app.providers.cache import ProviderResultCache, cache_key, content_hash
+
+OPERATION = "ai.detect"
 
 
-def detection_cache_key(
-    content: bytes | str, *, provider: str, model: str, model_version: str, modality: str
-) -> str:
-    data = content if isinstance(content, bytes) else content.encode("utf-8")
-    sha = hashlib.sha256(data).hexdigest()
-    return f"ai:{provider}:{model}:{model_version}:{modality}:{sha}"
+def serialize_detection(result: DetectionResult) -> dict[str, Any]:
+    data = asdict(result)
+    data.pop("cached", None)
+    return data
 
 
-class DetectionCache(Protocol):
-    async def get(self, key: str) -> DetectionResult | None: ...
-
-    async def set(self, key: str, result: DetectionResult) -> None: ...
-
-
-class InMemoryDetectionCache:
-    """Bounded LRU. Per-process only; fine for a single worker."""
-
-    def __init__(self, max_entries: int = 1024) -> None:
-        self._max = max_entries
-        self._items: OrderedDict[str, DetectionResult] = OrderedDict()
-
-    async def get(self, key: str) -> DetectionResult | None:
-        result = self._items.get(key)
-        if result is not None:
-            self._items.move_to_end(key)
-        return result
-
-    async def set(self, key: str, result: DetectionResult) -> None:
-        self._items[key] = result
-        self._items.move_to_end(key)
-        while len(self._items) > self._max:
-            self._items.popitem(last=False)
+def deserialize_detection(payload: dict[str, Any]) -> DetectionResult:
+    return DetectionResult(
+        provider=str(payload["provider"]),
+        model=str(payload["model"]),
+        model_version=str(payload["model_version"]),
+        modality=payload["modality"],
+        score=payload.get("score"),
+        label=payload.get("label", "unavailable"),
+        calibrated=bool(payload.get("calibrated", False)),
+        raw=dict(payload.get("raw") or {}),
+        latency_ms=payload.get("latency_ms"),
+        request_id=payload.get("request_id"),
+        cached=False,
+        estimated_cost=payload.get("estimated_cost"),
+        limitations=list(payload.get("limitations") or []),
+    )
 
 
 class CachedAIDetector:
-    """Decorator: serves repeats from the cache and marks them ``cached=True``."""
+    """Decorator: serves repeats from the cache and marks them ``cached=True`` at zero cost."""
 
-    def __init__(self, inner: AIDetector, cache: DetectionCache, *, model_hint: str) -> None:
+    def __init__(self, inner: AIDetector, cache: ProviderResultCache, *, model_hint: str) -> None:
         self._inner = inner
         self._cache = cache
         self.name = inner.name
         self.modalities = inner.modalities
-        # Cache keys must include the model identity before the call is made.
+        # The model identity must be part of the key before the call is made.
         self._model_hint = model_hint
 
     async def detect(
         self, content: bytes | str, *, modality: Modality, metadata: dict[str, Any]
     ) -> DetectionResult:
-        key = detection_cache_key(
-            content,
+        chash = content_hash(content)
+        key = cache_key(
             provider=self.name,
-            model=self._model_hint,
-            model_version="*",
-            modality=modality,
+            operation=f"{OPERATION}:{modality}",
+            model_version=self._model_hint,
+            content_hash=chash,
         )
         hit = await self._cache.get(key)
         if hit is not None:
-            return replace(hit, cached=True, latency_ms=0, estimated_cost=0.0)
+            return replace(
+                deserialize_detection(hit.payload), cached=True, latency_ms=0, estimated_cost=0.0
+            )
         result = await self._inner.detect(content, modality=modality, metadata=metadata)
-        await self._cache.set(key, result)
+        await self._cache.set(
+            key,
+            serialize_detection(result),
+            provider=self.name,
+            operation=f"{OPERATION}:{modality}",
+            model_version=f"{result.model}@{result.model_version}",
+            content_hash=chash,
+        )
         return result

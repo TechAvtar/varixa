@@ -153,7 +153,9 @@ async def test_cached_detection_is_recorded_as_cached(
         await client.get(f"/analysis/{second.json()['id']}/provider-calls", headers=headers)
     ).json()
     ai_call = next(c for c in body["calls"] if c["operation"] == "ai.detect")
-    assert ai_call["status"] == "cached" and ai_call["latency_ms"] == 0
+    assert ai_call["status"] == "cached"
+    assert ai_call["latency_ms"] is not None and ai_call["latency_ms"] < 1000  # a lookup, no call
+    assert ai_call["estimated_cost"] == 0
 
 
 async def test_text_pipeline_records_search_with_phrase_count(

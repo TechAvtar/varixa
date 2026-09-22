@@ -7,6 +7,7 @@ never depend on how or where the job runs.
 
 import logging
 import uuid
+from datetime import timedelta
 from typing import Protocol
 
 from fastapi import BackgroundTasks
@@ -15,11 +16,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.config import Settings
 from app.enums import AnalysisStatus, AnalysisType
 from app.providers.ai import build_ai_detector
+from app.providers.cache import InMemoryProviderCache, ProviderResultCache
 from app.providers.metadata import build_metadata_extractor
 from app.providers.provenance import build_provenance_inspector
 from app.providers.search import build_image_source_search, build_text_source_search
 from app.providers.storage.base import ObjectStorage
 from app.repositories.analysis import AnalysisRepository
+from app.repositories.provider_cache import DbProviderCache
 from app.services.analysis.pipeline import PipelineContext, PipelineRunner
 from app.services.analysis.service import AnalysisService
 from app.services.analysis.steps import image_pipeline_steps
@@ -88,6 +91,11 @@ async def run_analysis(
             return
 
         await service.mark_processing(analysis)
+        cache: ProviderResultCache = (
+            DbProviderCache(session, ttl=timedelta(hours=settings.provider_cache_ttl_hours))
+            if settings.provider_cache_ttl_hours > 0
+            else InMemoryProviderCache(ttl=timedelta(0))
+        )
         ctx = PipelineContext(
             analysis=analysis,
             file=analysis.files[0] if analysis.files else None,
@@ -97,9 +105,9 @@ async def run_analysis(
             providers={
                 "metadata": build_metadata_extractor(settings),
                 "provenance": build_provenance_inspector(settings),
-                "ai_detector": build_ai_detector(settings),
-                "image_search": build_image_source_search(settings),
-                "text_search": build_text_source_search(settings),
+                "ai_detector": build_ai_detector(settings, cache=cache),
+                "image_search": build_image_source_search(settings, cache=cache),
+                "text_search": build_text_source_search(settings, cache=cache),
             },
         )
         try:

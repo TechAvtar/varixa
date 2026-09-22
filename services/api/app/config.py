@@ -66,6 +66,9 @@ class Settings(BaseSettings):
     ai_score_high: float = Field(default=0.85, ge=0.0, le=1.0)
     ai_score_medium: float = Field(default=0.6, ge=0.0, le=1.0)
 
+    # Persistent provider-result cache (content hash + provider/model/version). 0 disables.
+    provider_cache_ttl_hours: int = Field(default=24 * 7, ge=0, le=24 * 365)
+
     # Reverse-image / phrase source search. "none" skips the step; "mock" is a stand-in.
     source_search_provider: Literal["none", "mock"] = "none"
     source_search_timeout_seconds: float = Field(default=30.0, ge=1, le=300)

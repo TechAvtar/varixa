@@ -1,5 +1,7 @@
 """AI-generation detector adapters behind one interface. Output is always a signal, never proof."""
 
+from datetime import timedelta
+
 from app.config import Settings
 from app.providers.ai.base import (
     GENERIC_LIMITATIONS,
@@ -11,19 +13,15 @@ from app.providers.ai.base import (
     Modality,
     label_for_score,
 )
-from app.providers.ai.cache import (
-    CachedAIDetector,
-    DetectionCache,
-    InMemoryDetectionCache,
-    detection_cache_key,
-)
+from app.providers.ai.cache import CachedAIDetector, deserialize_detection, serialize_detection
 from app.providers.ai.mock import MOCK_MODEL, MockAIDetector
+from app.providers.cache import InMemoryProviderCache, ProviderResultCache
 
-_process_cache = InMemoryDetectionCache()
+_process_cache = InMemoryProviderCache(ttl=timedelta(hours=1))
 
 
 def build_ai_detector(
-    settings: Settings, *, cache: DetectionCache | None = None
+    settings: Settings, *, cache: ProviderResultCache | None = None
 ) -> AIDetector | None:
     """Return the configured detector (wrapped in the cache) or None when disabled.
 
@@ -40,6 +38,10 @@ def build_ai_detector(
         model_hint = MOCK_MODEL
     else:  # pragma: no cover - guarded by the Settings Literal
         raise AIDetectorUnavailableError(f"unknown AI detector provider '{provider}'")
+    if settings.provider_cache_ttl_hours == 0:
+        return CachedAIDetector(
+            inner, InMemoryProviderCache(ttl=timedelta(0)), model_hint=model_hint
+        )
     return CachedAIDetector(inner, cache or _process_cache, model_hint=model_hint)
 
 
@@ -49,13 +51,12 @@ __all__ = [
     "AIDetectorError",
     "AIDetectorUnavailableError",
     "CachedAIDetector",
-    "DetectionCache",
     "DetectionResult",
-    "InMemoryDetectionCache",
     "Label",
     "MockAIDetector",
     "Modality",
     "build_ai_detector",
-    "detection_cache_key",
+    "deserialize_detection",
     "label_for_score",
+    "serialize_detection",
 ]

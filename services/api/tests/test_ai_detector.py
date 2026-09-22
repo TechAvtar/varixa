@@ -1,4 +1,5 @@
 import uuid
+from datetime import timedelta
 from typing import Any
 
 import pytest
@@ -8,13 +9,12 @@ from app.config import Settings
 from app.providers.ai import (
     AIDetectorError,
     CachedAIDetector,
-    InMemoryDetectionCache,
     MockAIDetector,
     build_ai_detector,
-    detection_cache_key,
     label_for_score,
 )
 from app.providers.ai.base import DetectionResult
+from app.providers.cache import InMemoryProviderCache, cache_key
 from tests.test_image_upload import auth_headers, make_image
 from tests.test_text import ENGLISH
 
@@ -84,7 +84,7 @@ class CountingDetector:
 
 async def test_cached_detector_serves_repeats_without_calling_provider() -> None:
     inner = CountingDetector()
-    det = CachedAIDetector(inner, InMemoryDetectionCache(), model_hint="m")
+    det = CachedAIDetector(inner, InMemoryProviderCache(ttl=timedelta(hours=1)), model_hint="m")
     first = await det.detect("hello", modality="text", metadata={})
     second = await det.detect("hello", modality="text", metadata={})
     other = await det.detect("world", modality="text", metadata={})
@@ -94,18 +94,10 @@ async def test_cached_detector_serves_repeats_without_calling_provider() -> None
 
 
 async def test_cache_key_includes_identity_and_content() -> None:
-    k1 = detection_cache_key("x", provider="p", model="m", model_version="1", modality="text")
-    k2 = detection_cache_key("x", provider="p", model="m", model_version="2", modality="text")
-    k3 = detection_cache_key("y", provider="p", model="m", model_version="1", modality="text")
+    k1 = cache_key(provider="p", operation="ai.detect:text", model_version="1", content_hash="x")
+    k2 = cache_key(provider="p", operation="ai.detect:text", model_version="2", content_hash="x")
+    k3 = cache_key(provider="p", operation="ai.detect:text", model_version="1", content_hash="y")
     assert len({k1, k2, k3}) == 3
-
-
-async def test_cache_is_bounded() -> None:
-    cache = InMemoryDetectionCache(max_entries=2)
-    r = DetectionResult("p", "m", "1", "text", 0.1, "likely_human", False)
-    for k in ("a", "b", "c"):
-        await cache.set(k, r)
-    assert await cache.get("a") is None and await cache.get("c") is not None
 
 
 def test_build_detector_respects_setting(migrated_settings: Settings) -> None:

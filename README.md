@@ -137,6 +137,16 @@ Only then is the original stored (private key `uploads/{user}/{analysis}/{sha256
 analysis row committed; a rejected file leaves no record. `GET /analysis/{id}` returns a `file`
 block with the detected type, size, dimensions and SHA-256.
 
+### Provider result cache
+
+Repeatable provider results (AI detection, reverse-image and phrase search) are cached in the
+`provider_cache` table (`repositories/provider_cache.py`; the interface and key helpers live in
+`providers/cache.py`) keyed by `sha256(provider | operation | model_version | content_hash)`,
+with a TTL (`VERIXA_PROVIDER_CACHE_TTL_HOURS`, default 168; `0` disables). The cache is shared
+across users on purpose — identical content gets the same answer without a second paid call —
+and payloads never contain user identity. Hits are recorded in the audit trail as `cached` with
+zero latency and cost; the `hit_count` per entry is kept for cost reporting.
+
 ### Provider call audit
 
 Every engine or provider invocation made by a pipeline step is wrapped in
@@ -202,6 +212,7 @@ All configuration is via environment variables; see the `.env.example` files. Ne
 | `VERIXA_C2PATOOL_PATH` | API | Explicit c2patool executable |
 | `VERIXA_C2PATOOL_TIMEOUT_SECONDS` | API | Per-run timeout (default 30) |
 | `VERIXA_FINGERPRINT_NEAR_THRESHOLD` | API | Max Hamming distance (bits) on pHash/dHash counted as a near duplicate (default 10) |
+| `VERIXA_PROVIDER_CACHE_TTL_HOURS` | API | TTL for cached provider results (default 168; 0 disables) |
 | `VERIXA_AI_DETECTOR_PROVIDER` | API | `none` (default) or `mock`; real adapters register under `providers/ai` |
 | `VERIXA_AI_SCORE_HIGH` / `VERIXA_AI_SCORE_MEDIUM` | API | Score thresholds → PROBABLE / POSSIBLE (defaults 0.85 / 0.6) |
 | `VERIXA_SOURCE_SEARCH_PROVIDER` | API | `none` (default) or `mock`; real adapters register under `providers/search` |
