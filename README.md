@@ -158,6 +158,12 @@ limitations, ...metrics}`). Visualisations are stored as private artifacts under
   (`prior_jpeg_grid`) surfaces as POSSIBLE; encoding facts alone are UNKNOWN-level context.
   Threshold: `VERIXA_COMPRESSION_GRID_MIN_STRENGTH`.
 
+- **Resampling** (`services/image/resampling.py`, any format): Kirchner-style fixed-predictor
+  residual, probability map and averaged 2D spectrum over up to six 512 px tiles (the image is
+  never resized first). Isolated peaks above `VERIXA_RESAMPLING_MIN_PEAK_RATIO`, with DC, the
+  Nyquist line and JPEG multiples of 1/8 masked, mean the picture was rescaled or rotated at
+  some point (`detected`, POSSIBLE). Global only; routine resizing leaves the same trace.
+
 ### Provider result cache
 
 Repeatable provider results (AI detection, reverse-image and phrase search) are cached in the
@@ -236,6 +242,7 @@ All configuration is via environment variables; see the `.env.example` files. Ne
 | `VERIXA_ELA_QUALITY` / `VERIXA_ELA_MAX_SIDE` | API | ELA resave quality (default 95) and working-size cap (default 3000 px) |
 | `VERIXA_ELA_OUTLIER_SIGMA` / `VERIXA_ELA_ANOMALY_MIN_FRACTION` / `VERIXA_ELA_ANOMALY_MAX_FRACTION` | API | Outlier threshold and the outlier-block band that counts as localised |
 | `VERIXA_COMPRESSION_GRID_MIN_STRENGTH` | API | Minimum relative strength of an 8 px periodicity to count as a block grid (default 0.08) |
+| `VERIXA_RESAMPLING_MIN_PEAK_RATIO` | API | Spectral peak / local-background ratio that counts as a resampling trace (default 5.0) |
 | `VERIXA_PROVIDER_CACHE_TTL_HOURS` | API | TTL for cached provider results (default 168; 0 disables) |
 | `VERIXA_AI_DETECTOR_PROVIDER` | API | `none` (default) or `mock`; real adapters register under `providers/ai` |
 | `VERIXA_AI_SCORE_HIGH` / `VERIXA_AI_SCORE_MEDIUM` | API | Score thresholds → PROBABLE / POSSIBLE (defaults 0.85 / 0.6) |

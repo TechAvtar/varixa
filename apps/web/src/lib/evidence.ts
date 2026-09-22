@@ -363,6 +363,46 @@ function forensicsEvidence(f: ImageForensicsResponse | null): EvidenceItem[] {
       detail: c.observation,
     });
   }
+
+  const r = f.resampling;
+  if (r?.detected) {
+    const p = r.peaks[0];
+    items.push({
+      id: "forensics.resampling.detected",
+      category: "forensics",
+      kind: "signal",
+      level: "POSSIBLE",
+      claim:
+        "Periodic pixel correlations consistent with the picture having been rescaled or rotated.",
+      source: "resampling",
+      detail: p
+        ? `${r.peaks.length} spectral peak(s); strongest ${p.ratio}× its surroundings at (${p.fx}, ${p.fy}) cycles/px.`
+        : undefined,
+      limitation:
+        "Resizing for the web or by a camera pipeline leaves the same trace. This says the image was resampled at some point, not that it was edited.",
+    });
+  } else if (r?.measured) {
+    items.push({
+      id: "forensics.resampling.none",
+      category: "forensics",
+      kind: "signal",
+      level: "UNKNOWN",
+      claim: "No global resampling trace stands out.",
+      source: "resampling",
+      detail: r.observation,
+      limitation:
+        "Downscaling, strong compression and some scale factors leave no detectable trace.",
+    });
+  } else if (r) {
+    items.push({
+      id: "forensics.resampling.unmeasured",
+      category: "forensics",
+      kind: "unknown",
+      level: "UNKNOWN",
+      claim: "The image is too small for a resampling measurement.",
+      source: "resampling",
+    });
+  }
   return items;
 }
 

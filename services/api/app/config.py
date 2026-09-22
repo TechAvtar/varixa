@@ -76,6 +76,9 @@ class Settings(BaseSettings):
     # Forensics: compression block-grid detection threshold (relative strength of an 8 px phase).
     compression_grid_min_strength: float = Field(default=0.08, ge=0.0, le=5.0)
 
+    # Forensics: resampling spectral-peak threshold (peak magnitude / local background).
+    resampling_min_peak_ratio: float = Field(default=5.0, ge=1.0, le=100.0)
+
     # Persistent provider-result cache (content hash + provider/model/version). 0 disables.
     provider_cache_ttl_hours: int = Field(default=24 * 7, ge=0, le=24 * 365)
 

@@ -31,6 +31,7 @@ from app.schemas.forensics import (
     ForensicArtifactResponse,
     ForensicSkipped,
     ImageForensicsResponse,
+    ResamplingFindingResponse,
 )
 from app.schemas.matches import SourceMatchesResponse, SourceMatchResponse
 from app.schemas.metadata import ImageMetadataResponse, NormalizedMetadataResponse
@@ -290,6 +291,14 @@ async def get_analysis_forensics(
                     method="compression", reason=str(row.compression_json.get("reason"))
                 )
             )
+    resampling_finding: ResamplingFindingResponse | None = None
+    if row.resampling_json:
+        if row.resampling_json.get("applicable"):
+            resampling_finding = ResamplingFindingResponse.model_validate(row.resampling_json)
+        else:
+            skipped.append(
+                ForensicSkipped(method="resampling", reason=str(row.resampling_json.get("reason")))
+            )
     artifacts = [
         ForensicArtifactResponse(
             name=str(a.get("name")),
@@ -305,6 +314,7 @@ async def get_analysis_forensics(
     return ImageForensicsResponse(
         ela=ela_finding,
         compression=compression_finding,
+        resampling=resampling_finding,
         skipped=skipped,
         artifacts=artifacts,
         limitations=_FORENSICS_NOTES,

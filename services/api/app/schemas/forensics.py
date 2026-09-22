@@ -81,6 +81,31 @@ class CompressionFindingResponse(BaseModel):
     limitations: list[str]
 
 
+class SpectralPeakResponse(BaseModel):
+    """Normalised frequency (cycles per pixel) and magnitude relative to the local background."""
+
+    fx: float
+    fy: float
+    ratio: float
+
+
+class ResamplingFindingResponse(BaseModel):
+    method: Literal["resampling"] = "resampling"
+    version: str
+    observation: str
+    confidence: Confidence
+    measured: bool
+    width: int
+    height: int
+    tiles: int
+    tile_size: int
+    peak_ratio: float
+    peaks: list[SpectralPeakResponse]
+    # Periodic correlations consistent with a global rescale/rotation. Not evidence of editing.
+    detected: bool
+    limitations: list[str]
+
+
 class ForensicSkipped(BaseModel):
     method: str
     reason: str
@@ -100,6 +125,7 @@ class ForensicArtifactResponse(BaseModel):
 class ImageForensicsResponse(BaseModel):
     ela: ELAFindingResponse | None
     compression: CompressionFindingResponse | None
+    resampling: ResamplingFindingResponse | None
     skipped: list[ForensicSkipped]
     artifacts: list[ForensicArtifactResponse]
     limitations: list[str]

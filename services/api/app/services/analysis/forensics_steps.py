@@ -10,7 +10,7 @@ import asyncio
 from app.repositories.analysis import AnalysisRepository
 from app.services import storage_keys
 from app.services.analysis.pipeline import PipelineContext, StepFailedError, StepOutcome
-from app.services.image import compression, ela
+from app.services.image import compression, ela, resampling
 
 ELA_ARTIFACT = "ela.png"
 
@@ -50,6 +50,38 @@ class CompressionStep:
             grid_offset=result.grid.detected_offset,
             anomaly=result.anomaly,
             prior_jpeg_grid=result.prior_jpeg_grid,
+        )
+
+
+class ResamplingStep:
+    """Global resampling (rescale/rotate) trace via prediction-residual spectrum. Non-critical.
+
+    Writes ``resampling_json`` only. Produces no artifact.
+    """
+
+    name = "resampling"
+    critical = False
+
+    async def run(self, ctx: PipelineContext) -> StepOutcome:
+        image = ctx.artifacts.get("image")
+        if image is None:
+            raise StepFailedError("NO_VERIFIED_IMAGE", "Validation did not publish an image.")
+        result = await asyncio.to_thread(
+            resampling.analyze_resampling,
+            image.data,
+            min_peak_ratio=ctx.settings.resampling_min_peak_ratio,
+        )
+        await AnalysisRepository(ctx.session).upsert_forensics(
+            ctx.analysis.id, resampling_json=result.to_json()
+        )
+        ctx.artifacts["resampling"] = result
+        return StepOutcome.ok(
+            version=resampling.RESAMPLING_VERSION,
+            measured=result.measured,
+            tiles=result.tiles,
+            peak_ratio=result.peak_ratio,
+            peaks=len(result.peaks),
+            detected=result.detected,
         )
 
 

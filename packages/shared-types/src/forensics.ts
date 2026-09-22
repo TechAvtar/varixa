@@ -77,6 +77,30 @@ export interface CompressionFinding {
   limitations: string[];
 }
 
+/** Normalised frequency (cycles per pixel) and magnitude relative to the local background. */
+export interface SpectralPeak {
+  fx: number;
+  fy: number;
+  ratio: number;
+}
+
+export interface ResamplingFinding {
+  method: "resampling";
+  version: string;
+  observation: string;
+  confidence: ForensicConfidence;
+  measured: boolean;
+  width: number;
+  height: number;
+  tiles: number;
+  tile_size: number;
+  peak_ratio: number;
+  peaks: SpectralPeak[];
+  /** Periodic correlations consistent with a global rescale/rotation. Not evidence of editing. */
+  detected: boolean;
+  limitations: string[];
+}
+
 export interface ForensicSkipped {
   method: string;
   reason: string;
@@ -96,6 +120,7 @@ export interface ForensicArtifact {
 export interface ImageForensicsResponse {
   ela: ELAFinding | null;
   compression: CompressionFinding | null;
+  resampling: ResamplingFinding | null;
   skipped: ForensicSkipped[];
   artifacts: ForensicArtifact[];
   limitations: string[];

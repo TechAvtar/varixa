@@ -51,6 +51,8 @@ export type {
   ForensicRegion,
   ForensicSkipped,
   ImageForensicsResponse,
+  ResamplingFinding,
+  SpectralPeak,
 } from "./forensics";
 export type {
   ImageMetadataResponse,
