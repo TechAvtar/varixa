@@ -114,7 +114,12 @@ async def test_create_text_analysis_runs_pipeline(client: AsyncClient) -> None:
 
     detail = (await client.get(f"/analysis/{body['id']}", headers=headers)).json()
     assert detail["status"] == "completed" and detail["title"] == "Essay"
-    assert [s["name"] for s in detail["steps"]] == ["normalize", "language", "statistics"]
+    assert [s["name"] for s in detail["steps"]] == [
+        "normalize",
+        "language",
+        "statistics",
+        "fingerprints",
+    ]
     assert all(s["status"] == "completed" for s in detail["steps"])
     assert detail["file"]["mime_type"] == "text/plain" and detail["file"]["size_bytes"] == len(
         ENGLISH.encode()

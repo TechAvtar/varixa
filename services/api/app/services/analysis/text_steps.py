@@ -2,7 +2,7 @@
 
 import hashlib
 
-from app.models import TextAnalysis
+from app.models import TextAnalysis, TextFingerprints
 from app.providers.storage.base import ObjectNotFoundError
 from app.repositories.analysis import AnalysisRepository
 from app.services.analysis.pipeline import (
@@ -14,6 +14,7 @@ from app.services.analysis.pipeline import (
 from app.services.text import (
     compute_statistics,
     compute_structure,
+    compute_text_fingerprints,
     detect_language,
     normalize_text,
 )
@@ -117,6 +118,42 @@ class TextStatisticsStep:
         )
 
 
+class TextFingerprintsStep:
+    name = "fingerprints"
+    critical = True
+
+    async def run(self, ctx: PipelineContext) -> StepOutcome:
+        row = _row(ctx)
+        if ctx.file is None:
+            raise StepFailedError("NO_FILE", "The analysis has no stored text.")
+        original = ctx.artifacts["text"].original
+        fp = compute_text_fingerprints(original, row.normalized_text)
+        await AnalysisRepository(ctx.session).replace_text_fingerprints(
+            TextFingerprints(
+                analysis_id=ctx.analysis.id,
+                sha256=fp.sha256,
+                normalized_sha256=fp.normalized_sha256,
+                canonical_sha256=fp.canonical_sha256,
+                minhash_json=fp.minhash,
+                shingle_count=fp.shingle_count,
+                algorithm_version=fp.version,
+            )
+        )
+        ctx.artifacts["text_fingerprints"] = fp
+        return StepOutcome.ok(
+            sha256=fp.sha256,
+            normalized_sha256=fp.normalized_sha256,
+            canonical_sha256=fp.canonical_sha256,
+            shingle_count=fp.shingle_count,
+            algorithm_version=fp.version,
+        )
+
+
 def text_pipeline_steps() -> list[PipelineStep]:
-    """Ordered steps for a text analysis. Later tasks append fingerprints, AI, search, ..."""
-    return [LoadAndNormalizeTextStep(), DetectLanguageStep(), TextStatisticsStep()]
+    """Ordered steps for a text analysis. Later tasks append AI, search, ..."""
+    return [
+        LoadAndNormalizeTextStep(),
+        DetectLanguageStep(),
+        TextStatisticsStep(),
+        TextFingerprintsStep(),
+    ]

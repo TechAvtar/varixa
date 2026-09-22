@@ -5,6 +5,7 @@ import type {
   ImageMetadataResponse,
   ImageProvenanceResponse,
   TextAnalysisResponse,
+  TextFingerprintsResponse,
 } from "@verixa/shared-types";
 
 /**
@@ -54,9 +55,10 @@ export function deriveEvidence(
   provenance: ImageProvenanceResponse | null,
   fingerprints: ImageFingerprintsResponse | null,
   text: TextAnalysisResponse | null = null,
+  textFingerprints: TextFingerprintsResponse | null = null,
 ): EvidenceItem[] {
   const items: EvidenceItem[] = [];
-  if (a.type === "text") return deriveTextEvidence(a, text);
+  if (a.type === "text") return deriveTextEvidence(a, text, textFingerprints);
 
   // -- file: deterministic facts about the stored bytes -------------------------------
   if (a.file) {
@@ -275,6 +277,7 @@ export function summarise(items: EvidenceItem[]): Record<EvidenceLevel, number> 
 function deriveTextEvidence(
   a: AnalysisResponse,
   text: TextAnalysisResponse | null,
+  fingerprints: TextFingerprintsResponse | null,
 ): EvidenceItem[] {
   const items: EvidenceItem[] = [];
   if (a.file) {
@@ -356,6 +359,33 @@ function deriveTextEvidence(
         claim: `${s.repeated_sentence_count} sentence(s) are repeated verbatim.`,
         source: "statistics",
         limitation: "Repetition is a stylistic observation, not evidence of machine authorship.",
+      });
+    }
+  }
+  if (fingerprints) {
+    const identical = fingerprints.similar.filter((s) => s.relation !== "near");
+    const near = fingerprints.similar.filter((s) => s.relation === "near");
+    if (identical.length) {
+      items.push({
+        id: "matches.text.identical",
+        category: "matches",
+        kind: "fact",
+        level: "VERIFIED",
+        claim: `${identical.length} of your other text analyses contain the same text (identical bytes, or identical after normalisation / ignoring case and punctuation).`,
+        source: "fingerprints",
+        limitation: "Identity says nothing about which copy came first.",
+      });
+    }
+    if (near.length) {
+      items.push({
+        id: "matches.text.near",
+        category: "matches",
+        kind: "signal",
+        level: "POSSIBLE",
+        claim: `${near.length} of your other text analyses share many 5-word sequences (estimated Jaccard ≥ ${fingerprints.near_threshold.toFixed(2)}).`,
+        source: "fingerprints",
+        limitation:
+          "Shared phrasing can come from quotation, templates or common idiom, not only copying.",
       });
     }
   }

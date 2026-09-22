@@ -13,6 +13,7 @@ from app.models import (
     ImageMetadata,
     ImageProvenance,
     TextAnalysis,
+    TextFingerprints,
 )
 
 
@@ -118,6 +119,34 @@ class AnalysisRepository:
         self._session.add(row)
         await self._session.flush()
         return row
+
+    async def get_text_fingerprints(self, analysis_id: uuid.UUID) -> TextFingerprints | None:
+        stmt = select(TextFingerprints).where(TextFingerprints.analysis_id == analysis_id)
+        return (await self._session.execute(stmt)).scalar_one_or_none()
+
+    async def replace_text_fingerprints(self, fp: TextFingerprints) -> TextFingerprints:
+        await self._session.execute(
+            delete(TextFingerprints).where(TextFingerprints.analysis_id == fp.analysis_id)
+        )
+        self._session.add(fp)
+        await self._session.flush()
+        return fp
+
+    async def list_user_text_fingerprints(
+        self, user_id: uuid.UUID, *, exclude_analysis_id: uuid.UUID, limit: int = 5000
+    ) -> Sequence[tuple[TextFingerprints, Analysis]]:
+        stmt = (
+            select(TextFingerprints, Analysis)
+            .join(Analysis, Analysis.id == TextFingerprints.analysis_id)
+            .where(
+                Analysis.user_id == user_id,
+                Analysis.deleted_at.is_(None),
+                Analysis.id != exclude_analysis_id,
+            )
+            .order_by(Analysis.created_at.desc())
+            .limit(limit)
+        )
+        return [(row[0], row[1]) for row in (await self._session.execute(stmt)).all()]
 
     async def get_provenance(self, analysis_id: uuid.UUID) -> ImageProvenance | None:
         stmt = select(ImageProvenance).where(ImageProvenance.analysis_id == analysis_id)

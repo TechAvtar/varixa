@@ -58,6 +58,9 @@ class Settings(BaseSettings):
     # Near-duplicate threshold: max Hamming distance (bits) on pHash or dHash.
     fingerprint_near_threshold: int = Field(default=10, ge=0, le=64)
 
+    # Text near-duplicate threshold: minimum estimated Jaccard similarity (0-1) of shingle sets.
+    text_near_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
+
     # Text input cap (characters of the original, before normalisation).
     max_text_chars: int = Field(default=200_000, ge=100)
 

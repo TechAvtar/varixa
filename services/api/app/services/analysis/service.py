@@ -18,6 +18,7 @@ from app.models import (
     ImageMetadata,
     ImageProvenance,
     TextAnalysis,
+    TextFingerprints,
     User,
 )
 from app.providers.storage.base import ObjectStorage
@@ -27,6 +28,7 @@ from app.services.authorization import assert_owns_analysis
 from app.services.image import validate_image
 from app.services.image.similarity import SimilarityMatch, compare
 from app.services.image.validation import ImageTooLargeError
+from app.services.text.fingerprints import estimate_jaccard
 from app.utils.errors import ConflictError, ValidationError
 
 log = logging.getLogger("verixa.analysis")
@@ -197,6 +199,38 @@ class AnalysisService:
             if match is not None:
                 matches.append((other_analysis, match))
         matches.sort(key=lambda m: (m[1].score, m[0].created_at), reverse=False)
+        return matches
+
+    async def get_text_fingerprints(
+        self, user: User, analysis_id: uuid.UUID
+    ) -> TextFingerprints | None:
+        await self.get_owned(user, analysis_id)
+        return await self._analyses.get_text_fingerprints(analysis_id)
+
+    async def find_similar_texts(
+        self, user: User, fp: TextFingerprints
+    ) -> list[tuple[Analysis, str, float]]:
+        """(analysis, relation, estimated_jaccard) among the user's live texts, strongest first."""
+        threshold = self._settings.text_near_threshold
+        matches: list[tuple[Analysis, str, float]] = []
+        candidates = await self._analyses.list_user_text_fingerprints(
+            user.id, exclude_analysis_id=fp.analysis_id
+        )
+        for other, analysis in candidates:
+            jaccard = estimate_jaccard(list(fp.minhash_json), list(other.minhash_json))
+            if other.sha256 == fp.sha256:
+                relation = "exact"
+            elif other.normalized_sha256 == fp.normalized_sha256:
+                relation = "normalized"
+            elif other.canonical_sha256 == fp.canonical_sha256:
+                relation = "canonical"
+            elif jaccard >= threshold:
+                relation = "near"
+            else:
+                continue
+            matches.append((analysis, relation, jaccard))
+        rank = {"exact": 0, "normalized": 1, "canonical": 2, "near": 3}
+        matches.sort(key=lambda m: (rank[m[1]], -m[2]))
         return matches
 
     async def get_provenance(self, user: User, analysis_id: uuid.UUID) -> ImageProvenance | None:

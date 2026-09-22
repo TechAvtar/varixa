@@ -4,6 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, File, Form, Query, UploadFile, status
 
 from app.api.deps import AnalysisSvc, AppSettings, CurrentUser, Jobs, Storage
+from app.enums import AnalysisType
 from app.models import Analysis
 from app.providers.storage.base import ObjectNotFoundError
 from app.schemas.analysis import (
@@ -19,6 +20,9 @@ from app.schemas.fingerprints import (
     FingerprintsResponse,
     ImageFingerprintsResponse,
     SimilarAnalysisResponse,
+    SimilarTextResponse,
+    TextFingerprintsResponse,
+    TextFingerprintsValues,
 )
 from app.schemas.metadata import ImageMetadataResponse, NormalizedMetadataResponse
 from app.schemas.provenance import ImageProvenanceResponse, NormalizedProvenanceResponse
@@ -185,10 +189,41 @@ _FINGERPRINT_NOTES = [
 ]
 
 
-@router.get("/{analysis_id}/fingerprints", response_model=ImageFingerprintsResponse)
+_TEXT_FINGERPRINT_NOTES = [
+    "Identical hashes mean identical text (bytes, after normalisation, or after ignoring case "
+    "and punctuation). A near match means many shared 5-word sequences; it does not say which "
+    "text came first or whether one was copied from the other.",
+    "Only your own analyses are compared. Web-scale phrase search is a separate step.",
+]
+
+
+@router.get(
+    "/{analysis_id}/fingerprints",
+    response_model=ImageFingerprintsResponse | TextFingerprintsResponse,
+)
 async def get_analysis_fingerprints(
     analysis_id: uuid.UUID, user: CurrentUser, analyses: AnalysisSvc, settings: AppSettings
-) -> ImageFingerprintsResponse:
+) -> ImageFingerprintsResponse | TextFingerprintsResponse:
+    analysis = await analyses.get_owned(user, analysis_id)
+    if analysis.type == AnalysisType.TEXT:
+        tfp = await analyses.get_text_fingerprints(user, analysis_id)
+        if tfp is None:
+            raise NotFoundError("Fingerprints have not been computed for this analysis.")
+        return TextFingerprintsResponse(
+            fingerprints=TextFingerprintsValues.model_validate(tfp),
+            near_threshold=settings.text_near_threshold,
+            similar=[
+                SimilarTextResponse(
+                    analysis_id=other.id,
+                    title=other.title,
+                    created_at=other.created_at,
+                    relation=relation,
+                    estimated_jaccard=round(jaccard, 4),
+                )
+                for other, relation, jaccard in await analyses.find_similar_texts(user, tfp)
+            ],
+            limitations=_TEXT_FINGERPRINT_NOTES,
+        )
     fp = await analyses.get_fingerprints(user, analysis_id)
     if fp is None:
         raise NotFoundError("Fingerprints have not been computed for this analysis.")

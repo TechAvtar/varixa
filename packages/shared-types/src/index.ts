@@ -26,7 +26,14 @@ export type {
 export type { ApiErrorBody } from "./errors";
 export type { EvidenceLevel } from "./evidence";
 export { EVIDENCE_LEVELS } from "./evidence";
-export type { Fingerprints, ImageFingerprintsResponse, SimilarAnalysis } from "./fingerprints";
+export type {
+  Fingerprints,
+  ImageFingerprintsResponse,
+  SimilarAnalysis,
+  SimilarText,
+  TextFingerprints,
+  TextFingerprintsResponse,
+} from "./fingerprints";
 export type {
   ImageProvenanceResponse,
   NormalizedProvenance,

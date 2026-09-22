@@ -187,6 +187,7 @@ All configuration is via environment variables; see the `.env.example` files. Ne
 | `VERIXA_C2PATOOL_PATH` | API | Explicit c2patool executable |
 | `VERIXA_C2PATOOL_TIMEOUT_SECONDS` | API | Per-run timeout (default 30) |
 | `VERIXA_FINGERPRINT_NEAR_THRESHOLD` | API | Max Hamming distance (bits) on pHash/dHash counted as a near duplicate (default 10) |
+| `VERIXA_TEXT_NEAR_THRESHOLD` | API | Min estimated Jaccard (0–1) for a text near duplicate (default 0.5) |
 | `VERIXA_MAX_TEXT_CHARS` | API | Pasted-text cap in characters (default 200000) |
 | `VERIXA_MAX_UPLOAD_BYTES` | API | Upload size cap (default 26214400 = 25 MB); mirror it in `next.config.ts` `serverActions.bodySizeLimit` |
 | `VERIXA_MAX_IMAGE_PIXELS` | API | Width × height cap checked from the header (default 40 MP) |

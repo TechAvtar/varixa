@@ -4,6 +4,7 @@ import type {
   ImageMetadataResponse,
   ImageProvenanceResponse,
   TextAnalysisResponse,
+  TextFingerprintsResponse,
 } from "@verixa/shared-types";
 import { EVIDENCE_LEVELS } from "@verixa/shared-types";
 import type { Metadata } from "next";
@@ -16,6 +17,7 @@ import { NotAvailable } from "@/components/analyses/not-available";
 import { ProcessingSteps } from "@/components/analyses/processing-steps";
 import { ProvenanceCard } from "@/components/analyses/provenance-card";
 import { RawJson } from "@/components/analyses/raw-json";
+import { TextFingerprintsCard } from "@/components/analyses/text-fingerprints-card";
 import { TextStatsCard } from "@/components/analyses/text-stats-card";
 import { isReportTab, type ReportTab, ReportTabs } from "@/components/analyses/report-tabs";
 import { EvidenceList } from "@/components/evidence/evidence-card";
@@ -37,7 +39,6 @@ const UNAVAILABLE_TEXT: ReadonlySet<ReportTab> = new Set([
   "provenance",
   "ai",
   "forensics",
-  "matches",
   "timeline",
 ]);
 
@@ -65,18 +66,21 @@ export default async function AnalysisPage({
   const a = result.data;
 
   const isImage = a.type === "image";
-  const [metadataResult, provenanceResult, fingerprintsResult, textResult] = await Promise.all([
-    isImage ? authedRequest<ImageMetadataResponse>(`/analysis/${id}/metadata`) : null,
-    isImage ? authedRequest<ImageProvenanceResponse>(`/analysis/${id}/provenance`) : null,
-    isImage ? authedRequest<ImageFingerprintsResponse>(`/analysis/${id}/fingerprints`) : null,
-    isImage ? null : authedRequest<TextAnalysisResponse>(`/analysis/${id}/text`),
-  ]);
+  const [metadataResult, provenanceResult, fingerprintsResult, textResult, textFpResult] =
+    await Promise.all([
+      isImage ? authedRequest<ImageMetadataResponse>(`/analysis/${id}/metadata`) : null,
+      isImage ? authedRequest<ImageProvenanceResponse>(`/analysis/${id}/provenance`) : null,
+      isImage ? authedRequest<ImageFingerprintsResponse>(`/analysis/${id}/fingerprints`) : null,
+      isImage ? null : authedRequest<TextAnalysisResponse>(`/analysis/${id}/text`),
+      isImage ? null : authedRequest<TextFingerprintsResponse>(`/analysis/${id}/fingerprints`),
+    ]);
   const md = metadataResult?.ok ? metadataResult.data : null;
   const prov = provenanceResult?.ok ? provenanceResult.data : null;
   const fp = fingerprintsResult?.ok ? fingerprintsResult.data : null;
   const txt = textResult?.ok ? textResult.data : null;
+  const tfp = textFpResult?.ok ? textFpResult.data : null;
 
-  const evidence = deriveEvidence(a, md, prov, fp, txt);
+  const evidence = deriveEvidence(a, md, prov, fp, txt, tfp);
   const counts = summarise(evidence);
   const processing = a.status === "queued" || a.status === "processing";
 
@@ -146,15 +150,21 @@ export default async function AnalysisPage({
       <section role="tabpanel" aria-label={active} className="space-y-6">
         {active === "overview" ? (
           <Overview a={a} evidence={evidence} text={txt} />
+        ) : !isImage && active === "matches" ? (
+          <>
+            <EvidenceList
+              items={evidence.filter((e) => e.category === "matches" || e.category === "sources")}
+              empty="No match evidence."
+            />
+            <TextFingerprintsCard data={tfp} />
+          </>
         ) : !isImage ? (
           <NotAvailable
             title="Not applicable to text"
             description={
-              active === "matches"
-                ? "Source and phrase matching for text arrives with the text fingerprint and search steps."
-                : active === "ai"
-                  ? "No AI-generation detector runs in this build. Its output will always be shown as a probabilistic signal."
-                  : "This section applies to image analyses only."
+              active === "ai"
+                ? "No AI-generation detector runs in this build. Its output will always be shown as a probabilistic signal."
+                : "This section applies to image analyses only."
             }
           />
         ) : active === "metadata" ? (
