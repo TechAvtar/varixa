@@ -129,6 +129,31 @@ def build_timeline(o: Observations, drafts: Sequence[EvidenceDraft]) -> list[Tim
                 )
             )
 
+    # -- metadata: XMP edit history (each action has its own recorded time) -------------------
+    if meta is not None:
+        n = meta.normalized_json or {}
+        linked = by_rule.get("metadata.edit-history")
+        for item in (n.get("edit_history") or [])[:50]:
+            when = item.get("when")
+            action = str(item.get("action") or "edit")
+            dt, tz = parse_timestamp(str(when)) if when else (None, False)
+            agent = item.get("software")
+            events.append(
+                TimelineEventDraft(
+                    event_type="metadata.edit",
+                    certainty=linked.level if linked else EvidenceLevel.POSSIBLE,
+                    description=f"Edit history: {action}"
+                    + (f" by {agent}" if agent else "")
+                    + ("" if tz else " (timezone not recorded)")
+                    + ".",
+                    source=f"metadata/{meta.engine}",
+                    event_time=_placeable(dt),
+                    raw_time=str(when) if when else None,
+                    tz_known=bool(tz),
+                    source_rules=[linked.rule] if linked else [],
+                )
+            )
+
     # -- sources: reported publication and our discovery -------------------------------------
     sources = by_rule.get("sources.matches")
     if sources is not None:

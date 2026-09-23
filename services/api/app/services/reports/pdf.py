@@ -307,6 +307,20 @@ def render_pdf(b: ReportBundle) -> tuple[bytes, int]:
                     ("Capture time (as recorded)", cap),
                     ("Modification time (as recorded)", mod),
                     ("GPS fields", "present" if m.get("gps_present") else "none"),
+                    ("Generator markers", m.get("generator") or "none found"),
+                    ("Digital source type (declared)", m.get("digital_source_type") or "—"),
+                    (
+                        "XMP edit history",
+                        (
+                            f"{len(m['edit_history'])} action(s): "
+                            + ", ".join(
+                                str(e.get("action")) + (f" ({e['when']})" if e.get("when") else "")
+                                for e in m["edit_history"][:8]
+                            )
+                        )
+                        if m.get("edit_history")
+                        else "none recorded",
+                    ),
                     *(
                         [
                             (

@@ -198,6 +198,20 @@ out-of-range or partial positions are dropped with a warning. The evidence recor
 might see), and the receiver time becomes a `metadata.gps_time` timeline event. The Metadata
 tab and the PDF show the position; the map link is a plain external link the reader chooses.
 
+### Declared lineage (generator markers, source type, edit history)
+
+Some producers write their own provenance into metadata, and the normaliser reads it
+(`services/image/lineage.py`): generator markers in PNG text chunks (Stable Diffusion WebUI
+`parameters`, ComfyUI `prompt`/`workflow`, InvokeAI, NovelAI, Fooocus) and in software, creator
+and description strings (Midjourney, DALL-E, Firefly, FLUX and others); the IPTC
+`DigitalSourceType` (`trainedAlgorithmicMedia` and the other algorithmic types are flagged);
+XMP document ids, `DerivedFrom` and the `xmpMM:History` list of actions with software agent
+and time. Evidence: `metadata.generator` and `metadata.edit-history` are STRONG at most
+(like `metadata.software`, they show what software declared, never what happened);
+`metadata.source-type` is STRONG for algorithmic declarations and POSSIBLE otherwise. Each
+history action with a time becomes a `metadata.edit` timeline event. Absence of any marker
+proves nothing: most pipelines strip metadata.
+
 ### Forensics (heuristics)
 
 Forensic methods run as non-critical pipeline steps and write into one `image_forensics` row per

@@ -11,6 +11,7 @@ from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 
 from app.providers.metadata.base import RawMetadata
+from app.services.image.lineage import extract_lineage
 
 _EXIF_DT = re.compile(
     r"^(?P<y>\d{4})[:\-](?P<m>\d{2})[:\-](?P<d>\d{2})[ T](?P<H>\d{2}):(?P<M>\d{2}):(?P<S>\d{2})"
@@ -61,6 +62,16 @@ class NormalizedMetadata:
     gps_altitude_m: float | None = None
     gps_time: ParsedTimestamp | None = None
     color_profile: str | None = None
+    # Declared lineage (docs/05): generator markers, IPTC digital source type, XMP edit history.
+    generator: str | None = None
+    generator_signals: list[dict[str, Any]] = field(default_factory=list)
+    digital_source_type: str | None = None
+    creator_tool: str | None = None
+    document_id: str | None = None
+    instance_id: str | None = None
+    original_document_id: str | None = None
+    derived_from_document_id: str | None = None
+    edit_history: list[dict[str, Any]] = field(default_factory=list)
     image_width: int | None = None
     image_height: int | None = None
     tag_counts: dict[str, int] = field(default_factory=dict)
@@ -259,6 +270,21 @@ def normalize_metadata(raw: RawMetadata) -> NormalizedMetadata:
         n.gps_altitude_m = gps_altitude(raw)
         n.gps_time = gps_time(raw)
     n.color_profile = _text(raw.get("ICC_Profile", "ProfileDescription"))
+    lineage = extract_lineage(raw).to_json()
+    for key in (
+        "generator",
+        "generator_signals",
+        "digital_source_type",
+        "creator_tool",
+        "document_id",
+        "instance_id",
+        "original_document_id",
+        "derived_from_document_id",
+        "edit_history",
+    ):
+        setattr(n, key, lineage[key])
+    if n.software is None and n.creator_tool:
+        n.software = n.creator_tool
     n.image_width = _int(raw.get("File", "ImageWidth") or raw.get("EXIF", "ExifImageWidth"))
     n.image_height = _int(raw.get("File", "ImageHeight") or raw.get("EXIF", "ExifImageHeight"))
     return n

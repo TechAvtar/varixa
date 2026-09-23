@@ -21,6 +21,7 @@ from typing import Any, Literal
 
 from app.config import Settings
 from app.enums import EvidenceLevel
+from app.services.image.lineage import ALGORITHMIC_SOURCE_TYPES
 from app.utils.timeparse import as_utc, parse_timestamp
 
 ENGINE_VERSION = "v1"
@@ -46,6 +47,9 @@ LEVEL_CEILING: dict[str, str] = {
     "metadata.camera": EvidenceLevel.POSSIBLE,
     "metadata.captured": EvidenceLevel.POSSIBLE,
     "metadata.gps": EvidenceLevel.POSSIBLE,
+    "metadata.generator": EvidenceLevel.STRONG,
+    "metadata.source-type": EvidenceLevel.STRONG,
+    "metadata.edit-history": EvidenceLevel.STRONG,
     "matches.exact": EvidenceLevel.VERIFIED,
     "matches.near": EvidenceLevel.POSSIBLE,
     "matches.text.identical": EvidenceLevel.VERIFIED,
@@ -448,6 +452,87 @@ def _metadata_rules(o: Observations, t: EvidenceThresholds) -> list[EvidenceDraf
                 data={"captured_at": captured},
             )
         )
+    generator = n.get("generator")
+    signals = n.get("generator_signals") or []
+    if generator and signals:
+        tags = sorted({str(s.get("tag")) for s in signals})
+        out.append(
+            EvidenceDraft(
+                rule="metadata.generator",
+                category="metadata",
+                level=EvidenceLevel.STRONG,
+                kind="signal",
+                claim=f'Metadata carries generator markers naming "{generator}".',
+                source=src,
+                confidence=_conf(EvidenceLevel.STRONG, t),
+                detail="Found in " + ", ".join(tags) + ".",
+                limitation="Generator markers show what software wrote the file's metadata; "
+                "they can be stripped, copied or forged, and their absence proves nothing.",
+                refs=refs,
+                provider_version=m.engine_version,
+                data={"generator": generator, "tags": tags, "signals": signals[:5]},
+            )
+        )
+    source_type = n.get("digital_source_type")
+    if source_type:
+        algorithmic = source_type in ALGORITHMIC_SOURCE_TYPES
+        out.append(
+            EvidenceDraft(
+                rule="metadata.source-type",
+                category="metadata",
+                level=EvidenceLevel.STRONG if algorithmic else EvidenceLevel.POSSIBLE,
+                kind="signal",
+                claim=(
+                    f'Metadata declares the IPTC digital source type "{source_type}"'
+                    + (" (algorithmic / AI-generated, as declared)." if algorithmic else ".")
+                ),
+                source=src,
+                confidence=_conf(
+                    EvidenceLevel.STRONG if algorithmic else EvidenceLevel.POSSIBLE, t
+                ),
+                limitation="A declared source type is the producer's statement, not a measurement.",
+                refs=refs,
+                provider_version=m.engine_version,
+                data={"digital_source_type": source_type, "algorithmic": algorithmic},
+            )
+        )
+    history = n.get("edit_history") or []
+    if history or n.get("derived_from_document_id"):
+        agents = sorted({str(e.get("software")) for e in history if e.get("software")})
+        actions = [str(e.get("action")) for e in history]
+        derived = n.get("derived_from_document_id")
+        parts = []
+        if history:
+            parts.append(
+                f"XMP edit history records {len(history)} action"
+                + ("s" if len(history) != 1 else "")
+                + (" by " + ", ".join(agents) if agents else "")
+            )
+        if derived:
+            parts.append("the file is recorded as derived from another document")
+        out.append(
+            EvidenceDraft(
+                rule="metadata.edit-history",
+                category="metadata",
+                level=EvidenceLevel.STRONG,
+                kind="signal",
+                claim=(lambda text: text[:1].upper() + text[1:] + ".")("; ".join(parts)),
+                source=src,
+                confidence=_conf(EvidenceLevel.STRONG, t),
+                detail=", ".join(actions[:12]) or None,
+                limitation="Edit history is written by editors that choose to record it; it can "
+                "be incomplete, removed or fabricated, and says nothing about what changed.",
+                refs=refs,
+                provider_version=m.engine_version,
+                data={
+                    "actions": actions,
+                    "software_agents": agents,
+                    "document_id": n.get("document_id"),
+                    "original_document_id": n.get("original_document_id"),
+                    "derived_from_document_id": derived,
+                },
+            )
+        )
     if n.get("gps_present"):
         has_fix = n.get("gps_latitude") is not None and n.get("gps_longitude") is not None
         gps_when = n.get("gps_time") or {}
@@ -480,7 +565,8 @@ def _metadata_rules(o: Observations, t: EvidenceThresholds) -> list[EvidenceDraf
                 },
             )
         )
-    if not (n.get("has_exif") or n.get("has_xmp") or n.get("has_iptc")):
+    # PNG text chunks with generator markers are metadata too: "none" would contradict them.
+    if not (n.get("has_exif") or n.get("has_xmp") or n.get("has_iptc") or signals):
         out.append(
             EvidenceDraft(
                 rule="metadata.none",

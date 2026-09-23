@@ -31,10 +31,37 @@ export interface NormalizedMetadata {
   gps_altitude_m: number | null;
   gps_time: ParsedTimestamp | null;
   color_profile: string | null;
+  /** Declared lineage: generator markers, IPTC digital source type, XMP document ids/history. */
+  generator: string | null;
+  generator_signals: GeneratorSignal[];
+  digital_source_type: string | null;
+  creator_tool: string | null;
+  document_id: string | null;
+  instance_id: string | null;
+  original_document_id: string | null;
+  derived_from_document_id: string | null;
+  edit_history: EditEvent[];
   image_width: number | null;
   image_height: number | null;
   tag_counts: Record<string, number>;
   warnings: string[];
+}
+
+export interface GeneratorSignal {
+  generator: string;
+  /** Where the marker was found, e.g. "PNG:Parameters". */
+  tag: string;
+  /** Bounded text of the marker; may contain the generation prompt. */
+  excerpt: string;
+}
+
+export interface EditEvent {
+  action: string;
+  software: string | null;
+  /** As recorded in XMP. */
+  when: string | null;
+  changed: string | null;
+  instance_id: string | null;
 }
 
 export type RawTagGroup = Record<string, unknown>;

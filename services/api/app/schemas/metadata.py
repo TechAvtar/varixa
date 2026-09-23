@@ -1,6 +1,6 @@
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ParsedTimestampResponse(BaseModel):
@@ -32,6 +32,16 @@ class NormalizedMetadataResponse(BaseModel):
     gps_altitude_m: float | None = None
     gps_time: ParsedTimestampResponse | None = None
     color_profile: str | None
+    # Declared lineage: generator markers, IPTC digital source type, XMP document ids/history.
+    generator: str | None = None
+    generator_signals: list[dict[str, Any]] = Field(default_factory=list)
+    digital_source_type: str | None = None
+    creator_tool: str | None = None
+    document_id: str | None = None
+    instance_id: str | None = None
+    original_document_id: str | None = None
+    derived_from_document_id: str | None = None
+    edit_history: list[dict[str, Any]] = Field(default_factory=list)
     image_width: int | None
     image_height: int | None
     tag_counts: dict[str, int]

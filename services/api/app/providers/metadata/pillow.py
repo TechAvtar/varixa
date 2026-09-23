@@ -71,6 +71,15 @@ class PillowExtractor:
                         name = table.get(tag_id, f"Tag{tag_id:04X}")
                         groups["EXIF"][f"{label}:{name}"] = _plain(value)
 
+            # PNG tEXt/iTXt/zTXt chunks (generators write prompts here). ExifTool names them
+            # ``PNG:<Key>``; mirror that so the normaliser sees one shape.
+            text_chunks = getattr(img, "text", None)
+            if isinstance(text_chunks, dict) and text_chunks:
+                groups["PNG"] = {
+                    f"PNG:{str(k)[:1].upper()}{str(k)[1:]}": cap_value(v)
+                    for k, v in list(text_chunks.items())[:64]
+                }
+
             icc = img.info.get("icc_profile")
             if icc:
                 icc_group: dict[str, Any] = {"ProfileSize": len(icc)}

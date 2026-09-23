@@ -137,6 +137,80 @@ export function MetadataCard({ metadata }: { metadata: ImageMetadataResponse | n
               </dd>
             </dl>
 
+            {n.generator || n.digital_source_type || n.edit_history.length > 0 ? (
+              <section className="space-y-2 border-t pt-3" aria-labelledby="lineage-heading">
+                <h3 id="lineage-heading" className="text-sm font-medium">
+                  Declared lineage
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  Written by the software that produced or edited the file. Markers can be stripped
+                  or forged; their absence proves nothing.
+                </p>
+                <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
+                  {n.generator ? (
+                    <>
+                      <dt className="text-muted-foreground">Generator markers</dt>
+                      <dd>
+                        <span className="font-medium">{n.generator}</span>
+                        <ul className="mt-1 space-y-1">
+                          {n.generator_signals.map((s) => (
+                            <li key={s.tag} className="text-xs">
+                              <span className="font-mono">{s.tag}</span>
+                              <span className="text-muted-foreground"> · {s.excerpt}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </dd>
+                    </>
+                  ) : null}
+                  {n.digital_source_type ? (
+                    <>
+                      <dt className="text-muted-foreground">Digital source type</dt>
+                      <dd className="font-mono text-xs">{n.digital_source_type}</dd>
+                    </>
+                  ) : null}
+                  {n.document_id || n.original_document_id || n.derived_from_document_id ? (
+                    <>
+                      <dt className="text-muted-foreground">Document ids</dt>
+                      <dd className="space-y-0.5 font-mono text-xs">
+                        {n.document_id ? <div>document {n.document_id}</div> : null}
+                        {n.original_document_id ? (
+                          <div>original {n.original_document_id}</div>
+                        ) : null}
+                        {n.derived_from_document_id ? (
+                          <div>derived from {n.derived_from_document_id}</div>
+                        ) : null}
+                      </dd>
+                    </>
+                  ) : null}
+                  {n.edit_history.length > 0 ? (
+                    <>
+                      <dt className="text-muted-foreground">Edit history</dt>
+                      <dd>
+                        <ol className="space-y-0.5 text-xs">
+                          {n.edit_history.map((e, i) => (
+                            <li key={`${e.instance_id ?? i}-${e.when ?? i}`}>
+                              <span className="font-medium">{e.action}</span>
+                              {e.software ? (
+                                <span className="text-muted-foreground"> · {e.software}</span>
+                              ) : null}
+                              {e.when ? <span className="ml-2 font-mono">{e.when}</span> : null}
+                              {e.changed ? (
+                                <span className="text-muted-foreground">
+                                  {" "}
+                                  · changed {e.changed}
+                                </span>
+                              ) : null}
+                            </li>
+                          ))}
+                        </ol>
+                      </dd>
+                    </>
+                  ) : null}
+                </dl>
+              </section>
+            ) : null}
+
             {metadata.limitations.length > 0 ? (
               <ul className="space-y-1 border-t pt-3 text-xs text-muted-foreground">
                 {metadata.limitations.map((l) => (
