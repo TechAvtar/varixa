@@ -412,6 +412,31 @@ Steps today:
 Later tasks add metadata, provenance, fingerprint persistence/matching, forensics, AI signals,
 source search, evidence and report steps.
 
+## Observability
+
+- **Structured logs** (`utils/observability.py`): every record carries `request_id` and, inside
+  the pipeline, `analysis_id`, taken from context variables set by the request middleware and
+  the runner. `VERIXA_LOG_FORMAT=text` prints `time LEVEL logger message key=value…`;
+  `json` prints one object per line for log shippers. Redaction (`utils/logredact.py`) still
+  applies. Uvicorn's access line is replaced by our own request log, which records the route
+  *template* (`/api/v1/analysis/{analysis_id}`), status and duration and never the query string.
+- **What is logged**: `http request` (method, route, status, duration_ms), `pipeline step
+  finished` (step, status, duration_ms, error_code; failures at WARNING), `analysis finished`
+  (type, status, failed_step), `provider call` (provider, operation, status, latency_ms, cost,
+  error *code*; failures at WARNING). Ids, statuses, durations and names only; never content.
+- **Metrics** (`GET /metrics`, Prometheus text, `utils/metrics.py`): `verixa_http_requests_total`
+  and `verixa_http_request_duration_seconds` by method/route/status,
+  `verixa_pipeline_steps_total` / `verixa_pipeline_step_duration_seconds` by step,
+  `verixa_analyses_total` by type/status, `verixa_provider_calls_total` /
+  `verixa_provider_call_duration_seconds` by provider/operation, and `verixa_uptime_seconds`.
+  Aggregates per process; no per-user or per-analysis labels. `VERIXA_METRICS_ENABLED=false`
+  turns the endpoint off; with `VERIXA_METRICS_TOKEN` set the scrape must send
+  `Authorization: Bearer <token>`, and production serves nothing without a token.
+- **Health**: `GET /api/v1/health/live` answers as soon as the process is up;
+  `GET /api/v1/health` is the readiness probe (database, storage writable, configured
+  engine/provider *names*, uptime) and reports `degraded` when a dependency is down. The
+  landing page shows it.
+
 ## Object storage
 
 All uploads, derived artifacts and reports go through `app.providers.storage.ObjectStorage`
@@ -434,6 +459,8 @@ All configuration is via environment variables; see the `.env.example` files. Ne
 | `VERIXA_ENVIRONMENT` | API | `development` \| `test` \| `production` (production disables `/docs`) |
 | `VERIXA_DEBUG` | API | FastAPI debug mode |
 | `VERIXA_CORS_ORIGINS` | API | JSON list of allowed browser origins |
+| `VERIXA_LOG_LEVEL` / `VERIXA_LOG_FORMAT` | API | Log level (default INFO) and format: `text` (default) or `json` |
+| `VERIXA_METRICS_ENABLED` / `VERIXA_METRICS_TOKEN` | API | Serve `/metrics` (default true); bearer token required when set, mandatory in production |
 | `VERIXA_SECRET_KEY` | API | Signs access tokens. Random, 32+ chars; the built-in dev default is refused in production |
 | `VERIXA_ACCESS_TOKEN_TTL_MINUTES` | API | Access-token lifetime (default 30) |
 | `VERIXA_REFRESH_TOKEN_TTL_DAYS` | API | Refresh-token lifetime (default 14) |

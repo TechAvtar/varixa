@@ -14,4 +14,13 @@ async def test_health_returns_ok(client: AsyncClient) -> None:
 
 async def test_health_does_not_leak_settings(client: AsyncClient) -> None:
     body = (await client.get("/health")).json()
-    assert set(body) == {"status", "service", "version", "environment", "database"}
+    assert set(body) == {
+        "status",
+        "service",
+        "version",
+        "environment",
+        "database",
+        "storage",
+        "providers",
+        "uptime_seconds",
+    }

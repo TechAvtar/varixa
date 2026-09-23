@@ -22,6 +22,7 @@ from app.enums import ProviderCallStatus
 from app.models import Analysis, ProviderCall
 from app.repositories.provider_calls import ProviderCallRepository
 from app.services.usage import UsageService
+from app.utils.metrics import registry
 
 log = logging.getLogger("verixa.providers")
 
@@ -96,14 +97,26 @@ class ProviderCallRecorder:
                 await UsageService(self._session, get_settings()).record_provider_call(
                     owner.user_id, estimated_cost
                 )
-        log.info(
-            "provider call analysis_id=%s provider=%s op=%s status=%s latency_ms=%s cost=%s",
-            analysis_id,
-            provider,
-            operation,
-            status,
-            latency_ms,
-            estimated_cost,
+        status_name = getattr(status, "value", str(status))
+        registry.record_provider_call(
+            provider=row.provider,
+            operation=row.operation,
+            status=status_name,
+            seconds=latency_ms / 1000 if latency_ms is not None else None,
+        )
+        log.log(
+            logging.WARNING if status == ProviderCallStatus.FAILED else logging.INFO,
+            "provider call",
+            extra={
+                "analysis_id": str(analysis_id) if analysis_id else "",
+                "provider": row.provider,
+                "operation": row.operation,
+                "status": status_name,
+                "latency_ms": latency_ms,
+                "cost": estimated_cost,
+                # Only the error *code* is safe to log; messages may quote provider payloads.
+                "error_code": (error or {}).get("code") if error else None,
+            },
         )
         return row
 

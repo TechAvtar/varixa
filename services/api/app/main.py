@@ -9,12 +9,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.errors import register_error_handlers
+from app.api.v1.metrics import router as metrics_router
 from app.api.v1.router import api_router
 from app.config import Settings, get_settings
 from app.database import create_engine, create_session_factory
 from app.providers.storage import build_storage
 from app.services.auth import AuthLimiters
 from app.utils.logredact import install_log_redaction
+from app.utils.observability import configure_logging
 from app.utils.request_id import RequestIdMiddleware
 from app.utils.security_headers import SecurityHeadersMiddleware
 from app.workers.retention import run_periodically
@@ -23,6 +25,7 @@ from app.workers.retention import run_periodically
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     install_log_redaction()
+    configure_logging(level=settings.log_level, fmt=settings.log_format)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -73,6 +76,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     register_error_handlers(app)
     app.include_router(api_router, prefix="/api/v1")
+    app.include_router(metrics_router)  # /metrics, outside the versioned API
 
     # Make the settings object used to build the app the one routes receive,
     # so tests can inject configuration without touching process env.

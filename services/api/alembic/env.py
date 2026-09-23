@@ -13,7 +13,8 @@ from app.models import Base
 
 config = context.config
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # Keep loggers created before this point (the app's) alive when run in-process.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # "alembic -x url=..." overrides; otherwise use application settings.
 _url = context.get_x_argument(as_dictionary=True).get("url") or get_settings().database_url

@@ -28,6 +28,8 @@ from app.services.analysis.pipeline import PipelineContext, PipelineRunner
 from app.services.analysis.service import AnalysisService
 from app.services.analysis.steps import image_pipeline_steps
 from app.services.analysis.text_steps import text_pipeline_steps
+from app.utils.metrics import registry
+from app.utils.observability import analysis_id_var
 
 log = logging.getLogger("verixa.worker")
 
@@ -74,6 +76,27 @@ async def run_analysis(
     settings: Settings,
 ) -> None:
     """Execute the pipeline for one analysis with its own DB session. Never raises."""
+    token = analysis_id_var.set(str(analysis_id))
+    try:
+        await _run_analysis(analysis_id, session_factory, storage, settings)
+    finally:
+        analysis_id_var.reset(token)
+
+
+def _finished(analysis_type: str, status: str, *, failed_step: str | None = None) -> None:
+    registry.record_analysis(type=analysis_type, status=status)
+    log.info(
+        "analysis finished",
+        extra={"type": analysis_type, "status": status, "failed_step": failed_step},
+    )
+
+
+async def _run_analysis(
+    analysis_id: uuid.UUID,
+    session_factory: async_sessionmaker[AsyncSession],
+    storage: ObjectStorage,
+    settings: Settings,
+) -> None:
     async with session_factory() as session:
         repo = AnalysisRepository(session)
         service = AnalysisService(session, storage, settings)
@@ -119,13 +142,16 @@ async def run_analysis(
             await service.mark_failed(
                 analysis, code="PIPELINE_ERROR", message="Processing failed unexpectedly."
             )
+            _finished(str(analysis.type), "failed", failed_step="pipeline")
             return
 
         if result.completed:
             await service.mark_completed(analysis)
+            _finished(str(analysis.type), "completed")
         else:
             await service.mark_failed(
                 analysis,
                 code=result.error_code or "STEP_FAILED",
                 message=result.error_message or f"Step '{result.failed_step}' failed.",
             )
+            _finished(str(analysis.type), "failed", failed_step=result.failed_step)

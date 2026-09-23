@@ -48,6 +48,14 @@ export default async function Home() {
             <dd>{health.data.environment}</dd>
             <dt className="text-muted-foreground">database</dt>
             <dd>{health.data.database}</dd>
+            <dt className="text-muted-foreground">storage</dt>
+            <dd>{health.data.storage}</dd>
+            <dt className="text-muted-foreground">providers</dt>
+            <dd className="font-mono text-xs">
+              {Object.entries(health.data.providers)
+                .map(([name, value]) => `${name}=${value}`)
+                .join(" ")}
+            </dd>
           </dl>
         ) : (
           <p className="text-amber-700 dark:text-amber-400">

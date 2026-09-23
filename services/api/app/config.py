@@ -32,6 +32,13 @@ class Settings(BaseSettings):
     environment: Literal["development", "test", "production"] = "development"
     debug: bool = False
 
+    # Observability. Logs are structured (text for terminals, json for shippers); metrics are
+    # aggregates only and need a bearer token when one is set (always, in production).
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+    log_format: Literal["text", "json"] = "text"
+    metrics_enabled: bool = True
+    metrics_token: SecretStr | None = None
+
     # Comma-separated list of allowed browser origins.
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
 

@@ -1,31 +1,29 @@
-from fastapi import APIRouter, Depends
-from sqlalchemy import text
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter
 
-from app.config import Settings, get_settings
-from app.database import get_session
-from app.schemas.health import HealthResponse
+from app.api.deps import AppSettings, DbSession, Storage
+from app.schemas.health import HealthResponse, LivenessResponse
+from app.services.health import readiness
 
 router = APIRouter()
 
 
+@router.get("/health/live", response_model=LivenessResponse)
+async def live() -> LivenessResponse:
+    """Liveness only: the process answers. No dependencies are touched."""
+    return LivenessResponse(status="ok")
+
+
 @router.get("/health", response_model=HealthResponse)
-async def health(
-    settings: Settings = Depends(get_settings),
-    session: AsyncSession = Depends(get_session),
-) -> HealthResponse:
-    """Liveness + DB readiness probe. Exposes only non-sensitive metadata."""
-    try:
-        await session.execute(text("SELECT 1"))
-        database = "ok"
-    except SQLAlchemyError:
-        # Connection details are never returned to the client.
-        database = "unavailable"
+async def health(settings: AppSettings, session: DbSession, storage: Storage) -> HealthResponse:
+    """Readiness: database and storage reachable. Exposes only non-sensitive metadata."""
+    report = await readiness(session, storage, settings)
     return HealthResponse(
-        status="ok" if database == "ok" else "degraded",
+        status=report.status,
         service=settings.app_name,
         version=settings.app_version,
         environment=settings.environment,
-        database=database,
+        database=report.database,
+        storage=report.storage,
+        providers=report.providers,
+        uptime_seconds=report.uptime_seconds,
     )

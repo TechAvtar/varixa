@@ -21,6 +21,8 @@ from app.models import Analysis, AnalysisFile, AnalysisStep
 from app.providers.storage.base import ObjectStorage
 from app.repositories.analysis import AnalysisRepository
 from app.utils.errors import AppError
+from app.utils.metrics import registry
+from app.utils.observability import analysis_id_var
 
 log = logging.getLogger("verixa.pipeline")
 
@@ -97,6 +99,13 @@ class PipelineRunner:
         return [s.name for s in self._steps]
 
     async def run(self, ctx: PipelineContext) -> PipelineResult:
+        token = analysis_id_var.set(str(ctx.analysis.id))
+        try:
+            return await self._run(ctx)
+        finally:
+            analysis_id_var.reset(token)
+
+    async def _run(self, ctx: PipelineContext) -> PipelineResult:
         repo = AnalysisRepository(ctx.session)
         result = PipelineResult(completed=True)
 
@@ -117,6 +126,7 @@ class PipelineRunner:
             else:
                 outcome = await self._execute(step, ctx)
 
+            self._observe(step.name, outcome)
             self._finish(record, outcome)
             await ctx.session.commit()
 
@@ -148,6 +158,23 @@ class PipelineRunner:
             {**outcome.details, "_elapsed_ms": elapsed_ms},
             outcome.error_code,
             outcome.error_message,
+        )
+
+    @staticmethod
+    def _observe(step: str, outcome: StepOutcome) -> None:
+        elapsed = outcome.details.get("_elapsed_ms")
+        elapsed_ms = int(elapsed) if isinstance(elapsed, int | float) else 0
+        status = getattr(outcome.status, "value", str(outcome.status))
+        registry.record_step(step=step, status=status, seconds=elapsed_ms / 1000)
+        log.log(
+            logging.WARNING if outcome.status == StepStatus.FAILED else logging.INFO,
+            "pipeline step finished",
+            extra={
+                "step": step,
+                "status": status,
+                "duration_ms": elapsed_ms,
+                "error_code": outcome.error_code,
+            },
         )
 
     @staticmethod

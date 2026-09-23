@@ -85,6 +85,15 @@ Every package's `__init__.py` carries a one-line responsibility docstring.
 - Client components must format numbers with a fixed locale (`Intl.NumberFormat("en-US")`), or
   server and client HTML differ and hydration fails.
 
+## Observability (T041)
+- Log with `logging.getLogger("verixa.<area>")` and pass fields via `extra={...}`; ids, statuses,
+  durations, names only. `request_id`/`analysis_id` are added automatically from
+  `utils/observability.py` context variables (the middleware and the pipeline runner set them).
+- Metrics go through `utils.metrics.registry` (counters/summaries with bounded labels: route
+  template, step, provider, status). Never add a label that could carry an id or content.
+- `/health` is readiness (DB + storage probe); `/health/live` is liveness. New storage backends
+  implement `probe()`.
+
 ## Security (docs/09, T039)
 - Every API response passes `utils/security_headers.py`; web headers live in `next.config.ts`.
 - Provider adapters call only endpoints that pass `utils/urlpolicy.assert_outbound_allowed`

@@ -79,7 +79,7 @@ export type {
   ParsedTimestamp,
   RawTagGroup,
 } from "./metadata";
-export type { HealthResponse } from "./health";
+export type { HealthResponse, LivenessResponse } from "./health";
 export type { UsageHistoryResponse, UsagePeriodResponse } from "./usage";
 export type {
   ReportCreate,
