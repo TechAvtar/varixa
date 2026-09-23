@@ -108,6 +108,7 @@ def build_timeline(o: Observations, drafts: Sequence[EvidenceDraft]) -> list[Tim
         for key, label, rule in (
             ("captured_at", "Capture time recorded in metadata", "metadata.captured"),
             ("modified_at", "Modification time recorded in metadata", "metadata.modified"),
+            ("gps_time", "GPS receiver time recorded in metadata (UTC)", "metadata.gps"),
         ):
             ts = n.get(key)
             if not ts or not ts.get("raw"):
@@ -116,7 +117,8 @@ def build_timeline(o: Observations, drafts: Sequence[EvidenceDraft]) -> list[Tim
             linked = by_rule.get(rule)
             events.append(
                 TimelineEventDraft(
-                    event_type=f"metadata.{key.removesuffix('_at')}",
+                    event_type=f"metadata.{key.removesuffix('_at').removesuffix('_time')}"
+                    + ("_time" if key == "gps_time" else ""),
                     certainty=linked.level if linked else EvidenceLevel.POSSIBLE,
                     description=label + ("" if tz else " (timezone not recorded)") + ".",
                     source=src,

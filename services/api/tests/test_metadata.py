@@ -34,7 +34,16 @@ def jpeg_with_exif() -> bytes:
     exif[0x0112] = 6
     exif[0x0132] = "2024:05:01 10:20:30"
     exif[0x8769] = {0x9003: "2024:04:30 18:05:02", 0x9011: "+02:00", 0xA434: "RF 50mm F1.2"}
-    exif[0x8825] = {1: "N", 2: (51.0, 30.0, 0.0), 3: "E", 4: (0.0, 7.0, 0.0)}
+    exif[0x8825] = {
+        1: "N",
+        2: (51.0, 30.0, 0.0),
+        3: "E",
+        4: (0.0, 7.0, 0.0),
+        5: b"\x00",
+        6: 35.5,
+        7: (16.0, 5.0, 2.0),
+        29: "2024:04:30",
+    }
     buf = io.BytesIO()
     img.save(buf, format="JPEG", exif=exif.tobytes(), quality=90)
     return buf.getvalue()
@@ -121,7 +130,15 @@ def test_normalize_from_exiftool_shaped_groups() -> None:
                 "ExifIFD:OffsetTimeOriginal": "+02:00",
                 "ExifIFD:LensModel": "RF 50mm F1.2",
                 "GPS:GPSLatitude": 51.5,
+                "GPS:GPSLatitudeRef": "S",
+                "GPS:GPSLongitude": 0.1166,
+                "GPS:GPSLongitudeRef": "W",
+                "GPS:GPSAltitude": 12.0,
+                "GPS:GPSAltitudeRef": 1,
+                "GPS:GPSDateStamp": "2024:04:30",
+                "GPS:GPSTimeStamp": "16:05:02",
             },
+            "Composite": {"Composite:GPSDateTime": "2024:04:30 16:05:02Z"},
             "ICC_Profile": {"ICC-header:ProfileDescription": "sRGB IEC61966-2.1"},
             "File": {"ImageWidth": 40, "ImageHeight": 30},
         },
@@ -135,10 +152,14 @@ def test_normalize_from_exiftool_shaped_groups() -> None:
     assert n.captured_at.parsed.utcoffset() == timedelta(hours=2)
     assert n.modified_at is not None and not n.modified_at.tz_known
     assert n.gps_present is True
+    # ExifTool -n gives unsigned decimals plus refs: south and west become negative.
+    assert n.gps_latitude == pytest.approx(-51.5) and n.gps_longitude == pytest.approx(-0.1166)
+    assert n.gps_altitude_m == pytest.approx(-12.0)  # below sea level
+    assert n.gps_time is not None and n.gps_time.raw == "2024:04:30 16:05:02Z"
     assert n.color_profile == "sRGB IEC61966-2.1"
     assert (n.image_width, n.image_height) == (40, 30)
     assert n.has_exif and n.has_icc and not n.has_xmp and not n.has_iptc
-    assert n.tag_counts == {"EXIF": 9, "ICC_Profile": 1, "File": 2}
+    assert n.tag_counts == {"EXIF": 16, "Composite": 1, "ICC_Profile": 1, "File": 2}
     assert n.warnings == ["Warning: something minor"]
     json = n.to_json()
     assert json["captured_at"] == {
@@ -146,6 +167,29 @@ def test_normalize_from_exiftool_shaped_groups() -> None:
         "parsed": "2024-04-30T18:05:02+02:00",
         "tz_known": True,
     }
+
+
+def test_gps_out_of_range_or_partial_positions_are_dropped_with_a_warning() -> None:
+    raw = RawMetadata(
+        engine="exiftool",
+        engine_version="x",
+        groups={"EXIF": {"GPS:GPSLatitude": 123.0, "GPS:GPSLongitude": 10.0}},
+    )
+    n = normalize_metadata(raw)
+    assert n.gps_present and n.gps_latitude is None and n.gps_longitude is None
+    assert any("out of range" in w for w in n.warnings)
+    partial = RawMetadata(
+        engine="pillow", engine_version="x", groups={"EXIF": {"GPS:GPSLatitude": 1.0}}
+    )
+    p = normalize_metadata(partial)
+    assert p.gps_latitude is None and any("incomplete" in w for w in p.warnings)
+    signed = RawMetadata(
+        engine="exiftool",
+        engine_version="x",
+        groups={"Composite": {"Composite:GPSLatitude": -33.9, "Composite:GPSLongitude": 151.2}},
+    )
+    assert normalize_metadata(signed).gps_present is False  # presence is an EXIF-group fact
+    assert normalize_metadata(signed).gps_latitude is None
 
 
 def test_normalize_empty_metadata_is_all_unknown() -> None:
@@ -167,6 +211,13 @@ async def test_pillow_extractor_reads_exif_gps_and_normalises() -> None:
     n = normalize_metadata(raw)
     assert n.camera_model == "Canon EOS R5" and n.gps_present and n.orientation == 6
     assert n.captured_at is not None and n.captured_at.tz_known
+    # Degree/minute/second lists become decimal degrees; altitude and receiver time follow.
+    assert n.gps_latitude == pytest.approx(51.5) and n.gps_longitude == pytest.approx(7 / 60)
+    assert n.gps_altitude_m == pytest.approx(35.5)
+    assert n.gps_time is not None and n.gps_time.tz_known
+    assert n.gps_time.parsed is not None and n.gps_time.parsed.isoformat() == (
+        "2024-04-30T16:05:02+00:00"
+    )
 
 
 async def test_pillow_extractor_handles_image_without_metadata() -> None:
@@ -225,6 +276,19 @@ async def test_upload_persists_metadata_and_endpoint_returns_it(client: AsyncCli
     n = body["normalized"]
     assert n["camera_make"] == "Canon" and n["software"] == "Adobe Photoshop 25.0"
     assert n["gps_present"] is True
+    assert n["gps_latitude"] == pytest.approx(51.5) and n["gps_longitude"] == pytest.approx(7 / 60)
+    assert n["gps_time"]["tz_known"] is True
+    # The evidence record carries the coordinates as data; its claim never quotes them.
+    evidence = (await client.get(f"/analysis/{analysis_id}/evidence", headers=headers)).json()[
+        "items"
+    ]
+    gps = next(e for e in evidence if e["rule"] == "metadata.gps")
+    assert gps["level"] == "POSSIBLE" and "51.5" not in gps["claim"]
+    assert gps["data"]["latitude"] == pytest.approx(51.5)
+    timeline = (await client.get(f"/analysis/{analysis_id}/timeline", headers=headers)).json()[
+        "events"
+    ]
+    assert any(e["event_type"] == "metadata.gps_time" and e["tz_known"] for e in timeline)
     assert n["captured_at"]["parsed"] == "2024-04-30T18:05:02+02:00"
     assert any(k.endswith("Make") for k in body["exif"])
     assert isinstance(body["limitations"], list)

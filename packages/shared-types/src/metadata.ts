@@ -25,6 +25,11 @@ export interface NormalizedMetadata {
   orientation: number | null;
   orientation_label: string | null;
   gps_present: boolean;
+  /** Recorded GPS values (decimal degrees, metres, receiver UTC time); editable, never verified. */
+  gps_latitude: number | null;
+  gps_longitude: number | null;
+  gps_altitude_m: number | null;
+  gps_time: ParsedTimestamp | null;
   color_profile: string | null;
   image_width: number | null;
   image_height: number | null;

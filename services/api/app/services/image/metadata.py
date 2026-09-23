@@ -54,6 +54,12 @@ class NormalizedMetadata:
     orientation: int | None = None
     orientation_label: str | None = None
     gps_present: bool = False
+    # Decimal degrees (WGS84 as recorded; south/west negative), metres, and the GPS receiver's
+    # own UTC time. All recorded values: trivially editable, never verified.
+    gps_latitude: float | None = None
+    gps_longitude: float | None = None
+    gps_altitude_m: float | None = None
+    gps_time: ParsedTimestamp | None = None
     color_profile: str | None = None
     image_width: int | None = None
     image_height: int | None = None
@@ -62,7 +68,7 @@ class NormalizedMetadata:
 
     def to_json(self) -> dict[str, Any]:
         data = asdict(self)
-        for key in ("captured_at", "modified_at"):
+        for key in ("captured_at", "modified_at", "gps_time"):
             ts = getattr(self, key)
             data[key] = (
                 None
@@ -108,6 +114,94 @@ def parse_exif_datetime(value: Any, offset: Any = None) -> ParsedTimestamp | Non
                 raw=raw, parsed=dt.replace(tzinfo=timezone(delta)), tz_known=True
             )
     return ParsedTimestamp(raw=raw, parsed=dt, tz_known=False)
+
+
+def _degrees(value: Any) -> float | None:
+    """Decimal degrees from a number, a numeric string, or a [deg, min, sec] list."""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value.strip())
+        except ValueError:
+            return None
+    if isinstance(value, list | tuple) and 1 <= len(value) <= 3:
+        parts = [_degrees(v) for v in value]
+        if any(p is None for p in parts):
+            return None
+        padded = [float(p) for p in parts if p is not None] + [0.0, 0.0]
+        deg, minute, sec = padded[0], padded[1], padded[2]
+        return deg + minute / 60 + sec / 3600
+    return None
+
+
+def _signed(value: float | None, ref: Any, negative_refs: tuple[str, ...]) -> float | None:
+    if value is None:
+        return None
+    ref_text = str(ref).strip().upper() if ref is not None else ""
+    if ref_text[:1] in negative_refs and value > 0:
+        return -value
+    return value
+
+
+def gps_coordinates(raw: RawMetadata) -> tuple[float | None, float | None, list[str]]:
+    """(latitude, longitude) in decimal degrees, or None each, plus warnings for bad values.
+
+    Prefers ExifTool's signed ``Composite`` values; otherwise combines the EXIF GPS tags
+    (decimal with ``-n``, or degree/minute/second lists from Pillow) with their N/S, E/W refs.
+    """
+    warnings: list[str] = []
+    lat = _degrees(raw.get("Composite", "GPSLatitude"))
+    lon = _degrees(raw.get("Composite", "GPSLongitude"))
+    if lat is None:
+        lat = _signed(
+            _degrees(raw.get("EXIF", "GPSLatitude")), raw.get("EXIF", "GPSLatitudeRef"), ("S",)
+        )
+    if lon is None:
+        lon = _signed(
+            _degrees(raw.get("EXIF", "GPSLongitude")), raw.get("EXIF", "GPSLongitudeRef"), ("W",)
+        )
+    if lat is not None and not -90 <= lat <= 90:
+        warnings.append(f"GPS latitude out of range: {lat}")
+        lat = None
+    if lon is not None and not -180 <= lon <= 180:
+        warnings.append(f"GPS longitude out of range: {lon}")
+        lon = None
+    if (lat is None) != (lon is None):
+        warnings.append("GPS position incomplete: only one coordinate recorded")
+        lat = lon = None
+    return lat, lon, warnings
+
+
+def gps_altitude(raw: RawMetadata) -> float | None:
+    alt = _degrees(raw.get("EXIF", "GPSAltitude"))
+    if alt is None:
+        return None
+    ref = raw.get("EXIF", "GPSAltitudeRef")
+    below = str(ref).strip().lower() in {"1", "b'\\x01'", "below sea level"} or ref in (1, b"\x01")
+    return -abs(alt) if below else alt
+
+
+def gps_time(raw: RawMetadata) -> ParsedTimestamp | None:
+    """The receiver's UTC time from Composite:GPSDateTime or GPSDateStamp + GPSTimeStamp."""
+    composite = raw.get("Composite", "GPSDateTime")
+    if composite:
+        return parse_exif_datetime(composite, "Z")
+    date = raw.get("EXIF", "GPSDateStamp")
+    time_value = raw.get("EXIF", "GPSTimeStamp")
+    if not date or time_value is None:
+        return None
+    if isinstance(time_value, list | tuple) and len(time_value) == 3:
+        try:
+            h, m, s = (int(float(x)) for x in time_value)
+        except (TypeError, ValueError):
+            return None
+        clock = f"{h:02d}:{m:02d}:{s:02d}"
+    else:
+        clock = str(time_value).strip()[:8]
+    return parse_exif_datetime(f"{str(date).strip()} {clock}", "Z")
 
 
 def _text(value: Any) -> str | None:
@@ -159,6 +253,11 @@ def normalize_metadata(raw: RawMetadata) -> NormalizedMetadata:
     n.gps_present = any(
         k.split(":")[-1].startswith("GPS") and v not in (None, "", [], {}) for k, v in gps.items()
     ) or (raw.get("Composite", "GPSPosition") is not None)
+    if n.gps_present:
+        n.gps_latitude, n.gps_longitude, gps_warnings = gps_coordinates(raw)
+        n.warnings.extend(gps_warnings)
+        n.gps_altitude_m = gps_altitude(raw)
+        n.gps_time = gps_time(raw)
     n.color_profile = _text(raw.get("ICC_Profile", "ProfileDescription"))
     n.image_width = _int(raw.get("File", "ImageWidth") or raw.get("EXIF", "ExifImageWidth"))
     n.image_height = _int(raw.get("File", "ImageHeight") or raw.get("EXIF", "ExifImageHeight"))

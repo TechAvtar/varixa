@@ -26,6 +26,11 @@ class NormalizedMetadataResponse(BaseModel):
     orientation: int | None
     orientation_label: str | None
     gps_present: bool
+    # Recorded GPS values (decimal degrees, metres, receiver UTC time); editable, never verified.
+    gps_latitude: float | None = None
+    gps_longitude: float | None = None
+    gps_altitude_m: float | None = None
+    gps_time: ParsedTimestampResponse | None = None
     color_profile: str | None
     image_width: int | None
     image_height: int | None

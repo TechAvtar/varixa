@@ -307,6 +307,25 @@ def render_pdf(b: ReportBundle) -> tuple[bytes, int]:
                     ("Capture time (as recorded)", cap),
                     ("Modification time (as recorded)", mod),
                     ("GPS fields", "present" if m.get("gps_present") else "none"),
+                    *(
+                        [
+                            (
+                                "GPS position (as recorded)",
+                                f"{m['gps_latitude']:.6f}, {m['gps_longitude']:.6f}"
+                                + (
+                                    f" · altitude {m['gps_altitude_m']:.1f} m"
+                                    if m.get("gps_altitude_m") is not None
+                                    else ""
+                                ),
+                            ),
+                            (
+                                "GPS time (as recorded, UTC)",
+                                (m.get("gps_time") or {}).get("raw") or "—",
+                            ),
+                        ]
+                        if m.get("gps_latitude") is not None and m.get("gps_longitude") is not None
+                        else []
+                    ),
                 ],
                 width,
             )

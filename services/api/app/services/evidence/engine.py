@@ -449,18 +449,35 @@ def _metadata_rules(o: Observations, t: EvidenceThresholds) -> list[EvidenceDraf
             )
         )
     if n.get("gps_present"):
+        has_fix = n.get("gps_latitude") is not None and n.get("gps_longitude") is not None
+        gps_when = n.get("gps_time") or {}
         out.append(
             EvidenceDraft(
                 rule="metadata.gps",
                 category="metadata",
                 level=EvidenceLevel.POSSIBLE,
                 kind="signal",
-                claim="Metadata contains GPS location fields.",
+                # Coordinates stay in `data` (shown in the report, never sent to a model).
+                claim=(
+                    "Metadata records GPS coordinates."
+                    if has_fix
+                    else "Metadata contains GPS fields but no usable coordinates."
+                ),
                 source=src,
                 confidence=_conf(EvidenceLevel.POSSIBLE, t),
-                limitation="Coordinates are not shown here and can be inaccurate or fabricated.",
+                limitation=(
+                    "GPS tags are written by software and can be inaccurate, stale or "
+                    "fabricated; they show where the device claims it was, not where the "
+                    "picture was taken."
+                ),
                 refs=refs,
                 provider_version=m.engine_version,
+                data={
+                    "latitude": n.get("gps_latitude"),
+                    "longitude": n.get("gps_longitude"),
+                    "altitude_m": n.get("gps_altitude_m"),
+                    "gps_time": gps_when.get("raw"),
+                },
             )
         )
     if not (n.get("has_exif") or n.get("has_xmp") or n.get("has_iptc")):

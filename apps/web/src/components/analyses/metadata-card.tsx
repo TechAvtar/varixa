@@ -17,6 +17,37 @@ function Timestamp({ ts }: { ts: ParsedTimestamp | null }) {
   );
 }
 
+/** Recorded coordinates with a link the reader may open; the API never fetches map tiles. */
+function GpsPosition({
+  lat,
+  lon,
+  altitude,
+}: {
+  lat: number | null;
+  lon: number | null;
+  altitude: number | null;
+}) {
+  if (lat == null || lon == null) return <>—</>;
+  const pos = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+  const href = `https://www.openstreetmap.org/?mlat=${lat.toFixed(6)}&mlon=${lon.toFixed(6)}#map=15/${lat.toFixed(5)}/${lon.toFixed(5)}`;
+  return (
+    <span className="inline-flex flex-wrap items-center gap-2">
+      <span className="font-mono">{pos}</span>
+      {altitude != null ? (
+        <span className="text-xs text-muted-foreground">altitude {altitude.toFixed(1)} m</span>
+      ) : null}
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-xs underline-offset-4 hover:underline"
+      >
+        Open in OpenStreetMap
+      </a>
+    </span>
+  );
+}
+
 function Presence({ present, label }: { present: boolean; label: string }) {
   return (
     <span
@@ -71,6 +102,22 @@ export function MetadataCard({ metadata }: { metadata: ImageMetadataResponse | n
               <dd>
                 <Timestamp ts={n.modified_at} />
               </dd>
+              {n.gps_present ? (
+                <>
+                  <dt className="text-muted-foreground">GPS position (recorded)</dt>
+                  <dd>
+                    <GpsPosition
+                      lat={n.gps_latitude}
+                      lon={n.gps_longitude}
+                      altitude={n.gps_altitude_m}
+                    />
+                  </dd>
+                  <dt className="text-muted-foreground">GPS time (recorded, UTC)</dt>
+                  <dd>
+                    <Timestamp ts={n.gps_time} />
+                  </dd>
+                </>
+              ) : null}
               <dt className="text-muted-foreground">Orientation</dt>
               <dd>
                 {n.orientation_label ?? (n.orientation != null ? String(n.orientation) : "—")}

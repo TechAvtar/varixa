@@ -189,6 +189,15 @@ Only then is the original stored (private key `uploads/{user}/{analysis}/{sha256
 analysis row committed; a rejected file leaves no record. `GET /analysis/{id}` returns a `file`
 block with the detected type, size, dimensions and SHA-256.
 
+### Metadata and GPS
+
+Metadata values are recorded, not verified. When EXIF GPS tags are present the normaliser
+reports decimal-degree coordinates (south/west negative), altitude and the receiver's UTC time;
+out-of-range or partial positions are dropped with a warning. The evidence record
+`metadata.gps` stays POSSIBLE, keeps the numbers in its `data` (never in the claim that a model
+might see), and the receiver time becomes a `metadata.gps_time` timeline event. The Metadata
+tab and the PDF show the position; the map link is a plain external link the reader chooses.
+
 ### Forensics (heuristics)
 
 Forensic methods run as non-critical pipeline steps and write into one `image_forensics` row per
