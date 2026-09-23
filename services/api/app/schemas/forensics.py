@@ -172,6 +172,89 @@ class CopyMoveFindingResponse(BaseModel):
     limitations: list[str]
 
 
+class ThumbnailRegionResponse(BaseModel):
+    """Bounding box in original image pixels; ``mean_diff`` in normalised intensity units."""
+
+    x: int
+    y: int
+    width: int
+    height: int
+    blocks: int
+    mean_diff: float
+
+
+class ThumbnailFindingResponse(BaseModel):
+    method: Literal["thumbnail"] = "thumbnail"
+    version: str
+    observation: str
+    confidence: Confidence
+    has_thumbnail: bool
+    thumbnail_width: int
+    thumbnail_height: int
+    original_width: int
+    original_height: int
+    aspect_ratio_thumbnail: float
+    aspect_ratio_image: float
+    aspect_mismatch: bool
+    correlation: float
+    correlation_outside_regions: float
+    best_transform: Literal["none", "flip_h", "flip_v", "rotate_180"]
+    best_transform_correlation: float
+    orientation_mismatch: bool
+    block_size: int
+    outlier_sigma: float
+    outlier_block_fraction: float
+    regions: list[ThumbnailRegionResponse]
+    # The thumbnail depicts different content from the current image.
+    mismatch_global: bool
+    # Only part of the image differs from its thumbnail.
+    anomaly: bool
+    flagged: bool
+    limitations: list[str]
+
+
+class GhostRegionResponse(BaseModel):
+    """Bounding box in original image pixels; ``depth`` is the normalised dip depth."""
+
+    x: int
+    y: int
+    width: int
+    height: int
+    blocks: int
+    depth: float
+
+
+class DoubleCompressionFindingResponse(BaseModel):
+    method: Literal["double_compression"] = "double_compression"
+    version: str
+    observation: str
+    confidence: Confidence
+    original_width: int
+    original_height: int
+    working_width: int
+    working_height: int
+    cropped: bool
+    last_quality: int | None
+    standard_tables: bool | None
+    qualities: list[int]
+    curve: list[float]
+    primary_quality: int
+    secondary_quality: int | None
+    secondary_depth: float
+    dc_periodicity: float
+    dc_period: float | None
+    periodic: bool
+    block_size: int
+    ghost_block_fraction: float
+    ghost_quality_local: int | None
+    regions: list[GhostRegionResponse]
+    # Whole image compressed at least twice (earlier at a lower quality).
+    detected: bool
+    # Only part of the image carries the ghost.
+    anomaly: bool
+    limitations: list[str]
+
+
 class ForensicSkipped(BaseModel):
     method: str
     reason: str
@@ -194,6 +277,8 @@ class ImageForensicsResponse(BaseModel):
     resampling: ResamplingFindingResponse | None
     noise: NoiseFindingResponse | None
     copy_move: CopyMoveFindingResponse | None
+    thumbnail: ThumbnailFindingResponse | None = None
+    double_compression: DoubleCompressionFindingResponse | None = None
     skipped: list[ForensicSkipped]
     artifacts: list[ForensicArtifactResponse]
     limitations: list[str]

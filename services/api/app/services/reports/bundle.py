@@ -98,7 +98,15 @@ def evidence_lines(rows: Sequence[Any]) -> list[EvidenceLine]:
     return out
 
 
-FORENSIC_ORDER = ("ela", "compression", "resampling", "noise", "copy_move")
+FORENSIC_ORDER = (
+    "ela",
+    "compression",
+    "double_compression",
+    "thumbnail",
+    "resampling",
+    "noise",
+    "copy_move",
+)
 
 
 def forensic_methods(row: Any | None, maps: dict[str, bytes]) -> list[ForensicMethod]:
@@ -110,7 +118,9 @@ def forensic_methods(row: Any | None, maps: dict[str, bytes]) -> list[ForensicMe
         if not isinstance(j, dict):
             continue
         applicable = bool(j.get("applicable"))
-        flagged = bool(j.get("anomaly") or j.get("detected") or j.get("prior_jpeg_grid"))
+        flagged = bool(
+            j.get("anomaly") or j.get("detected") or j.get("prior_jpeg_grid") or j.get("flagged")
+        )
         out.append(
             ForensicMethod(
                 name=name,

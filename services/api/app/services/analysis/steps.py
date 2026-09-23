@@ -18,9 +18,11 @@ from app.services.analysis.evidence_step import EvidenceStep
 from app.services.analysis.forensics_steps import (
     CompressionStep,
     CopyMoveStep,
+    DoubleCompressionStep,
     ELAStep,
     NoiseStep,
     ResamplingStep,
+    ThumbnailStep,
 )
 from app.services.analysis.pipeline import (
     PipelineContext,
@@ -254,6 +256,8 @@ def image_pipeline_steps() -> list[PipelineStep]:
         InspectProvenanceStep(),
         ELAStep(),
         CompressionStep(),
+        DoubleCompressionStep(),
+        ThumbnailStep(),
         ResamplingStep(),
         NoiseStep(),
         CopyMoveStep(),

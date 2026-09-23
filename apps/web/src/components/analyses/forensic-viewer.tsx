@@ -4,19 +4,38 @@ import type { AnalysisFileLink, ImageForensicsResponse } from "@verixa/shared-ty
 import { useId, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
-type MapKey = "ela" | "noise" | "copy_move";
-type RegionKey = "ela" | "noise" | "copy_move";
+type MapKey = "ela" | "noise" | "copy_move" | "double_compression" | "thumbnail";
+type RegionKey = "ela" | "noise" | "copy_move" | "double_compression" | "thumbnail";
+
+const MAP_KEYS: readonly MapKey[] = [
+  "ela",
+  "noise",
+  "copy_move",
+  "double_compression",
+  "thumbnail",
+];
+const REGION_KEYS: readonly RegionKey[] = [
+  "ela",
+  "noise",
+  "copy_move",
+  "double_compression",
+  "thumbnail",
+];
 
 const MAP_LABEL: Record<MapKey, string> = {
   ela: "ELA error map",
   noise: "Noise map",
   copy_move: "Copy-move mask",
+  double_compression: "JPEG ghost map",
+  thumbnail: "Thumbnail difference map",
 };
 
 const REGION_LABEL: Record<RegionKey, string> = {
   ela: "ELA regions",
   noise: "Noise regions",
   copy_move: "Copy-move source → target",
+  double_compression: "JPEG ghost regions",
+  thumbnail: "Thumbnail difference regions",
 };
 
 // Colours are reinforcement only: every box also carries a text label and a legend entry.
@@ -24,6 +43,8 @@ const STROKE: Record<RegionKey, string> = {
   ela: "#d97706", // amber-600
   noise: "#2563eb", // blue-600
   copy_move: "#dc2626", // red-600
+  double_compression: "#7c3aed", // violet-600
+  thumbnail: "#059669", // emerald-600
 };
 
 interface Box {
@@ -64,6 +85,26 @@ function collect(f: ImageForensicsResponse): { boxes: Box[]; arrows: Arrow[] } {
       w: r.width,
       h: r.height,
       label: `noise ${i + 1} (${r.sigma > (f.noise?.baseline_sigma ?? 0) ? "noisier" : "smoother"})`,
+    }),
+  );
+  f.double_compression?.regions.forEach((r, i) =>
+    boxes.push({
+      key: "double_compression",
+      x: r.x,
+      y: r.y,
+      w: r.width,
+      h: r.height,
+      label: `ghost ${i + 1}`,
+    }),
+  );
+  f.thumbnail?.regions.forEach((r, i) =>
+    boxes.push({
+      key: "thumbnail",
+      x: r.x,
+      y: r.y,
+      w: r.width,
+      h: r.height,
+      label: `thumbnail ${i + 1}`,
     }),
   );
   f.copy_move?.matches.forEach((m, i) => {
@@ -111,11 +152,9 @@ export function ForensicViewer({
   const height = original?.height ?? data.ela?.original_height ?? data.noise?.height ?? 0;
   const { boxes, arrows } = collect(data);
   const availableMaps = data.artifacts.filter((a): a is typeof a & { method: MapKey } =>
-    ["ela", "noise", "copy_move"].includes(a.method),
+    (MAP_KEYS as readonly string[]).includes(a.method),
   );
-  const availableRegions = (["ela", "noise", "copy_move"] as RegionKey[]).filter((k) =>
-    boxes.some((b) => b.key === k),
-  );
+  const availableRegions = REGION_KEYS.filter((k) => boxes.some((b) => b.key === k));
 
   const [map, setMap] = useState<MapKey | "none">("none");
   const [opacity, setOpacity] = useState(0.6);
@@ -123,6 +162,8 @@ export function ForensicViewer({
     ela: true,
     noise: true,
     copy_move: true,
+    double_compression: true,
+    thumbnail: true,
   });
 
   if (!original || !width || !height) {

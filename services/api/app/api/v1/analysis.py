@@ -32,12 +32,14 @@ from app.schemas.fingerprints import (
 from app.schemas.forensics import (
     CompressionFindingResponse,
     CopyMoveFindingResponse,
+    DoubleCompressionFindingResponse,
     ELAFindingResponse,
     ForensicArtifactResponse,
     ForensicSkipped,
     ImageForensicsResponse,
     NoiseFindingResponse,
     ResamplingFindingResponse,
+    ThumbnailFindingResponse,
 )
 from app.schemas.matches import (
     SourceMatchesResponse,
@@ -362,6 +364,27 @@ async def get_analysis_forensics(
             skipped.append(
                 ForensicSkipped(method="copy_move", reason=str(row.copy_move_json.get("reason")))
             )
+    thumbnail_finding: ThumbnailFindingResponse | None = None
+    if row.thumbnail_json:
+        if row.thumbnail_json.get("applicable"):
+            thumbnail_finding = ThumbnailFindingResponse.model_validate(row.thumbnail_json)
+        else:
+            skipped.append(
+                ForensicSkipped(method="thumbnail", reason=str(row.thumbnail_json.get("reason")))
+            )
+    double_finding: DoubleCompressionFindingResponse | None = None
+    if row.double_compression_json:
+        if row.double_compression_json.get("applicable"):
+            double_finding = DoubleCompressionFindingResponse.model_validate(
+                row.double_compression_json
+            )
+        else:
+            skipped.append(
+                ForensicSkipped(
+                    method="double_compression",
+                    reason=str(row.double_compression_json.get("reason")),
+                )
+            )
     artifacts = [
         ForensicArtifactResponse(
             name=str(a.get("name")),
@@ -380,6 +403,8 @@ async def get_analysis_forensics(
         resampling=resampling_finding,
         noise=noise_finding,
         copy_move=copy_move_finding,
+        thumbnail=thumbnail_finding,
+        double_compression=double_finding,
         skipped=skipped,
         artifacts=artifacts,
         limitations=_FORENSICS_NOTES,

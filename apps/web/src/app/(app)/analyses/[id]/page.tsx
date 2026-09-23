@@ -25,6 +25,7 @@ import { AnalysisStatusBadge } from "@/components/analyses/analysis-status-badge
 import { DeleteAnalysisButton } from "@/components/analyses/delete-analysis-button";
 import { CompressionCard } from "@/components/analyses/compression-card";
 import { CopyMoveCard } from "@/components/analyses/copy-move-card";
+import { DoubleCompressionCard } from "@/components/analyses/double-compression-card";
 import { ELACard } from "@/components/analyses/ela-card";
 import { FingerprintsCard } from "@/components/analyses/fingerprints-card";
 import { ForensicViewer } from "@/components/analyses/forensic-viewer";
@@ -44,6 +45,7 @@ import { SourceMatchesCard } from "@/components/analyses/source-matches-card";
 import { SynthesisCard } from "@/components/analyses/synthesis-card";
 import { TextFingerprintsCard } from "@/components/analyses/text-fingerprints-card";
 import { TextStatsCard } from "@/components/analyses/text-stats-card";
+import { ThumbnailCard } from "@/components/analyses/thumbnail-card";
 import { TimelineCard } from "@/components/analyses/timeline-card";
 import { isReportTab, type ReportTab, ReportTabs } from "@/components/analyses/report-tabs";
 import { EvidenceList } from "@/components/evidence/evidence-card";
@@ -339,6 +341,8 @@ export default async function AnalysisPage({
                 <ForensicViewer data={forensics} original={fileLink} />
                 <ELACard data={forensics} />
                 <CompressionCard data={forensics} />
+                <DoubleCompressionCard data={forensics} />
+                <ThumbnailCard data={forensics} />
                 <ResamplingCard data={forensics} />
                 <NoiseCard data={forensics} />
                 <CopyMoveCard data={forensics} />

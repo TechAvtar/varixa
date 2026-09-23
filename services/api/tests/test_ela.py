@@ -124,7 +124,7 @@ async def test_jpeg_upload_runs_ela_and_exposes_findings(
     f = (await client.get(f"/analysis/{aid}/forensics", headers=headers)).json()
     assert f["ela"]["method"] == "ela" and f["ela"]["anomaly"] is True
     assert f["ela"]["confidence"] == "low" and f["ela"]["limitations"]
-    assert f["skipped"] == [] and f["limitations"]
+    assert not any(s["method"] == "ela" for s in f["skipped"]) and f["limitations"]
     art = next(a for a in f["artifacts"] if a["method"] == "ela")
     assert art["method"] == "ela" and art["content_type"] == "image/png"
     assert art["url"].startswith("http") and "sig=" in art["url"] and "object_key" not in art
@@ -151,7 +151,7 @@ async def test_non_jpeg_is_recorded_as_not_applicable(
     assert step["status"] == "skipped" and body["status"] == "completed"
     f = (await client.get(f"/analysis/{aid}/forensics", headers=headers)).json()
     assert f["ela"] is None and not any(a["method"] == "ela" for a in f["artifacts"])
-    assert f["skipped"] == [{"method": "ela", "reason": ela.NOT_APPLICABLE_REASON}]
+    assert {"method": "ela", "reason": ela.NOT_APPLICABLE_REASON} in f["skipped"]
 
 
 async def test_forensics_endpoint_enforces_ownership_and_404s(

@@ -64,6 +64,38 @@ function rows(f: ImageForensicsResponse): Row[] {
     hasMap: false,
   });
 
+  const dc = f.double_compression;
+  out.push({
+    method: "double_compression",
+    label: "Double compression",
+    outcome: skipped.has("double_compression")
+      ? "not-applicable"
+      : !dc
+        ? "missing"
+        : dc.anomaly || dc.detected
+          ? "possible"
+          : "nothing",
+    confidence: dc?.confidence ?? null,
+    observation: skipped.get("double_compression") ?? dc?.observation ?? "",
+    hasMap: maps.has("double_compression"),
+  });
+
+  const th = f.thumbnail;
+  out.push({
+    method: "thumbnail",
+    label: "Embedded thumbnail",
+    outcome: skipped.has("thumbnail")
+      ? "not-applicable"
+      : !th
+        ? "missing"
+        : th.flagged
+          ? "possible"
+          : "nothing",
+    confidence: th?.confidence ?? null,
+    observation: skipped.get("thumbnail") ?? th?.observation ?? "",
+    hasMap: maps.has("thumbnail"),
+  });
+
   const r = f.resampling;
   out.push({
     method: "resampling",
@@ -128,7 +160,7 @@ export function ForensicsSummary({ data }: { data: ImageForensicsResponse }) {
       <CardHeader>
         <CardTitle>Forensic methods</CardTitle>
         <CardDescription>
-          Five heuristics ran on the stored original. Each reports what it observed, its design
+          Seven heuristics ran on the stored original. Each reports what it observed, its design
           confidence and its failure modes; none proves manipulation on its own, and error-level and
           compression signals are correlated rather than independent.
         </CardDescription>

@@ -112,6 +112,22 @@ class Settings(BaseSettings):
     copy_move_min_matches: int = Field(default=200, ge=10, le=100_000)
     copy_move_min_shift: int = Field(default=32, ge=16, le=1024)
 
+    # Forensics: embedded-thumbnail comparison (correlation below which the thumbnail shows
+    # different content, outlier threshold and band for a localised difference, aspect tolerance).
+    thumbnail_min_correlation: float = Field(default=0.9, ge=0.0, le=1.0)
+    thumbnail_outlier_sigma: float = Field(default=2.5, ge=0.5, le=10.0)
+    thumbnail_anomaly_min_fraction: float = Field(default=0.01, ge=0.0, le=1.0)
+    thumbnail_anomaly_max_fraction: float = Field(default=0.3, ge=0.0, le=1.0)
+    thumbnail_aspect_tolerance: float = Field(default=0.05, ge=0.0, le=1.0)
+
+    # Forensics: JPEG ghosts (pixel cap before centre-cropping, dip depth that counts as a
+    # ghost, block-fraction band for a localised ghost, DC-histogram periodicity threshold).
+    double_compression_max_pixels: int = Field(default=2_500_000, ge=65_536)
+    double_compression_min_depth: float = Field(default=0.12, ge=0.01, le=1.0)
+    double_compression_anomaly_min_fraction: float = Field(default=0.01, ge=0.0, le=1.0)
+    double_compression_anomaly_max_fraction: float = Field(default=0.6, ge=0.0, le=1.0)
+    double_compression_periodicity_min: float = Field(default=5.0, ge=1.0, le=1000.0)
+
     # Evidence engine (docs/07). Rule thresholds live here, never in the rules themselves.
     language_probable_confidence: float = Field(default=0.9, ge=0.0, le=1.0)
     forensic_families_for_strong: int = Field(default=2, ge=1, le=3)

@@ -28,6 +28,8 @@ class ImageForensics(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     compression_json: Mapped[dict[str, Any] | None] = mapped_column(PortableJSON)
     resampling_json: Mapped[dict[str, Any] | None] = mapped_column(PortableJSON)
     copy_move_json: Mapped[dict[str, Any] | None] = mapped_column(PortableJSON)
+    thumbnail_json: Mapped[dict[str, Any] | None] = mapped_column(PortableJSON)
+    double_compression_json: Mapped[dict[str, Any] | None] = mapped_column(PortableJSON)
     statistics_json: Mapped[dict[str, Any] | None] = mapped_column(PortableJSON)
     # [{"name", "method", "object_key", "content_type", "width", "height"}]
     artifacts_json: Mapped[list[dict[str, Any]] | None] = mapped_column(PortableJSON)

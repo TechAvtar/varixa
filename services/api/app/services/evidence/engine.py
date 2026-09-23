@@ -67,6 +67,11 @@ LEVEL_CEILING: dict[str, str] = {
     "forensics.resampling.detected": EvidenceLevel.POSSIBLE,
     "forensics.noise.anomaly": EvidenceLevel.POSSIBLE,
     "forensics.copy-move.detected": EvidenceLevel.POSSIBLE,
+    "forensics.thumbnail.mismatch": EvidenceLevel.POSSIBLE,
+    "forensics.thumbnail.region": EvidenceLevel.POSSIBLE,
+    "forensics.thumbnail.geometry": EvidenceLevel.POSSIBLE,
+    "forensics.double-compression.localized": EvidenceLevel.POSSIBLE,
+    "forensics.double-compression.global": EvidenceLevel.POSSIBLE,
 }
 
 
@@ -1298,6 +1303,219 @@ def _forensic_rules(o: Observations, t: EvidenceThresholds) -> list[EvidenceDraf
                     claim="The image is too small for block matching.",
                     source="copy_move",
                     refs=refs,
+                )
+            )
+
+    # -- double compression (JPEG ghosts; local ghosts share the ELA/compression family) -------
+    dc_raw = method("double_compression")
+    dcj = applicable(dc_raw)
+    if dc_raw and not dcj:
+        out.append(
+            EvidenceDraft(
+                rule="forensics.double-compression.na",
+                category="forensics",
+                level=EvidenceLevel.UNKNOWN,
+                kind="unknown",
+                claim="JPEG ghost analysis is not applicable to this file format.",
+                source="double_compression",
+                detail=dc_raw.get("reason"),
+                refs=["step:double_compression", "row:image_forensics"],
+            )
+        )
+    elif dcj:
+        refs = ["step:double_compression", "row:image_forensics"]
+        if dcj.get("anomaly"):
+            regions = dcj.get("regions") or []
+            r = regions[0] if regions else None
+            out.append(
+                EvidenceDraft(
+                    rule="forensics.double-compression.localized",
+                    category="forensics",
+                    level=EvidenceLevel.POSSIBLE,
+                    kind="signal",
+                    claim=f"{len(regions)} region(s) carry a JPEG ghost of an earlier compression "
+                    f"(about quality {dcj.get('ghost_quality_local')}) that the rest of the image "
+                    "does not.",
+                    source="double_compression",
+                    confidence=_conf(EvidenceLevel.POSSIBLE, t),
+                    detail=(
+                        f"Largest region at ({r['x']}, {r['y']}), {r['width']} x {r['height']} px; "
+                        f"{float(dcj.get('ghost_block_fraction') or 0) * 100:.1f}% of blocks carry "
+                        "the ghost."
+                        if r
+                        else None
+                    ),
+                    limitation="Consistent with a region pasted from a lower-quality JPEG; strong "
+                    "texture boundaries can mimic it. Correlated with ELA, not independent of it.",
+                    refs=refs,
+                    provider_version=dcj.get("version"),
+                    data={"regions": regions, "family": "error-level/compression"},
+                )
+            )
+            if "error-level/compression" not in families:
+                families.append("error-level/compression")
+        elif dcj.get("detected"):
+            out.append(
+                EvidenceDraft(
+                    rule="forensics.double-compression.global",
+                    category="forensics",
+                    level=EvidenceLevel.POSSIBLE,
+                    kind="signal",
+                    claim="The image was JPEG-compressed at least twice"
+                    + (
+                        f" (an earlier save at about quality {dcj.get('secondary_quality')})"
+                        if dcj.get("secondary_quality") is not None
+                        else ""
+                    )
+                    + ".",
+                    source="double_compression",
+                    confidence=_conf(EvidenceLevel.POSSIBLE, t),
+                    detail=dcj.get("observation"),
+                    limitation="Re-saving is routine (messaging apps, editors, uploads). This is "
+                    "compression history, not evidence of editing.",
+                    refs=refs,
+                    provider_version=dcj.get("version"),
+                    data={
+                        "secondary_quality": dcj.get("secondary_quality"),
+                        "primary_quality": dcj.get("primary_quality"),
+                        "periodic": dcj.get("periodic"),
+                    },
+                )
+            )
+        else:
+            out.append(
+                EvidenceDraft(
+                    rule="forensics.double-compression.none",
+                    category="forensics",
+                    level=EvidenceLevel.UNKNOWN,
+                    kind="signal",
+                    claim="No JPEG ghost of an earlier compression was found.",
+                    source="double_compression",
+                    detail=dcj.get("observation"),
+                    limitation="An earlier save at a higher quality, resampling between saves or "
+                    "flat content leaves no ghost. Absence says nothing.",
+                    refs=refs,
+                    provider_version=dcj.get("version"),
+                )
+            )
+
+    # -- embedded thumbnail (independent family) -----------------------------------------------
+    th_raw = method("thumbnail")
+    th = applicable(th_raw)
+    if th_raw and not th:
+        out.append(
+            EvidenceDraft(
+                rule="forensics.thumbnail.na",
+                category="forensics",
+                level=EvidenceLevel.UNKNOWN,
+                kind="unknown",
+                claim="No embedded thumbnail is available to compare against.",
+                source="thumbnail",
+                detail=th_raw.get("reason"),
+                limitation="Most sharing paths strip EXIF thumbnails; absence proves nothing.",
+                refs=["step:thumbnail", "row:image_forensics"],
+            )
+        )
+    elif th:
+        refs = ["step:thumbnail", "row:image_forensics"]
+        flagged_here = False
+        if th.get("mismatch_global"):
+            flagged_here = True
+            out.append(
+                EvidenceDraft(
+                    rule="forensics.thumbnail.mismatch",
+                    category="forensics",
+                    level=EvidenceLevel.POSSIBLE,
+                    kind="signal",
+                    claim="The embedded EXIF thumbnail does not depict the current image content.",
+                    source="thumbnail",
+                    confidence=_conf(EvidenceLevel.POSSIBLE, t),
+                    detail=f"Correlation {float(th.get('correlation') or 0):.2f} between the "
+                    "thumbnail and the downscaled image.",
+                    limitation="The picture may have been replaced or heavily edited after the "
+                    "thumbnail was made, or the thumbnail may belong to another file; some "
+                    "cameras frame thumbnails differently.",
+                    refs=refs,
+                    provider_version=th.get("version"),
+                    data={"correlation": th.get("correlation"), "family": "thumbnail"},
+                )
+            )
+        elif th.get("anomaly"):
+            flagged_here = True
+            regions = th.get("regions") or []
+            r = regions[0] if regions else None
+            out.append(
+                EvidenceDraft(
+                    rule="forensics.thumbnail.region",
+                    category="forensics",
+                    level=EvidenceLevel.POSSIBLE,
+                    kind="signal",
+                    claim=f"{len(regions)} localised region(s) differ from the embedded thumbnail "
+                    "while the rest of the image matches it.",
+                    source="thumbnail",
+                    confidence=_conf(EvidenceLevel.POSSIBLE, t),
+                    detail=(
+                        f"Largest region at ({r['x']}, {r['y']}), {r['width']} x {r['height']} px; "
+                        f"correlation outside the regions "
+                        f"{float(th.get('correlation_outside_regions') or 0):.2f}."
+                        if r
+                        else None
+                    ),
+                    limitation="Consistent with a local edit made after the thumbnail was "
+                    "generated; thumbnail processing (sharpening, tone curve) can also differ "
+                    "locally. The comparison runs at thumbnail resolution.",
+                    refs=refs,
+                    provider_version=th.get("version"),
+                    data={"regions": regions, "family": "thumbnail"},
+                )
+            )
+        if th.get("orientation_mismatch") or th.get("aspect_mismatch"):
+            flagged_here = True
+            what = (
+                f"flipped or rotated ({th.get('best_transform')})"
+                if th.get("orientation_mismatch")
+                else "cropped to a different aspect ratio"
+            )
+            out.append(
+                EvidenceDraft(
+                    rule="forensics.thumbnail.geometry",
+                    category="forensics",
+                    level=EvidenceLevel.POSSIBLE,
+                    kind="signal",
+                    claim=f"The image appears to have been {what} after its thumbnail was made.",
+                    source="thumbnail",
+                    confidence=_conf(EvidenceLevel.POSSIBLE, t),
+                    detail=f"Aspect ratio image {th.get('aspect_ratio_image')} vs thumbnail "
+                    f"{th.get('aspect_ratio_thumbnail')}; best transform "
+                    f"{th.get('best_transform')}.",
+                    limitation="Cropping and rotating are routine edits; some devices store "
+                    "thumbnails with their own framing or orientation.",
+                    refs=refs,
+                    provider_version=th.get("version"),
+                    data={
+                        "aspect_mismatch": th.get("aspect_mismatch"),
+                        "orientation_mismatch": th.get("orientation_mismatch"),
+                        "best_transform": th.get("best_transform"),
+                        "family": "thumbnail",
+                    },
+                )
+            )
+        if flagged_here:
+            families.append("thumbnail")
+        else:
+            out.append(
+                EvidenceDraft(
+                    rule="forensics.thumbnail.consistent",
+                    category="forensics",
+                    level=EvidenceLevel.UNKNOWN,
+                    kind="signal",
+                    claim="The embedded thumbnail matches the current image.",
+                    source="thumbnail",
+                    detail=th.get("observation"),
+                    limitation="Any full resave regenerates the thumbnail, so a match says nothing "
+                    "about edits made before the last save.",
+                    refs=refs,
+                    provider_version=th.get("version"),
                 )
             )
 

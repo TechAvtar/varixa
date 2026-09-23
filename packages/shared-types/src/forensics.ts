@@ -165,6 +165,87 @@ export interface CopyMoveFinding {
   limitations: string[];
 }
 
+export interface ThumbnailRegion {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  blocks: number;
+  /** Mean normalised-intensity difference over the region. */
+  mean_diff: number;
+}
+
+export interface ThumbnailFinding {
+  method: "thumbnail";
+  version: string;
+  observation: string;
+  confidence: ForensicConfidence;
+  has_thumbnail: boolean;
+  thumbnail_width: number;
+  thumbnail_height: number;
+  original_width: number;
+  original_height: number;
+  aspect_ratio_thumbnail: number;
+  aspect_ratio_image: number;
+  aspect_mismatch: boolean;
+  correlation: number;
+  correlation_outside_regions: number;
+  best_transform: "none" | "flip_h" | "flip_v" | "rotate_180";
+  best_transform_correlation: number;
+  orientation_mismatch: boolean;
+  block_size: number;
+  outlier_sigma: number;
+  outlier_block_fraction: number;
+  regions: ThumbnailRegion[];
+  /** The thumbnail depicts different content from the current image. */
+  mismatch_global: boolean;
+  /** Only part of the image differs from its thumbnail. */
+  anomaly: boolean;
+  flagged: boolean;
+  limitations: string[];
+}
+
+export interface GhostRegion {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  blocks: number;
+  /** Normalised dip depth of the ghost over the region. */
+  depth: number;
+}
+
+export interface DoubleCompressionFinding {
+  method: "double_compression";
+  version: string;
+  observation: string;
+  confidence: ForensicConfidence;
+  original_width: number;
+  original_height: number;
+  working_width: number;
+  working_height: number;
+  cropped: boolean;
+  last_quality: number | null;
+  standard_tables: boolean | null;
+  qualities: number[];
+  curve: number[];
+  primary_quality: number;
+  secondary_quality: number | null;
+  secondary_depth: number;
+  dc_periodicity: number;
+  dc_period: number | null;
+  periodic: boolean;
+  block_size: number;
+  ghost_block_fraction: number;
+  ghost_quality_local: number | null;
+  regions: GhostRegion[];
+  /** Whole image compressed at least twice (earlier at a lower quality). */
+  detected: boolean;
+  /** Only part of the image carries the ghost. */
+  anomaly: boolean;
+  limitations: string[];
+}
+
 export interface ForensicSkipped {
   method: string;
   reason: string;
@@ -187,6 +268,8 @@ export interface ImageForensicsResponse {
   resampling: ResamplingFinding | null;
   noise: NoiseFinding | null;
   copy_move: CopyMoveFinding | null;
+  thumbnail: ThumbnailFinding | null;
+  double_compression: DoubleCompressionFinding | null;
   skipped: ForensicSkipped[];
   artifacts: ForensicArtifact[];
   limitations: string[];

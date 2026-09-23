@@ -252,6 +252,28 @@ limitations, ...metrics}`). Visualisations are stored as private artifacts under
   least `VERIXA_COPY_MOVE_MIN_SHIFT` px apart is `detected` → POSSIBLE. Translated copies only;
   flat blocks excluded; mask of source/target blocks stored as `copy_move.png`.
 
+### Forensics: embedded thumbnail and JPEG ghosts
+
+Two more local heuristics run on every image (`services/image/thumbnail.py`,
+`services/image/double_compression.py`):
+
+- **Embedded thumbnail**: the EXIF IFD1 preview is decoded and compared with the downscaled
+  image. A stale thumbnail exposes a local edit (regions where only part of the picture
+  differs), a replaced picture (low correlation everywhere), or a flip, rotation or crop after
+  the thumbnail was made. Evidence: `forensics.thumbnail.region`, `.mismatch`, `.geometry` at
+  POSSIBLE, an independent family for the STRONG rule; `.consistent` and `.na` are UNKNOWN.
+  Most sharing paths strip thumbnails and any resave regenerates them, so absence proves nothing.
+- **JPEG ghosts (double compression)**: the image is re-saved at qualities 50 to 100 and the
+  per-block error curve is read for a second dip, the trace of an earlier, lower-quality save.
+  A dip everywhere is compression history (`forensics.double-compression.global`, POSSIBLE,
+  with the limitation that re-saving is routine); a dip in only part of the picture is a region
+  with a different history (`.localized`, POSSIBLE, sharing the ELA/compression family). The DC
+  coefficient histogram's periodicity corroborates the whole-image case. Large images are
+  centre-cropped, never resampled, because resampling destroys the block history.
+
+Both write their own column of `image_forensics`, store maps as private artifacts served by
+signed links, and appear on the Forensics tab, in the viewer and in the PDF.
+
 ### Evidence engine
 
 `services/evidence/engine.py` is a pure rules module: it reads the rows every pipeline step
