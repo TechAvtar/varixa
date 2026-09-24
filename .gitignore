@@ -30,12 +30,11 @@ htmlcov/
 dist/
 build/
 
-# Local data
+# Local data (runtime files only; never source directories that happen to share a name)
 *.db
 *.sqlite
 /data/
-uploads/
-storage/
+/services/api/data/
 
 # Editors / OS
 .vscode/
