@@ -30,6 +30,9 @@ class RawProvenance:
     capabilities: dict[str, Any] = field(default_factory=dict)
     # `--tree` text diagram of the manifest store (raw only; never interpreted).
     tree: str | None = None
+    # The asset points at a manifest hosted elsewhere and the engine did not fetch it
+    # (fetching is disabled). Host only; the path never leaves the adapter.
+    remote_manifest_host: str | None = None
 
 
 class ProvenanceInspector(Protocol):

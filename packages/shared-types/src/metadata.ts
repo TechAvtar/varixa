@@ -41,6 +41,8 @@ export interface NormalizedMetadata {
   original_document_id: string | null;
   derived_from_document_id: string | null;
   edit_history: EditEvent[];
+  /** Remote Content Credentials reference (XMP dcterms:provenance); recorded, never fetched. */
+  provenance_url: string | null;
   image_width: number | null;
   image_height: number | null;
   tag_counts: Record<string, number>;

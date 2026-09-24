@@ -94,6 +94,7 @@ class NormalizedProvenance:
     # None when no manifest exists (nothing to validate).
     valid_signature: bool | None = None
     signer: str | None = None
+    signer_common_name: str | None = None  # certificate subject CN (0.28+ engines report it)
     signature_alg: str | None = None
     signed_at: str | None = None  # as reported by the tool (RFC 3339)
     claim_generator: str | None = None
@@ -123,6 +124,10 @@ class NormalizedProvenance:
     # parent is an ordering conflict.
     manifest_chain: list[dict[str, Any]] = field(default_factory=list)
     manifest_order_conflict: bool = False
+    # Where the manifest came from: embedded | remote | sidecar | none | unknown.
+    manifest_location: str = "unknown"
+    # Host of a remote manifest the engine did not fetch (fetching is disabled).
+    remote_manifest_host: str | None = None
 
     def to_json(self) -> dict[str, Any]:
         return asdict(self)
@@ -135,20 +140,44 @@ def _str(value: Any, limit: int = 300) -> str | None:
     return text[:limit] or None
 
 
+def _agent_name(value: Any) -> str | None:
+    """`softwareAgent` is a string in v1 actions and {name, version} in v2."""
+    if isinstance(value, dict):
+        name, version = _str(value.get("name"), 200), _str(value.get("version"), 80)
+        return f"{name} {version}".strip() if name else None
+    return _str(value)
+
+
 def _empty_families() -> dict[str, list[str]]:
     return {"success": [], "informational": [], "failure": []}
 
 
+def _empty_families_full() -> dict[str, list[str]]:
+    return {"success": [], "informational": [], "failure": [], "trust": [], "identity": []}
+
+
 def _codes_from_results_block(block: Any) -> dict[str, list[str]]:
     """c2pa-rs `validation_results` block: {success: [...], informational: [...], failure: [...]}
-    where each entry is a status object. Codes only; explanations stay in raw."""
-    out = _empty_families()
+    where each entry is a status object. Codes only; explanations stay in raw.
+
+    The engine files an unlisted signer under *failure*; Verixa keeps `failure` for
+    integrity problems and moves trust and identity codes into their own families."""
+    out = _empty_families_full()
     if not isinstance(block, dict):
         return out
     for family in ("success", "informational", "failure"):
         for entry in (block.get(family) or [])[:MAX_CODES]:
             code = _str(entry.get("code"), 120) if isinstance(entry, dict) else None
-            if code:
+            if not code:
+                continue
+            kind = classify_code(code, _str(entry.get("explanation"), 500))
+            if kind == "trust":
+                out["trust"].append(code)
+            elif kind == "identity":
+                out["identity"].append(code)
+            elif family == "failure" and kind != "integrity":
+                out["informational"].append(code)
+            else:
                 out[family].append(code)
     return out
 
@@ -159,7 +188,7 @@ def _structured_validation(raw: RawProvenance) -> dict[str, Any]:
     validation: dict[str, Any] = {
         "state": raw.validation_state,
         "source": "validation_results" if raw.validation_results else "validation_status",
-        "active_manifest": _empty_families(),
+        "active_manifest": _empty_families_full(),
         "ingredients": {},
     }
     if raw.validation_results:
@@ -191,11 +220,12 @@ def _structured_validation(raw: RawProvenance) -> dict[str, Any]:
         elif family == "integrity":
             families["failure"].append(code)
         else:
-            families["informational"].append(code)
+            families[family].append(code)
     return validation
 
 
 _INFO_SIZE_RE = re.compile(r"Manifest store size = (\d+)")
+ACTION_LABELS = ("c2pa.actions", "c2pa.actions.v2")
 _INFO_COUNT_RE = re.compile(r"(One|\d+) manifests?", re.I)
 
 
@@ -214,7 +244,23 @@ def _parse_info(text: str | None) -> dict[str, Any]:
         out["validated"] = True
     elif "error" in text.lower():
         out["validated"] = False
+    if "Validation issues" in text:
+        out["issues"] = True
+    m = _INFO_URI_RE.search(text)
+    if m:
+        out["provenance_uri_kind"] = _uri_kind(m.group(1).strip())
     return out
+
+
+_INFO_URI_RE = re.compile(r"Provenance URI = (\S+)")
+
+
+def _uri_kind(uri: str) -> str:
+    if uri.startswith("self#jumbf"):
+        return "embedded"
+    if uri.startswith(("http://", "https://")):
+        return "remote"
+    return "other"
 
 
 def normalize_provenance(raw: RawProvenance) -> NormalizedProvenance:
@@ -223,6 +269,8 @@ def normalize_provenance(raw: RawProvenance) -> NormalizedProvenance:
     )
     n.warnings = list(raw.warnings)
     if not raw.present or not raw.summary:
+        n.remote_manifest_host = raw.remote_manifest_host
+        n.manifest_location = "remote" if raw.remote_manifest_host else "none"
         return n
 
     manifests = raw.summary.get("manifests") or {}
@@ -242,6 +290,7 @@ def normalize_provenance(raw: RawProvenance) -> NormalizedProvenance:
     sig = active.get("signature_info") or {}
     if isinstance(sig, dict):
         n.signer = _str(sig.get("issuer"))
+        n.signer_common_name = _str(sig.get("common_name"))
         n.signature_alg = _str(sig.get("alg"))
         n.signed_at = _str(sig.get("time"))
 
@@ -252,14 +301,14 @@ def normalize_provenance(raw: RawProvenance) -> NormalizedProvenance:
         if label:
             n.assertion_labels.append(label)
         data = assertion.get("data")
-        if label == "c2pa.actions" and isinstance(data, dict):
+        if label in ACTION_LABELS and isinstance(data, dict):
             for action in (data.get("actions") or [])[:MAX_ACTIONS]:
                 if isinstance(action, dict):
                     n.actions.append(
                         {
                             "action": _str(action.get("action")),
                             "when": _str(action.get("when")),
-                            "software_agent": _str(action.get("softwareAgent")),
+                            "software_agent": _agent_name(action.get("softwareAgent")),
                             "parameters": action.get("parameters"),
                         }
                     )
@@ -279,7 +328,14 @@ def normalize_provenance(raw: RawProvenance) -> NormalizedProvenance:
             n.validation_failures.append({"code": code, "explanation": explanation})
 
     n.validation = _structured_validation(raw)
+    # Newer engines list only problems in the flat status; fold the structured codes in so
+    # `validation_codes` is the complete picture whatever the engine generation.
+    for family in ("success", "informational", "trust", "identity", "failure"):
+        for code in n.validation["active_manifest"].get(family) or []:
+            if code not in n.validation_codes:
+                n.validation_codes.append(code)
     n.info = _parse_info(raw.info)
+    n.manifest_location = n.info.get("provenance_uri_kind") or "embedded"
     depth = read_depth(raw.summary, raw.detailed, n.active_manifest, classify_code)
     n.assertions = depth.assertions
     n.software_agents = depth.software_agents
@@ -306,6 +362,12 @@ def normalize_provenance(raw: RawProvenance) -> NormalizedProvenance:
 def provenance_limitations(n: NormalizedProvenance) -> list[str]:
     notes: list[str] = []
     if not n.has_c2pa:
+        if n.manifest_location == "remote":
+            notes.append(
+                "The file references content credentials hosted elsewhere. Verixa does not "
+                "fetch remote manifests, so nothing about them is asserted."
+            )
+            return notes
         notes.append(
             "No content credentials (C2PA) were found. This does not establish whether the "
             "file was edited, generated, or authentic; most images carry no credentials."

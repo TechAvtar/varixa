@@ -1,0 +1,10 @@
+# c2pa-rs settings handed to c2patool with `--settings` (engines that support it).
+#
+# Verixa never lets a subprocess reach the network on its own: remote manifests are not
+# fetched (the file's remote reference is surfaced instead) and OCSP lookups are off.
+# Trust evaluation itself is configured by Verixa in a later phase; nothing here adds anchors.
+version = 1
+
+[verify]
+remote_manifest_fetch = false
+ocsp_fetch = false

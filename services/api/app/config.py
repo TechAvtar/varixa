@@ -75,6 +75,10 @@ class Settings(BaseSettings):
     provenance_engine: Literal["auto", "c2patool", "none"] = "auto"
     c2patool_path: str | None = None
     c2patool_timeout_seconds: float = Field(default=30.0, ge=1, le=300)
+    # Let c2patool fetch manifests referenced by URL inside the asset. Off: a subprocess must
+    # never reach the network on the asset's say-so; the reference is reported instead.
+    # Refused in production (preflight). Engines older than 0.28 cannot switch it off.
+    c2pa_remote_manifest_fetch: bool = False
 
     # Near-duplicate threshold: max Hamming distance (bits) on pHash or dHash.
     fingerprint_near_threshold: int = Field(default=10, ge=0, le=64)
@@ -292,6 +296,10 @@ class Settings(BaseSettings):
             problems.append(f"VERIXA_CORS_ORIGINS must be https origins only: {insecure}")
         if self.metrics_enabled and self.metrics_token is None:
             problems.append("VERIXA_METRICS_TOKEN must be set while metrics are enabled")
+        if self.c2pa_remote_manifest_fetch:
+            problems.append(
+                "VERIXA_C2PA_REMOTE_MANIFEST_FETCH must be false (no subprocess network access)"
+            )
         return problems
 
     def ensure_local_dirs(self) -> None:

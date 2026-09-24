@@ -45,6 +45,10 @@ class NormalizedProvenanceResponse(BaseModel):
     ingredient_failures: int = 0
     manifest_chain: list[dict[str, Any]] = []
     manifest_order_conflict: bool = False
+    # T046: certificate subject CN (0.28+ engines) and where the manifest came from.
+    signer_common_name: str | None = None
+    manifest_location: str = "unknown"
+    remote_manifest_host: str | None = None
 
 
 class ImageProvenanceResponse(BaseModel):

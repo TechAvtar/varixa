@@ -28,15 +28,27 @@ _MAX_OUTPUT = 16 * 1024 * 1024
 _MAX_INFO = 4 * 1024
 _MAX_TREE = 64 * 1024
 _NO_CLAIM_MARKERS = ("No claim found", "no claim found", "no manifest")
+# 0.28 with fetching disabled refuses a remote reference; without it, it would try the network.
+_REMOTE_MARKERS = (
+    "must fetch remote manifests from url",
+    "could not fetch the remote manifest",
+    "Unable to fetch cloud manifest",
+)
+_URL_RE = re.compile(r"https?://[^\s'\"]+")
 # Only extensions c2patool understands for the formats Verixa accepts; anything else -> "bin".
 _SAFE_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "tif", "tiff"}
 _FLAG_RE = re.compile(r"(?m)^\s*(?:-\w,\s*)?(--[a-z][a-z0-9_-]*)")
 _SUBCOMMAND_RE = re.compile(r"(?m)^\s{2,}([a-z][a-z0-9_-]*)\s{2,}\S")
 
+# Newest pinned release first (the README's Windows install folder), then older layouts.
 _WINDOWS_CANDIDATES = (
+    Path.home() / "AppData/Local/Programs/c2patool-0.28.0/c2patool.exe",
     Path.home() / "AppData/Local/Programs/c2patool/c2patool/c2patool.exe",
     Path.home() / "AppData/Local/Programs/c2patool/c2patool.exe",
 )
+
+# c2pa-rs settings shipped with the adapter: no remote-manifest fetch, no OCSP.
+SETTINGS_FILE = Path(__file__).with_name("c2pa_settings.toml")
 
 
 def find_c2patool(configured: str | None = None) -> str | None:
@@ -96,10 +108,27 @@ _CAPABILITY_CACHE: dict[tuple[str, int], C2paToolCapabilities] = {}
 class C2paToolInspector:
     name = "c2patool"
 
-    def __init__(self, executable: str, *, temp_dir: Path, timeout_seconds: float = 30.0) -> None:
+    def __init__(
+        self,
+        executable: str,
+        *,
+        temp_dir: Path,
+        timeout_seconds: float = 30.0,
+        settings_file: Path | None = SETTINGS_FILE,
+    ) -> None:
         self._exe = executable
         self._temp_dir = temp_dir
         self._timeout = timeout_seconds
+        # None = let the engine use its defaults (which include fetching remote manifests).
+        self._settings_file = settings_file
+
+    def asset_args(self, path: Path, caps: C2paToolCapabilities) -> list[str]:
+        """Arguments every asset run starts with. Only a local path and, when the engine
+        supports it, our settings file: never a URL, never anything from the asset."""
+        args = [str(path)]
+        if self._settings_file is not None and caps.has_flag("--settings"):
+            args += ["--settings", str(self._settings_file)]
+        return args
 
     async def version(self) -> str:
         return (await self.capabilities()).version
@@ -136,7 +165,8 @@ class C2paToolInspector:
             await asyncio.to_thread(path.write_bytes, data)
             caps = await self.capabilities()
             version = caps.version
-            summary_out, summary_err, rc = await self._run([str(path)])
+            base = self.asset_args(path, caps)
+            summary_out, summary_err, rc = await self._run(base)
             summary_text = summary_out.decode("utf-8", "replace")
             err_text = summary_err.decode("utf-8", "replace")
             if any(marker in summary_text + err_text for marker in _NO_CLAIM_MARKERS):
@@ -146,6 +176,16 @@ class C2paToolInspector:
                     present=False,
                     capabilities=caps.to_json(),
                 )
+            remote_host = remote_host_from_error(summary_text + err_text)
+            if remote_host is not None:
+                return RawProvenance(
+                    engine=self.name,
+                    engine_version=version,
+                    present=False,
+                    warnings=["remote manifest reference not fetched"],
+                    capabilities=caps.to_json(),
+                    remote_manifest_host=remote_host,
+                )
             if rc != 0 and not summary_text.lstrip().startswith("{"):
                 first = next((ln.strip() for ln in err_text.splitlines() if ln.strip()), "")
                 raise ProvenanceInspectionError(
@@ -153,19 +193,21 @@ class C2paToolInspector:
                 )
             summary = _parse_json(summary_text, "summary")
 
-            detailed_out, detailed_err, _ = await self._run([str(path), "-d"])
+            detailed_out, detailed_err, _ = await self._run([*base, "-d"])
             detailed = _parse_json(detailed_out.decode("utf-8", "replace"), "detailed")
-            status = detailed.get("validation_status") or []
-            results = detailed.get("validation_results")
-            state = detailed.get("validation_state")
+            # 0.9.x reports validation in the detailed output only; 0.28+ reports the
+            # structured results (and the flat problem list) in both. Prefer detailed.
+            status = detailed.get("validation_status") or summary.get("validation_status") or []
+            results = detailed.get("validation_results") or summary.get("validation_results")
+            state = detailed.get("validation_state") or summary.get("validation_state")
 
             info: str | None = None
             if caps.has_flag("--info"):
-                info_out, _, _ = await self._run([str(path), "--info"])
+                info_out, _, _ = await self._run([*base, "--info"])
                 info = info_out.decode("utf-8", "replace").strip()[:_MAX_INFO] or None
             tree: str | None = None
             if caps.has_flag("--tree"):
-                tree_out, _, _ = await self._run([str(path), "--tree"])
+                tree_out, _, _ = await self._run([*base, "--tree"])
                 tree = tree_out.decode("utf-8", "replace").strip()[:_MAX_TREE] or None
 
             warnings = [
@@ -229,6 +271,19 @@ class C2paToolInspector:
         if rc < 0:  # killed by a signal (POSIX); Windows never reports negative codes
             raise _TransientError(f"c2patool was killed by signal {-rc}")
         return stdout, stderr, rc
+
+
+def remote_host_from_error(text: str) -> str | None:
+    """Host of the remote manifest the engine refused to fetch, or None when the output is
+    not that refusal. Only the host is returned: the URL stays out of logs and rows."""
+    if not any(marker in text for marker in _REMOTE_MARKERS):
+        return None
+    m = _URL_RE.search(text)
+    if not m:
+        return "unknown host"
+    from urllib.parse import urlsplit
+
+    return (urlsplit(m.group(0)).hostname or "unknown host")[:253]
 
 
 class _TransientError(Exception):

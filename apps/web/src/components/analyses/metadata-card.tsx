@@ -137,7 +137,10 @@ export function MetadataCard({ metadata }: { metadata: ImageMetadataResponse | n
               </dd>
             </dl>
 
-            {n.generator || n.digital_source_type || n.edit_history.length > 0 ? (
+            {n.generator ||
+            n.digital_source_type ||
+            n.provenance_url ||
+            n.edit_history.length > 0 ? (
               <section className="space-y-2 border-t pt-3" aria-labelledby="lineage-heading">
                 <h3 id="lineage-heading" className="text-sm font-medium">
                   Declared lineage
@@ -167,6 +170,16 @@ export function MetadataCard({ metadata }: { metadata: ImageMetadataResponse | n
                     <>
                       <dt className="text-muted-foreground">Digital source type</dt>
                       <dd className="font-mono text-xs">{n.digital_source_type}</dd>
+                    </>
+                  ) : null}
+                  {n.provenance_url ? (
+                    <>
+                      <dt className="text-muted-foreground">Remote credentials</dt>
+                      <dd className="text-xs">
+                        References a manifest hosted at{" "}
+                        <span className="font-mono">{new URL(n.provenance_url).hostname}</span>
+                        <span className="text-muted-foreground"> (recorded, never fetched)</span>
+                      </dd>
                     </>
                   ) : null}
                   {n.document_id || n.original_document_id || n.derived_from_document_id ? (

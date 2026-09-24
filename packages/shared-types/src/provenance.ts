@@ -57,6 +57,12 @@ export interface NormalizedProvenance {
   /** Every manifest in the store, active first, with signing times. */
   manifest_chain: ProvenanceManifestLink[];
   manifest_order_conflict: boolean;
+  /** Certificate subject common name (0.28+ engines). */
+  signer_common_name: string | null;
+  /** embedded | remote | sidecar | none | unknown */
+  manifest_location: string;
+  /** Host of a remote manifest the engine did not fetch (fetching is disabled). */
+  remote_manifest_host: string | null;
 }
 
 export interface ProvenanceHashCoverage {

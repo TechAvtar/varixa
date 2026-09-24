@@ -245,3 +245,40 @@ async def test_upload_surfaces_lineage_in_metadata_evidence_and_timeline(
     timeline = (await client.get(f"/analysis/{aid}/timeline", headers=headers)).json()["events"]
     edits = [e for e in timeline if e["event_type"] == "metadata.edit"]
     assert len(edits) == 2 and all(e["tz_known"] for e in edits)
+
+
+# -- remote manifest reference (XMP dcterms:provenance) ---------------------------------------
+
+XMP_REMOTE = (
+    b'<?xpacket begin="\xef\xbb\xbf" id="W5M0MpCehiHzreSzNTczkc9d"?>'
+    b'<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF '
+    b'xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description rdf:about="" '
+    b'xmlns:dcterms="http://purl.org/dc/terms/" '
+    b'dcterms:provenance="https://cdn.example.net/manifests/abc.c2pa"/>'
+    b"</rdf:RDF></x:xmpmeta>"
+)
+
+
+def jpeg_with_remote_reference() -> bytes:
+    buf = io.BytesIO()
+    Image.new("RGB", (48, 32), (120, 90, 60)).save(buf, format="JPEG", xmp=XMP_REMOTE)
+    return buf.getvalue()
+
+
+def test_remote_manifest_reference_is_recorded_not_fetched() -> None:
+    raw = RawMetadata(
+        engine="exiftool",
+        engine_version="x",
+        groups={"XMP": {"XMP-dcterms:Provenance": "https://cdn.example.net/manifests/abc.c2pa"}},
+    )
+    assert extract_lineage(raw).provenance_url == "https://cdn.example.net/manifests/abc.c2pa"
+    plain = RawMetadata(
+        engine="exiftool", engine_version="x", groups={"XMP": {"XMP-dcterms:Provenance": "urn:x"}}
+    )
+    assert extract_lineage(plain).provenance_url is None
+    assert normalize_metadata(raw).provenance_url == "https://cdn.example.net/manifests/abc.c2pa"
+
+
+async def test_pillow_reads_remote_reference() -> None:
+    raw = await PillowExtractor().extract(jpeg_with_remote_reference())
+    assert extract_lineage(raw).provenance_url == "https://cdn.example.net/manifests/abc.c2pa"

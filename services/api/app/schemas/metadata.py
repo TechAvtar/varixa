@@ -42,6 +42,8 @@ class NormalizedMetadataResponse(BaseModel):
     original_document_id: str | None = None
     derived_from_document_id: str | None = None
     edit_history: list[dict[str, Any]] = Field(default_factory=list)
+    # Remote Content Credentials reference (XMP dcterms:provenance); recorded, never fetched.
+    provenance_url: str | None = None
     image_width: int | None
     image_height: int | None
     tag_counts: dict[str, int]

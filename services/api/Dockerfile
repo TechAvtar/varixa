@@ -15,7 +15,7 @@ RUN python -m venv /opt/venv && /opt/venv/bin/pip install --upgrade pip \
 
 FROM python:3.12-slim AS runtime
 
-ARG C2PATOOL_VERSION=0.9.12
+ARG C2PATOOL_VERSION=0.28.0
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PATH="/opt/venv/bin:$PATH" \
     VERIXA_DATA_DIR=/var/lib/verixa
 
@@ -23,7 +23,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PATH="/opt/venv/bin:$PATH" \
 RUN apt-get update \
     && apt-get install -y --no-install-recommends libimage-exiftool-perl curl ca-certificates \
     && curl -sSL -o /tmp/c2patool.tar.gz \
-        "https://github.com/contentauth/c2patool/releases/download/v${C2PATOOL_VERSION}/c2patool-v${C2PATOOL_VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
+        "https://github.com/contentauth/c2patool/releases/download/v${C2PATOOL_VERSION}/v${C2PATOOL_VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
     && tar -xzf /tmp/c2patool.tar.gz -C /usr/local/bin --strip-components=1 c2patool/c2patool \
     && rm /tmp/c2patool.tar.gz \
     && apt-get purge -y curl && apt-get autoremove -y && rm -rf /var/lib/apt/lists/* \

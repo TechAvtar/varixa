@@ -87,6 +87,7 @@ def test_production_problems_ignored_outside_production(tmp_path: Path) -> None:
         ({"api_public_url": "http://app.example.com"}, "VERIXA_API_PUBLIC_URL"),
         ({"cors_origins": ["http://localhost:3000"]}, "VERIXA_CORS_ORIGINS"),
         ({"metrics_token": None}, "VERIXA_METRICS_TOKEN"),
+        ({"c2pa_remote_manifest_fetch": True}, "VERIXA_C2PA_REMOTE_MANIFEST_FETCH"),
     ],
 )
 def test_production_problems_name_the_variable(overrides: dict[str, Any], fragment: str) -> None:

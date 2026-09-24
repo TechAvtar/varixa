@@ -93,6 +93,8 @@ class Lineage:
     original_document_id: str | None = None
     derived_from_document_id: str | None = None
     edit_history: list[EditEvent] = field(default_factory=list)
+    # XMP dcterms:provenance: a remote manifest reference (recorded, never fetched).
+    provenance_url: str | None = None
 
     @property
     def declares_algorithmic_source(self) -> bool:
@@ -109,6 +111,7 @@ class Lineage:
             "original_document_id": self.original_document_id,
             "derived_from_document_id": self.derived_from_document_id,
             "edit_history": [asdict(e) for e in self.edit_history],
+            "provenance_url": self.provenance_url,
         }
 
 
@@ -181,6 +184,15 @@ def short_source_type(value: str) -> str:
     """`http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia` ->
     `trainedAlgorithmicMedia`. Shared with the C2PA reader (signed action source types)."""
     return value.strip().removeprefix(_SOURCE_TYPE_PREFIX).rstrip("/").split("/")[-1][:80]
+
+
+def provenance_url(raw: RawMetadata) -> str | None:
+    """A remote Content Credentials manifest is referenced from XMP ``dcterms:provenance``.
+    Recorded, never fetched: the host is what the report shows."""
+    value = _text(_prop(xmp_properties(raw), "provenance"), 500)
+    if not value or not value.lower().startswith(("http://", "https://")):
+        return None
+    return value
 
 
 def digital_source_type(raw: RawMetadata) -> str | None:
@@ -261,6 +273,7 @@ def extract_lineage(raw: RawMetadata) -> Lineage:
         original_document_id=_text(_prop(props, "OriginalDocumentID"), 120),
         derived_from_document_id=_derived_from(props),
         edit_history=edit_history(raw),
+        provenance_url=provenance_url(raw),
     )
 
 

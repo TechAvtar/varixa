@@ -543,3 +543,37 @@ async def test_unhandled_errors_return_a_generic_envelope(
     assert r.status_code == 500
     body = r.json()["error"]
     assert body["code"] == "INTERNAL_ERROR" and "hunter2" not in r.text and body["request_id"]
+
+
+# -- T046: remote manifest references never trigger a fetch ----------------------------------
+
+
+async def test_remote_manifest_reference_is_reported_without_any_network(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A file that points at a manifest hosted elsewhere gets an UNKNOWN record naming the
+    host; nothing in the pipeline opens a socket for it."""
+    import socket
+
+    from tests.test_lineage import jpeg_with_remote_reference
+
+    def refuse(*args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("network access attempted during analysis")
+
+    monkeypatch.setattr(socket, "create_connection", refuse)
+    monkeypatch.setattr(socket.socket, "connect", refuse)
+    headers = await auth_headers(client)
+    r = await client.post(
+        "/analysis/image",
+        headers=headers,
+        files={"file": ("remote.jpg", jpeg_with_remote_reference(), "image/jpeg")},
+    )
+    assert r.status_code == 201, r.text
+    aid = r.json()["id"]
+    detail = (await client.get(f"/analysis/{aid}", headers=headers)).json()
+    assert detail["status"] == "completed"
+    body = (await client.get(f"/analysis/{aid}/evidence", headers=headers)).json()
+    by = {i["rule"]: i for i in body["items"]}
+    assert by["provenance.remote"]["level"] == "UNKNOWN"
+    assert by["provenance.remote"]["data"] == {"host": "cdn.example.net"}
+    assert "abc.c2pa" not in str(body)  # the path never leaves the metadata row

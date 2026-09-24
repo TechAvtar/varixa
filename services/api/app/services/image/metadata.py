@@ -72,6 +72,7 @@ class NormalizedMetadata:
     original_document_id: str | None = None
     derived_from_document_id: str | None = None
     edit_history: list[dict[str, Any]] = field(default_factory=list)
+    provenance_url: str | None = None
     image_width: int | None = None
     image_height: int | None = None
     tag_counts: dict[str, int] = field(default_factory=dict)
@@ -281,6 +282,7 @@ def normalize_metadata(raw: RawMetadata) -> NormalizedMetadata:
         "original_document_id",
         "derived_from_document_id",
         "edit_history",
+        "provenance_url",
     ):
         setattr(n, key, lineage[key])
     if n.software is None and n.creator_tool:

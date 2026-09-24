@@ -14,6 +14,7 @@ from app.providers.provenance import (
 )
 from app.providers.provenance.base import RawProvenance
 from app.providers.provenance.c2patool import (
+    SETTINGS_FILE,
     C2paToolCapabilities,
     _TransientError,
     parse_help,
@@ -150,13 +151,18 @@ async def test_c2patool_reports_absence_for_plain_image(tmp_path: Path) -> None:
 
 @needs_c2patool
 async def test_c2patool_never_trusts_the_extension(tmp_path: Path) -> None:
-    """An unexpected extension is replaced by .bin (never used as a path), and the
-    resulting c2patool error surfaces as an inspection error, not a crash."""
+    """An unexpected extension is replaced by .bin (never used as a path). Older engines
+    refuse the unknown extension (an inspection error, not a crash); 0.28 sniffs the bytes
+    and reports no claim. Either way nothing is written outside the temp dir."""
     assert C2PATOOL is not None
     inspector = C2paToolInspector(C2PATOOL, temp_dir=tmp_path / "t")
     hostile = "../.." + chr(92) + "png; rm -rf"
-    with pytest.raises(ProvenanceInspectionError, match="could not read"):
-        await inspector.inspect(make_image("PNG"), extension=hostile)
+    try:
+        raw = await inspector.inspect(make_image("PNG"), extension=hostile)
+    except ProvenanceInspectionError as exc:
+        assert "could not read" in str(exc)
+    else:
+        assert raw.present is False
     assert not list((tmp_path / "t").glob("*")) and not list(tmp_path.glob("*.png"))
 
 
@@ -342,7 +348,7 @@ def test_untrusted_signer_does_not_read_as_altered_manifest() -> None:
         _raw(raw.summary, detailed={"validation_status": status}, validation_status=status)
     )
     assert n.valid_signature is True and n.validation_failures == []
-    assert "signingCredential.untrusted" in n.validation["active_manifest"]["informational"]
+    assert "signingCredential.untrusted" in n.validation["active_manifest"]["trust"]
 
 
 def test_structured_validation_from_flat_status() -> None:
@@ -387,7 +393,8 @@ def test_structured_validation_from_validation_results() -> None:
     )
     assert n.valid_signature is True  # signature validated, no active-manifest failure
     assert n.validation["state"] == "Valid" and n.validation["source"] == "validation_results"
-    assert n.validation["active_manifest"]["informational"] == ["signingCredential.untrusted"]
+    assert n.validation["active_manifest"]["trust"] == ["signingCredential.untrusted"]
+    assert n.validation["active_manifest"]["informational"] == []
     key = "self#jumbf=c2pa.assertions/c2pa.ingredient"
     assert n.validation["ingredients"][key]["failure"] == ["assertion.dataHash.mismatch"]
 
@@ -659,7 +666,7 @@ def test_depth_is_empty_for_a_plain_signed_manifest() -> None:
 async def test_c2patool_tree_is_captured(tmp_path: Path) -> None:
     assert C2PATOOL is not None
     raw = await C2paToolInspector(C2PATOOL, temp_dir=tmp_path).inspect(SIGNED, extension="jpg")
-    assert raw.tree and "Tree View" in raw.tree and "c2pa.hash.data" in raw.tree
+    assert raw.tree and "Tree View" in raw.tree  # 0.28 lists assertions, 0.9 the hash too
     n = normalize_provenance(raw)
     assert n.assertions["hash_data"]["exclusion_count"] == 1
 
@@ -675,3 +682,178 @@ async def test_signed_upload_exposes_depth_and_tree(client: AsyncClient) -> None
     assert body["tree"] and body["tree"].startswith("Tree View")
     assert body["normalized"]["assertions"]["hash_data"]["alg"] == "sha256"
     assert body["normalized"]["manifest_chain"][0]["signer"] == "C2PA Test Signing Cert"
+
+
+# -- Phase 3: c2patool 0.28 output, settings file, remote manifests -------------------------
+
+
+def _load_json(name: str) -> Any:
+    import json
+
+    return json.loads((FIXTURES / "json" / name).read_text("utf-8"))
+
+
+def raw_0_28(*, trusted: bool = False, info: str | None = None) -> RawProvenance:
+    summary = _load_json("summary_0.28.0.json")
+    detailed = _load_json("detailed_trusted_0.28.0.json" if trusted else "detailed_0.28.0.json")
+    return RawProvenance(
+        engine="c2patool",
+        engine_version="0.28.0",
+        present=True,
+        summary=summary,
+        detailed=detailed,
+        validation_status=summary.get("validation_status") or [],
+        validation_results=detailed.get("validation_results"),
+        validation_state=detailed.get("validation_state"),
+        info=info,
+    )
+
+
+def test_0_28_output_normalises_with_trust_kept_apart() -> None:
+    """0.28 checks trust by default and files an unlisted signer under *failure*; Verixa
+    keeps integrity and trust apart, so the manifest is still intact (VERIFIED-eligible)."""
+    n = normalize_provenance(raw_0_28())
+    assert n.valid_signature is True and n.validation_failures == []
+    assert n.validation["state"] == "Valid" and n.validation["source"] == "validation_results"
+    fam = n.validation["active_manifest"]
+    assert fam["failure"] == [] and "signingCredential.untrusted" in fam["trust"]
+    assert "claimSignature.validated" in fam["success"]
+    assert n.signer == "C2PA Test Signing Cert" and n.signer_common_name == "C2PA Signer"
+    assert [a["action"] for a in n.actions] == ["c2pa.created", "c2pa.drawing"]  # actions.v2
+    assert n.assertions["hash_data"]["exclusion_count"] == 1
+    assert n.manifest_location == "embedded"
+
+
+def test_0_28_trusted_state_is_carried() -> None:
+    n = normalize_provenance(raw_0_28(trusted=True))
+    assert n.validation["state"] == "Trusted"
+    assert "signingCredential.untrusted" not in n.validation["active_manifest"]["trust"]
+
+
+def test_info_reports_location_and_issues() -> None:
+    info = (
+        "Information for \nProvenance URI = https://cdn.example.net/manifests/abc.c2pa\n"
+        "Manifest store size = 10 (1% of file size 100)\nValidation issues:\n"
+        "   signingCredential.untrusted\nOne manifest"
+    )
+    n = normalize_provenance(raw_0_28(info=info))
+    assert n.info["provenance_uri_kind"] == "remote" and n.info["issues"] is True
+    assert n.manifest_location == "remote"
+    assert (
+        normalize_provenance(
+            RawProvenance(engine="c2patool", engine_version="0.28.0", present=False)
+        ).manifest_location
+        == "none"
+    )
+
+
+def test_v2_software_agent_objects_are_flattened() -> None:
+    raw = raw_signed()
+    assert raw.summary is not None
+    manifest = raw.summary["manifests"]["urn:a"]
+    manifest["assertions"][1] = {
+        "label": "c2pa.actions.v2",
+        "data": {
+            "actions": [
+                {"action": "c2pa.edited", "softwareAgent": {"name": "Editor", "version": "2"}}
+            ]
+        },
+    }
+    n = normalize_provenance(raw)
+    assert n.actions == [
+        {"action": "c2pa.edited", "when": None, "software_agent": "Editor 2", "parameters": None}
+    ]
+
+
+def test_asset_args_pass_our_settings_and_never_a_url(tmp_path: Path) -> None:
+    caps_new = C2paToolCapabilities(
+        version="0.28.0", flags=frozenset({"--settings", "--info"}), subcommands=frozenset()
+    )
+    caps_old = C2paToolCapabilities(
+        version="0.9.12", flags=frozenset({"--info"}), subcommands=frozenset()
+    )
+    asset = tmp_path / "c2pa-abc.jpg"
+    inspector = C2paToolInspector("c2patool", temp_dir=tmp_path)
+    args = inspector.asset_args(asset, caps_new)
+    assert args == [str(asset), "--settings", str(SETTINGS_FILE)]
+    assert inspector.asset_args(asset, caps_old) == [str(asset)]  # flag unknown -> not passed
+    assert not any(a.startswith(("http://", "https://")) for a in args)
+    # Explicit opt-in (never in production) leaves the engine defaults alone.
+    opt_in = C2paToolInspector("c2patool", temp_dir=tmp_path, settings_file=None)
+    assert opt_in.asset_args(asset, caps_new) == [str(asset)]
+
+
+def test_shipped_settings_disable_engine_fetching() -> None:
+    text = SETTINGS_FILE.read_text("utf-8")
+    assert "remote_manifest_fetch = false" in text and "ocsp_fetch = false" in text
+
+
+@needs_c2patool
+async def test_c2patool_0_28_reports_state_and_settings_are_accepted(tmp_path: Path) -> None:
+    assert C2PATOOL is not None
+    inspector = C2paToolInspector(C2PATOOL, temp_dir=tmp_path)
+    caps = await inspector.capabilities()
+    raw = await inspector.inspect(SIGNED, extension="jpg")
+    n = normalize_provenance(raw)
+    assert n.valid_signature is True and n.validation_failures == []
+    if caps.has_flag("--settings"):
+        assert raw.validation_state in {"Valid", "Trusted"}
+        assert raw.capabilities["version"].split(".")[1].isdigit()
+        assert int(raw.capabilities["version"].split(".")[1]) >= 28
+    else:  # an older engine on a developer machine
+        assert raw.validation_state is None
+
+
+# -- Phase 3: remote references the engine refuses to fetch ----------------------------------
+
+
+def test_remote_host_from_error_keeps_only_the_host() -> None:
+    from app.providers.provenance.c2patool import remote_host_from_error
+
+    text = "Error: must fetch remote manifests from url https://cdn.example.net/m/abc.c2pa?t=1"
+    assert remote_host_from_error(text) == "cdn.example.net"
+    assert remote_host_from_error("Error: No claim found") is None
+    assert remote_host_from_error("Unable to fetch cloud manifest. (file size = 998)") == (
+        "unknown host"
+    )
+
+
+def test_engine_refusal_becomes_a_remote_location() -> None:
+    raw = RawProvenance(
+        engine="c2patool",
+        engine_version="0.28.0",
+        present=False,
+        remote_manifest_host="cdn.example.net",
+        warnings=["remote manifest reference not fetched"],
+    )
+    n = normalize_provenance(raw)
+    assert n.has_c2pa is False and n.manifest_location == "remote"
+    assert n.remote_manifest_host == "cdn.example.net"
+    assert any("does not fetch remote manifests" in x for x in provenance_limitations(n))
+
+
+@needs_c2patool
+async def test_c2patool_never_fetches_a_remote_manifest(tmp_path: Path) -> None:
+    """A JPEG that points at a hosted manifest: 0.28 with our settings refuses (host recorded);
+    0.9.x has no manifest store to read and reports absence. Neither touches the network."""
+    import socket
+
+    from tests.test_lineage import jpeg_with_remote_reference
+
+    assert C2PATOOL is not None
+    inspector = C2paToolInspector(C2PATOOL, temp_dir=tmp_path)
+    caps = await inspector.capabilities()
+    original = socket.create_connection
+
+    def refuse(*args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("network access attempted")
+
+    socket.create_connection = refuse
+    try:
+        raw = await inspector.inspect(jpeg_with_remote_reference(), extension="jpg")
+    finally:
+        socket.create_connection = original
+    assert raw.present is False
+    if caps.has_flag("--settings"):
+        assert raw.remote_manifest_host == "cdn.example.net"
+        assert normalize_provenance(raw).manifest_location == "remote"

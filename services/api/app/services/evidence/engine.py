@@ -18,6 +18,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Any, Literal
+from urllib.parse import urlsplit
 
 from app.config import Settings
 from app.enums import EvidenceLevel
@@ -316,9 +317,45 @@ def _file_rules(o: Observations, t: EvidenceThresholds) -> list[EvidenceDraft]:
     ]
 
 
+def _remote_reference_rule(o: Observations) -> list[EvidenceDraft]:
+    """The file points at a manifest hosted elsewhere (XMP dcterms:provenance, or the engine's
+    refusal to fetch it). Verixa never fetches it: the record says so and asserts nothing
+    about the remote manifest. One record, whichever side saw the reference."""
+    m = o.metadata
+    url = (getattr(m, "normalized_json", None) or {}).get("provenance_url") if m else None
+    host = (urlsplit(str(url)).hostname or "unknown host") if url else None
+    refs = ["step:metadata", "row:image_metadata"]
+    source = "xmp"
+    p = o.provenance
+    engine_json = (getattr(p, "normalized_json", None) or {}) if p is not None else {}
+    engine_host = engine_json.get("remote_manifest_host")
+    if engine_host and p is not None:
+        host = host or str(engine_host)
+        refs = ["step:provenance", "row:image_provenance", *refs]
+        source = f"c2pa/{p.engine}"
+    if not host:
+        return []
+    return [
+        EvidenceDraft(
+            rule="provenance.remote",
+            category="provenance",
+            level=EvidenceLevel.UNKNOWN,
+            kind="unknown",
+            claim=f"The file references a remote Content Credentials manifest at {host}.",
+            source=source,
+            detail="Verixa does not fetch remote manifests; only the reference is recorded.",
+            limitation="Nothing about the referenced manifest is asserted: it may or may not "
+            "exist, validate, or describe this file.",
+            refs=refs,
+            data={"host": host},
+        )
+    ]
+
+
 def _provenance_rules(o: Observations, t: EvidenceThresholds) -> list[EvidenceDraft]:
     p = o.provenance
     refs = ["step:provenance", *_call_refs(o.provider_calls, "provenance.")]
+    remote = _remote_reference_rule(o)
     if p is None:
         return [
             EvidenceDraft(
@@ -330,10 +367,13 @@ def _provenance_rules(o: Observations, t: EvidenceThresholds) -> list[EvidenceDr
                 source="c2pa",
                 limitation="No C2PA engine ran for this analysis.",
                 refs=["step:provenance"],
-            )
+            ),
+            *remote,
         ]
     n = p.normalized_json or {}
     src = f"c2pa/{p.engine}"
+    if not p.has_c2pa and n.get("manifest_location") == "remote":
+        return remote  # the reference is the whole story; "absent" would misdescribe it
     if not p.has_c2pa:
         return [
             EvidenceDraft(
@@ -347,7 +387,8 @@ def _provenance_rules(o: Observations, t: EvidenceThresholds) -> list[EvidenceDr
                 "most images carry none.",
                 refs=refs,
                 provider_version=p.engine_version,
-            )
+            ),
+            *remote,
         ]
     assertions = n.get("assertions") or {}
     hash_data = assertions.get("hash_data") or {}
@@ -401,7 +442,7 @@ def _provenance_rules(o: Observations, t: EvidenceThresholds) -> list[EvidenceDr
             provider_version=p.engine_version,
             data={"validation_failures": failures},
         )
-    return [head, *_provenance_declaration_rules(p, n, src, refs, t)]
+    return [head, *_provenance_declaration_rules(p, n, src, refs, t), *remote]
 
 
 def _provenance_detail(claim_generator: str | None, hash_data: dict[str, Any]) -> str | None:

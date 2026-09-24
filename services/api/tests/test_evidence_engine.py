@@ -630,3 +630,54 @@ def test_new_provenance_rules_have_ceilings() -> None:
         "provenance.ingredient.invalid",
     ):
         assert rule in LEVEL_CEILING and LEVEL_CEILING[rule] in {"STRONG", "POSSIBLE"}
+
+
+# -- T046: remote manifest reference ---------------------------------------------------------
+
+
+def test_remote_manifest_reference_is_unknown_and_names_only_the_host() -> None:
+    meta = Row(
+        engine="pillow",
+        engine_version="12",
+        software=None,
+        camera_make=None,
+        camera_model=None,
+        normalized_json={
+            "has_exif": False,
+            "provenance_url": "https://cdn.example.net/manifests/abc.c2pa?token=secret",
+        },
+    )
+    absent = Row(
+        engine="c2patool", engine_version="0.28", has_c2pa=False, valid_signature=None,
+        signer=None, signed_at=None, claim_generator=None, normalized_json={},
+    )  # fmt: skip
+    drafts = build_evidence(Observations("image", provenance=absent, metadata=meta), T)
+    d = by_rule(drafts, "provenance.remote")
+    assert d.level == "UNKNOWN" and d.kind == "unknown" and d.data == {"host": "cdn.example.net"}
+    assert "token" not in d.claim and "token" not in str(d.data)
+    assert "does not fetch" in (d.detail or "")
+    # Also when no engine ran at all.
+    drafts = build_evidence(Observations("image", metadata=meta), T)
+    assert "provenance.remote" in rules(drafts) and "provenance.uninspected" in rules(drafts)
+    # And never without a reference.
+    meta.normalized_json = {"has_exif": False}
+    assert "provenance.remote" not in rules(build_evidence(Observations("image", metadata=meta), T))
+
+
+def test_engine_side_remote_reference_replaces_absent() -> None:
+    remote = Row(
+        engine="c2patool",
+        engine_version="0.28.0",
+        has_c2pa=False,
+        valid_signature=None,
+        signer=None,
+        signed_at=None,
+        claim_generator=None,
+        normalized_json={"manifest_location": "remote", "remote_manifest_host": "cdn.example.net"},
+    )
+    drafts = build_evidence(Observations("image", provenance=remote), T)
+    assert "provenance.absent" not in rules(drafts)
+    d = by_rule(drafts, "provenance.remote")
+    assert d.source == "c2pa/c2patool" and d.data == {"host": "cdn.example.net"}
+    assert "step:provenance" in d.refs and "row:image_metadata" in d.refs
+    assert rules(drafts).count("provenance.remote") == 1
