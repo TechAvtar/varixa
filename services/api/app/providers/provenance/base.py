@@ -33,6 +33,15 @@ class RawProvenance:
     # The asset points at a manifest hosted elsewhere and the engine did not fetch it
     # (fetching is disabled). Host only; the path never leaves the adapter.
     remote_manifest_host: str | None = None
+    # Trust run (separate from integrity): whether the signing certificate chains to the
+    # configured trust list. `trust_state` is the engine's overall state when it reports
+    # one (Invalid | Valid | Trusted); the status list / results carry the trust codes.
+    trust_evaluated: bool = False
+    trust_mode: str | None = None
+    trust_list_version: str | None = None
+    trust_state: str | None = None
+    trust_status: list[dict[str, Any]] = field(default_factory=list)
+    trust_results: dict[str, Any] | None = None
 
 
 class ProvenanceInspector(Protocol):

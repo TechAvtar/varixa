@@ -136,3 +136,17 @@ def test_blank_secret_key_falls_back_to_the_dev_default_outside_production(tmp_p
 def test_blank_secret_key_refused_in_production() -> None:
     with pytest.raises(ValidationError, match="VERIXA_SECRET_KEY"):
         _production(secret_key="")
+
+
+def test_trust_paths_must_be_local_files(tmp_path: Path) -> None:
+    with pytest.raises(ValidationError, match="must be a local file, not a URL"):
+        _settings(c2pa_trust_anchors_path="https://example.net/anchors.pem")
+    with pytest.raises(ValidationError, match="does not exist"):
+        _settings(c2pa_trust_anchors_path=tmp_path / "missing.pem")
+    with pytest.raises(ValidationError, match="custom needs"):
+        _settings(c2pa_trust_mode="custom")
+    pem = tmp_path / "anchors.pem"
+    pem.write_text("-----BEGIN CERTIFICATE-----\nMA==\n-----END CERTIFICATE-----\n")
+    s = _settings(c2pa_trust_mode="custom", c2pa_trust_anchors_path=pem)
+    assert s.c2pa_trust_anchors_path == pem
+    assert _settings().c2pa_trust_mode == "bundled"

@@ -85,6 +85,23 @@ def _table(rows: Sequence[Sequence[Any]], widths: Sequence[float], *, header: bo
     return t
 
 
+def _trust_rows(p: dict[str, Any]) -> list[tuple[str, Any]]:
+    """Signer trust (T047), kept apart from integrity; empty for rows without a trust run."""
+    trust = p.get("trust") or {}
+    if not trust.get("evaluated"):
+        return [("Signer trusted", "not evaluated")]
+    verdict = p.get("trusted")
+    label = (
+        "yes (on the trust list)"
+        if verdict
+        else ("no (not listed)" if verdict is False else "inconclusive")
+    )
+    listed = f"{trust.get('mode') or 'configured'}"
+    if trust.get("list_version"):
+        listed += f" · version {trust['list_version']}"
+    return [("Signer trusted", label), ("Trust list", listed)]
+
+
 def _provenance_depth_rows(p: dict[str, Any]) -> list[tuple[str, Any]]:
     """Signed declarations and the ingredient tree (T045); empty for pre-T045 rows."""
     rows: list[tuple[str, Any]] = []
@@ -430,6 +447,7 @@ def render_pdf(b: ReportBundle) -> tuple[bytes, int]:
                     ("Credentials present", "yes" if p.get("has_c2pa") else "no"),
                     ("Signature valid", _yes_no(p.get("valid_signature"))),
                     ("Signer (as stated)", p.get("signer")),
+                    *_trust_rows(p),
                     ("Signed at", p.get("signed_at")),
                     ("Claim generator", p.get("claim_generator")),
                     *_provenance_depth_rows(p),

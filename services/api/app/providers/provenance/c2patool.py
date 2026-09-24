@@ -11,8 +11,10 @@ by comparing version numbers; a renamed flag simply disables a feature.
 """
 
 import asyncio
+import hashlib
 import json
 import logging
+import os
 import re
 import shutil
 import uuid
@@ -49,6 +51,69 @@ _WINDOWS_CANDIDATES = (
 
 # c2pa-rs settings shipped with the adapter: no remote-manifest fetch, no OCSP.
 SETTINGS_FILE = Path(__file__).with_name("c2pa_settings.toml")
+# Official C2PA trust list bundled with the adapter (refreshed by scripts/refresh_trust_list.py).
+BUNDLED_TRUST_DIR = Path(__file__).with_name("trust")
+BUNDLED_TRUST_PEM = BUNDLED_TRUST_DIR / "C2PA-TRUST-LIST.pem"
+BUNDLED_TRUST_META = BUNDLED_TRUST_DIR / "C2PA-TRUST-LIST.meta.json"
+
+
+@dataclass(frozen=True)
+class TrustFiles:
+    """Local trust material for the engine's trust run. Files only, never URLs."""
+
+    mode: str  # bundled | custom
+    anchors: Path | None = None
+    allowed_list: Path | None = None
+    trust_config: Path | None = None
+    list_version: str | None = None
+
+    @property
+    def cwd(self) -> Path:
+        first = self.anchors or self.allowed_list or self.trust_config
+        assert first is not None
+        return first.parent
+
+    def args(self) -> list[str]:
+        """`trust` subcommand options with paths *relative to cwd*: the engine parses these
+        options as URL-or-relative-path, so an absolute Windows path would be read as a URL."""
+        out: list[str] = []
+        for flag, path in (
+            ("--trust_anchors", self.anchors),
+            ("--allowed_list", self.allowed_list),
+            ("--trust_config", self.trust_config),
+        ):
+            if path is None:
+                continue
+            try:
+                rel = os.path.relpath(path, self.cwd)
+            except ValueError as exc:  # different drives on Windows
+                raise ProvenanceInspectionError(
+                    "trust files must live on the same drive/volume"
+                ) from exc
+            out += [flag, rel]
+        return out
+
+
+def file_version(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()[:12]
+
+
+def bundled_trust_files() -> TrustFiles | None:
+    if not BUNDLED_TRUST_PEM.is_file():
+        return None
+    version: str | None = None
+    if BUNDLED_TRUST_META.is_file():
+        try:
+            meta = json.loads(BUNDLED_TRUST_META.read_text("utf-8"))
+            digest = meta.get("sha256")
+            version = str(digest)[:12] if isinstance(digest, str) else None
+        except (OSError, ValueError):
+            version = None
+    return TrustFiles(
+        mode="bundled",
+        anchors=BUNDLED_TRUST_PEM,
+        list_version=version or file_version(BUNDLED_TRUST_PEM),
+    )
 
 
 def find_c2patool(configured: str | None = None) -> str | None:
@@ -115,12 +180,19 @@ class C2paToolInspector:
         temp_dir: Path,
         timeout_seconds: float = 30.0,
         settings_file: Path | None = SETTINGS_FILE,
+        trust: TrustFiles | None = None,
     ) -> None:
         self._exe = executable
         self._temp_dir = temp_dir
         self._timeout = timeout_seconds
         # None = let the engine use its defaults (which include fetching remote manifests).
         self._settings_file = settings_file
+        # None = trust not evaluated (reported as such); otherwise a second, separate run.
+        self._trust = trust
+
+    @property
+    def trust(self) -> TrustFiles | None:
+        return self._trust
 
     def asset_args(self, path: Path, caps: C2paToolCapabilities) -> list[str]:
         """Arguments every asset run starts with. Only a local path and, when the engine
@@ -160,7 +232,8 @@ class C2paToolInspector:
         if ext not in _SAFE_EXTENSIONS:
             ext = "bin"
         self._temp_dir.mkdir(parents=True, exist_ok=True)
-        path = self._temp_dir / f"c2pa-{uuid.uuid4().hex}.{ext}"
+        # Absolute: the trust run changes the working directory to the trust files' folder.
+        path = (self._temp_dir / f"c2pa-{uuid.uuid4().hex}.{ext}").resolve()
         try:
             await asyncio.to_thread(path.write_bytes, data)
             caps = await self.capabilities()
@@ -215,6 +288,38 @@ class C2paToolInspector:
                 for line in (summary_err + detailed_err).decode("utf-8", "replace").splitlines()
                 if line.strip()
             ]
+
+            trust_evaluated = False
+            trust_state: str | None = None
+            trust_status: list[dict[str, Any]] = []
+            trust_results: dict[str, Any] | None = None
+            if self._trust is not None and caps.has_trust_subcommand:
+                trust_out, trust_err, trust_rc = await self._run(
+                    [*base, "-d", "trust", *self._trust.args()], cwd=self._trust.cwd
+                )
+                trust_text = trust_out.decode("utf-8", "replace")
+                if trust_rc == 0 and trust_text.lstrip().startswith("{"):
+                    trust_json = _parse_json(trust_text, "trust")
+                    trust_evaluated = True
+                    trust_state = (
+                        str(trust_json["validation_state"])
+                        if isinstance(trust_json.get("validation_state"), str)
+                        else None
+                    )
+                    raw_status = trust_json.get("validation_status") or []
+                    trust_status = [s for s in raw_status if isinstance(s, dict)]
+                    results = trust_json.get("validation_results")
+                    trust_results = results if isinstance(results, dict) else None
+                else:
+                    first = next(
+                        (
+                            ln.strip()
+                            for ln in trust_err.decode("utf-8", "replace").splitlines()
+                            if ln.strip()
+                        ),
+                        "",
+                    )
+                    warnings.append(f"trust run failed: {first[:200] or 'no output'}")
             return RawProvenance(
                 engine=self.name,
                 engine_version=version,
@@ -228,18 +333,24 @@ class C2paToolInspector:
                 info=info,
                 capabilities=caps.to_json(),
                 tree=tree,
+                trust_evaluated=trust_evaluated,
+                trust_mode=self._trust.mode if self._trust is not None else None,
+                trust_list_version=self._trust.list_version if self._trust is not None else None,
+                trust_state=trust_state,
+                trust_status=trust_status,
+                trust_results=trust_results,
             )
         finally:
             await asyncio.to_thread(path.unlink, True)
 
-    async def _run(self, args: list[str]) -> tuple[bytes, bytes, int]:
+    async def _run(self, args: list[str], cwd: Path | None = None) -> tuple[bytes, bytes, int]:
         """Run once; retry a single time only when the process could not start or was
         killed by a signal (transient host conditions). Timeouts and ordinary non-zero
         exits are never retried: the input is the same and the answer would be too."""
         last_error: ProvenanceInspectionError | None = None
         for attempt in range(2):
             try:
-                return await self._run_once(args)
+                return await self._run_once(args, cwd)
             except _TransientError as exc:
                 last_error = ProvenanceInspectionError(str(exc))
                 if attempt == 0:
@@ -248,7 +359,7 @@ class C2paToolInspector:
         assert last_error is not None
         raise last_error
 
-    async def _run_once(self, args: list[str]) -> tuple[bytes, bytes, int]:
+    async def _run_once(self, args: list[str], cwd: Path | None = None) -> tuple[bytes, bytes, int]:
         try:
             proc = await asyncio.create_subprocess_exec(
                 self._exe,
@@ -256,6 +367,7 @@ class C2paToolInspector:
                 stdin=asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                cwd=str(cwd) if cwd is not None else None,
             )
         except OSError as exc:
             raise _TransientError("c2patool could not be started") from exc

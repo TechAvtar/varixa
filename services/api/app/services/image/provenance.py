@@ -128,6 +128,10 @@ class NormalizedProvenance:
     manifest_location: str = "unknown"
     # Host of a remote manifest the engine did not fetch (fetching is disabled).
     remote_manifest_host: str | None = None
+    # Trust run (T047): None = not evaluated; True/False = the signing certificate does /
+    # does not chain to the configured trust list. Details in `trust`.
+    trusted: bool | None = None
+    trust: dict[str, Any] = field(default_factory=dict)
 
     def to_json(self) -> dict[str, Any]:
         return asdict(self)
@@ -222,6 +226,48 @@ def _structured_validation(raw: RawProvenance) -> dict[str, Any]:
         else:
             families[family].append(code)
     return validation
+
+
+def _trust_view(raw: RawProvenance) -> dict[str, Any]:
+    """Outcome of the separate trust run, kept apart from integrity.
+
+    Newer engines report a state (Trusted | Valid | Invalid); older ones only codes. The
+    verdict is conservative: True needs an explicit trusted signal, False an explicit
+    untrusted / expired / revoked one, anything else stays None (not established)."""
+    view: dict[str, Any] = {
+        "evaluated": raw.trust_evaluated,
+        "mode": raw.trust_mode,
+        "list_version": raw.trust_list_version,
+        "state": raw.trust_state,
+        "codes": [],
+        "trusted": None,
+    }
+    if not raw.trust_evaluated:
+        return view
+    codes: list[str] = []
+    for status in raw.trust_status[:MAX_CODES]:
+        code = _str(status.get("code"), 120)
+        if code and classify_code(code) == "trust" and code not in codes:
+            codes.append(code)
+    if raw.trust_results:
+        block = raw.trust_results.get("activeManifest") or raw.trust_results.get("active_manifest")
+        for family in ("success", "informational", "failure"):
+            for entry in ((block or {}).get(family) or [])[:MAX_CODES]:
+                code = _str(entry.get("code"), 120) if isinstance(entry, dict) else None
+                if code and classify_code(code) == "trust" and code not in codes:
+                    codes.append(code)
+    view["codes"] = codes
+    negative = {
+        "signingCredential.untrusted",
+        "signingCredential.expired",
+        "signingCredential.revoked",
+        "signingCredential.invalid",
+    }
+    if raw.trust_state == "Trusted" or "signingCredential.trusted" in codes:
+        view["trusted"] = True
+    elif any(c in negative for c in codes) or raw.trust_state == "Invalid":
+        view["trusted"] = False
+    return view
 
 
 _INFO_SIZE_RE = re.compile(r"Manifest store size = (\d+)")
@@ -328,6 +374,8 @@ def normalize_provenance(raw: RawProvenance) -> NormalizedProvenance:
             n.validation_failures.append({"code": code, "explanation": explanation})
 
     n.validation = _structured_validation(raw)
+    n.trust = _trust_view(raw)
+    n.trusted = n.trust.get("trusted")
     # Newer engines list only problems in the flat status; fold the structured codes in so
     # `validation_codes` is the complete picture whatever the engine generation.
     for family in ("success", "informational", "trust", "identity", "failure"):
@@ -377,10 +425,32 @@ def provenance_limitations(n: NormalizedProvenance) -> list[str]:
         "A valid signature shows the manifest is intact and was signed with the named "
         "certificate. It does not prove the claims are true."
     )
-    notes.append(
-        "Issuer trust (certificate chain against a trust list) is not evaluated in this build; "
-        "'signer' is the certificate's stated issuer, not a verified identity."
-    )
+    trust = n.trust or {}
+    if trust.get("evaluated"):
+        listed = f"{trust.get('mode') or 'configured'} trust list"
+        version = trust.get("list_version")
+        listed += f" (version {version})" if version else ""
+        if n.trusted is True:
+            notes.append(
+                f"The signing certificate chains to an anchor on the {listed}: the signer is a "
+                "known conformance-program participant. Trust says who signed, not that the "
+                "claims are true."
+            )
+        elif n.trusted is False:
+            notes.append(
+                f"The signing certificate is not on the {listed}; 'signer' is the certificate's "
+                "stated issuer, not a verified identity. Many legitimate tools are not listed."
+            )
+        else:
+            notes.append(
+                f"The trust run against the {listed} was inconclusive; 'signer' is the "
+                "certificate's stated issuer, not a verified identity."
+            )
+    else:
+        notes.append(
+            "Issuer trust (certificate chain against a trust list) was not evaluated for this "
+            "analysis; 'signer' is the certificate's stated issuer, not a verified identity."
+        )
     if n.valid_signature is False:
         notes.append(
             "Validation reported problems; the manifest may have been altered, or the file "

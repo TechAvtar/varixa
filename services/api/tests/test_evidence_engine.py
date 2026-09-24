@@ -681,3 +681,49 @@ def test_engine_side_remote_reference_replaces_absent() -> None:
     assert d.source == "c2pa/c2patool" and d.data == {"host": "cdn.example.net"}
     assert "step:provenance" in d.refs and "row:image_metadata" in d.refs
     assert rules(drafts).count("provenance.remote") == 1
+
+
+# -- T047: signer trust -----------------------------------------------------------------------
+
+
+def test_trusted_signer_is_a_separate_verified_fact() -> None:
+    row = provenance_row(
+        trust={
+            "evaluated": True,
+            "mode": "bundled",
+            "list_version": "75cacc98b79e",
+            "state": "Trusted",
+            "codes": ["signingCredential.trusted"],
+            "trusted": True,
+        }
+    )
+    drafts = build_evidence(Observations("image", provenance=row), T)
+    d = by_rule(drafts, "provenance.trusted")
+    assert (
+        d.level == "VERIFIED"
+        and d.kind == "fact"
+        and d.data["trust_list_version"] == "75cacc98b79e"
+    )
+    assert "provenance.untrusted-signer" not in rules(drafts)
+    assert "recorded separately (trusted)" in (by_rule(drafts, "provenance.valid").limitation or "")
+
+
+def test_unlisted_signer_is_unknown_not_a_signal() -> None:
+    row = provenance_row(
+        trust={"evaluated": True, "mode": "bundled", "list_version": "v1", "state": "Valid",
+               "codes": ["signingCredential.untrusted"], "trusted": False}
+    )  # fmt: skip
+    drafts = build_evidence(Observations("image", provenance=row), T)
+    d = by_rule(drafts, "provenance.untrusted-signer")
+    assert d.level == "UNKNOWN" and d.kind == "unknown" and d.confidence is None
+    assert "not a sign of tampering" in (d.limitation or "")
+    assert by_rule(drafts, "provenance.valid").level == "VERIFIED"
+    assert "provenance.trusted" not in rules(drafts)
+
+
+def test_no_trust_record_when_not_evaluated() -> None:
+    row = provenance_row(trust={"evaluated": False, "trusted": None})
+    drafts = build_evidence(Observations("image", provenance=row), T)
+    assert not {"provenance.trusted", "provenance.untrusted-signer"} & set(rules(drafts))
+    assert "was not evaluated" in (by_rule(drafts, "provenance.valid").limitation or "")
+    assert LEVEL_CEILING["provenance.trusted"] == "VERIFIED"

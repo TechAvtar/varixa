@@ -26,7 +26,9 @@ async def test_health_does_not_leak_settings(client: AsyncClient) -> None:
         "engines",
     }
     engine = body["engines"]["c2patool"]
-    assert set(engine) == {"status", "version"}
+    assert set(engine) == {"status", "version", "trust"}
+    assert set(engine["trust"]) == {"mode", "list_version"}
+    assert engine["trust"]["mode"] in {"bundled", "custom", "off"}
     assert engine["status"] in {"ok", "unavailable", "not_configured"}
     # Never a filesystem path or executable name in the response.
     assert ".exe" not in str(body) and "/" not in (engine["version"] or "")

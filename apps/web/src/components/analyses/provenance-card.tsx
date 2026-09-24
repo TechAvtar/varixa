@@ -14,12 +14,18 @@ function Level({ n }: { n: Normalized }) {
     );
   }
   if (n.valid_signature) {
+    const trust =
+      n.trusted === true
+        ? ", signer on the trust list"
+        : n.trusted === false
+          ? ", signer not on the trust list"
+          : "";
     return (
       <Badge
         variant="outline"
         className="border-transparent bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200"
       >
-        VERIFIED · manifest intact, signature valid
+        VERIFIED · manifest intact, signature valid{trust}
       </Badge>
     );
   }
@@ -63,6 +69,55 @@ function IngredientTree({ items, depth = 0 }: { items: ProvenanceIngredient[]; d
         </li>
       ))}
     </ul>
+  );
+}
+
+/** Who signed: the certificate chain against the configured trust list, kept apart from integrity. */
+function Trust({ n }: { n: Normalized }) {
+  const t = n.trust;
+  const verdict =
+    n.trusted === true
+      ? "Chains to an anchor on the trust list (a known conformance-program participant)."
+      : n.trusted === false
+        ? "Not on the trust list. Many legitimate tools and test certificates are unlisted; this is not a sign of tampering."
+        : t.evaluated
+          ? "The trust run was inconclusive."
+          : "Trust was not evaluated for this analysis.";
+  return (
+    <section className="space-y-2 border-t pt-3" aria-labelledby="c2pa-trust-heading">
+      <h3 id="c2pa-trust-heading" className="text-sm font-medium">
+        Signer trust
+      </h3>
+      <p className="text-xs text-muted-foreground">
+        Trust says who signed, not that the claims are true.
+      </p>
+      <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
+        <dt className="text-muted-foreground">Verdict</dt>
+        <dd>{verdict}</dd>
+        {n.signer_common_name ? (
+          <>
+            <dt className="text-muted-foreground">Certificate name</dt>
+            <dd>{n.signer_common_name}</dd>
+          </>
+        ) : null}
+        {t.evaluated ? (
+          <>
+            <dt className="text-muted-foreground">Trust list</dt>
+            <dd className="font-mono text-xs">
+              {t.mode ?? "configured"}
+              {t.list_version ? ` · version ${t.list_version}` : ""}
+              {t.state ? ` · engine state ${t.state}` : ""}
+            </dd>
+          </>
+        ) : null}
+        {t.codes && t.codes.length > 0 ? (
+          <>
+            <dt className="text-muted-foreground">Trust codes</dt>
+            <dd className="font-mono text-xs">{t.codes.join(", ")}</dd>
+          </>
+        ) : null}
+      </dl>
+    </section>
   );
 }
 
@@ -272,6 +327,7 @@ export function ProvenanceCard({ provenance }: { provenance: ImageProvenanceResp
                     {n.engine} {n.engine_version}
                   </dd>
                 </dl>
+                <Trust n={n} />
                 <Declarations n={n} />
                 <Ingredients n={n} />
               </>

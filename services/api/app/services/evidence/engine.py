@@ -44,6 +44,8 @@ LEVEL_CEILING: dict[str, str] = {
     "file.identity": EvidenceLevel.VERIFIED,
     "provenance.valid": EvidenceLevel.VERIFIED,
     "provenance.invalid": EvidenceLevel.POSSIBLE,
+    # A certificate chain to a published anchor is a cryptographic fact about *who* signed.
+    "provenance.trusted": EvidenceLevel.VERIFIED,
     # Signed declarations are the signer's statements: STRONG at most, never VERIFIED.
     "provenance.source-type": EvidenceLevel.STRONG,
     "provenance.training-mining": EvidenceLevel.STRONG,
@@ -405,7 +407,7 @@ def _provenance_rules(o: Observations, t: EvidenceThresholds) -> list[EvidenceDr
             confidence=_conf(EvidenceLevel.VERIFIED, t),
             detail=_provenance_detail(p.claim_generator, hash_data),
             limitation="Validity shows the manifest is intact, not that its claims are true; "
-            "issuer trust is not evaluated.",
+            + _trust_clause(n),
             refs=refs,
             provider_version=p.engine_version,
             data={
@@ -442,7 +444,81 @@ def _provenance_rules(o: Observations, t: EvidenceThresholds) -> list[EvidenceDr
             provider_version=p.engine_version,
             data={"validation_failures": failures},
         )
-    return [head, *_provenance_declaration_rules(p, n, src, refs, t), *remote]
+    return [
+        head,
+        *_trust_rules(p, n, src, refs, t),
+        *_provenance_declaration_rules(p, n, src, refs, t),
+        *remote,
+    ]
+
+
+def _trust_clause(n: dict[str, Any]) -> str:
+    trust = n.get("trust") or {}
+    if not trust.get("evaluated"):
+        return "issuer trust was not evaluated."
+    if trust.get("trusted") is True:
+        return "the signer's trust-list status is recorded separately (trusted)."
+    if trust.get("trusted") is False:
+        return "the signer is not on the configured trust list (recorded separately)."
+    return "the trust run was inconclusive (recorded separately)."
+
+
+def _trust_rules(
+    p: Any, n: dict[str, Any], src: str, refs: list[str], t: EvidenceThresholds
+) -> list[EvidenceDraft]:
+    """Who signed, as a separate record from whether the manifest is intact. Trusted = the
+    certificate chains to an anchor on the configured list (VERIFIED, a cryptographic fact);
+    not listed = UNKNOWN, never a signal of manipulation (many legitimate tools are unlisted)."""
+    trust = n.get("trust") or {}
+    if not trust.get("evaluated") or trust.get("trusted") is None:
+        return []
+    version = trust.get("list_version")
+    listed = f"{trust.get('mode') or 'configured'} trust list" + (
+        f" version {version}" if version else ""
+    )
+    data = {
+        "trusted": trust.get("trusted"),
+        "trust_mode": trust.get("mode"),
+        "trust_list_version": version,
+        "codes": trust.get("codes") or [],
+        "signer": p.signer,
+    }
+    if trust.get("trusted") is True:
+        return [
+            EvidenceDraft(
+                rule="provenance.trusted",
+                category="provenance",
+                level=EvidenceLevel.VERIFIED,
+                kind="fact",
+                claim="The signing certificate chains to an anchor on the C2PA trust list "
+                f"(signer: {p.signer or 'unknown'}).",
+                source=src,
+                confidence=_conf(EvidenceLevel.VERIFIED, t),
+                detail=f"Evaluated against the {listed}.",
+                limitation="Trust says who signed (a known conformance-program participant), "
+                "not that the manifest's claims are true.",
+                refs=refs,
+                provider_version=p.engine_version,
+                data=data,
+            )
+        ]
+    return [
+        EvidenceDraft(
+            rule="provenance.untrusted-signer",
+            category="provenance",
+            level=EvidenceLevel.UNKNOWN,
+            kind="unknown",
+            claim="The signing certificate is not on the configured C2PA trust list "
+            f"(signer as stated: {p.signer or 'unknown'}).",
+            source=src,
+            detail=f"Evaluated against the {listed}.",
+            limitation="Not being listed is not a sign of tampering: many legitimate tools "
+            "and test certificates are not on the list. The signer's stated name is unverified.",
+            refs=refs,
+            provider_version=p.engine_version,
+            data=data,
+        )
+    ]
 
 
 def _provenance_detail(claim_generator: str | None, hash_data: dict[str, Any]) -> str | None:

@@ -79,6 +79,13 @@ class Settings(BaseSettings):
     # never reach the network on the asset's say-so; the reference is reported instead.
     # Refused in production (preflight). Engines older than 0.28 cannot switch it off.
     c2pa_remote_manifest_fetch: bool = False
+    # Trust evaluation of the signing certificate: "bundled" uses the official C2PA trust list
+    # shipped with the code (scripts/refresh_trust_list.py refreshes it), "custom" uses your own
+    # local PEM files, "off" skips the trust run (reports say so). Local files only; never URLs.
+    c2pa_trust_mode: Literal["bundled", "custom", "off"] = "bundled"
+    c2pa_trust_anchors_path: Path | None = None
+    c2pa_allowed_list_path: Path | None = None
+    c2pa_trust_config_path: Path | None = None
 
     # Near-duplicate threshold: max Hamming distance (bits) on pHash or dHash.
     fingerprint_near_threshold: int = Field(default=10, ge=0, le=64)
@@ -252,6 +259,31 @@ class Settings(BaseSettings):
     def _ai_thresholds_ordered(self) -> "Settings":
         if self.ai_score_medium > self.ai_score_high:
             raise ValueError("VERIXA_AI_SCORE_MEDIUM must not exceed VERIXA_AI_SCORE_HIGH")
+        return self
+
+    @model_validator(mode="after")
+    def _trust_files_are_local(self) -> "Settings":
+        paths = {
+            "VERIXA_C2PA_TRUST_ANCHORS_PATH": self.c2pa_trust_anchors_path,
+            "VERIXA_C2PA_ALLOWED_LIST_PATH": self.c2pa_allowed_list_path,
+            "VERIXA_C2PA_TRUST_CONFIG_PATH": self.c2pa_trust_config_path,
+        }
+        for name, path in paths.items():
+            if path is None:
+                continue
+            # Path() collapses "https://h" to "https:/h", so match the scheme, not "://".
+            text = str(path).strip().lower().replace("\\", "/")
+            if text.startswith(("http:", "https:", "ftp:", "file:")):
+                raise ValueError(f"{name} must be a local file, not a URL")
+            if not path.is_file():
+                raise ValueError(f"{name} does not exist or is not a file")
+        if self.c2pa_trust_mode == "custom" and not (
+            self.c2pa_trust_anchors_path or self.c2pa_allowed_list_path
+        ):
+            raise ValueError(
+                "VERIXA_C2PA_TRUST_MODE=custom needs VERIXA_C2PA_TRUST_ANCHORS_PATH or "
+                "VERIXA_C2PA_ALLOWED_LIST_PATH"
+            )
         return self
 
     @model_validator(mode="after")

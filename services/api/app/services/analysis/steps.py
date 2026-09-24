@@ -226,11 +226,17 @@ class InspectProvenanceStep:
             signer=normalized.signer,
             signed_at=normalized.signed_at,
             claim_generator=normalized.claim_generator,
+            trusted=normalized.trusted,
+            trust_list_version=normalized.trust.get("list_version"),
             manifests_json=(raw.summary or {}).get("manifests") if raw.summary else None,
             claims_json={"actions": normalized.actions, "authors": normalized.authors}
             if normalized.has_c2pa
             else None,
-            validation_json={"status": raw.validation_status} if raw.present else None,
+            validation_json=(
+                {"status": raw.validation_status, "trust_status": raw.trust_status}
+                if raw.present
+                else None
+            ),
             normalized_json=normalized.to_json(),
             raw_json=(
                 {"summary": raw.summary, "detailed": raw.detailed, "tree": raw.tree}
@@ -245,6 +251,7 @@ class InspectProvenanceStep:
             engine_version=raw.engine_version,
             has_c2pa=normalized.has_c2pa,
             valid_signature=normalized.valid_signature,
+            trusted=normalized.trusted,
             signer=normalized.signer,
             manifest_count=normalized.manifest_count,
             validation_failures=len(normalized.validation_failures),

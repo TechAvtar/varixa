@@ -80,3 +80,6 @@ old one.
   temporary files.
 - Only the proxy publishes ports (80/443). The database, the API and the bucket are not reachable
   from outside the compose network.
+- The C2PA trust list is bundled with the code (`services/api/app/providers/provenance/trust/`);
+  refresh it before a release with `python services/api/scripts/refresh_trust_list.py` (or
+  `--check` to see whether it is stale) and commit the result. Reports record the list version.

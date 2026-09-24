@@ -63,6 +63,20 @@ export interface NormalizedProvenance {
   manifest_location: string;
   /** Host of a remote manifest the engine did not fetch (fetching is disabled). */
   remote_manifest_host: string | null;
+  /** Trust run: null = not evaluated / inconclusive; details in `trust`. */
+  trusted: boolean | null;
+  trust: ProvenanceTrust;
+}
+
+export interface ProvenanceTrust {
+  evaluated?: boolean;
+  /** bundled | custom */
+  mode?: string | null;
+  list_version?: string | null;
+  /** Engine state when reported: Trusted | Valid | Invalid */
+  state?: string | null;
+  codes?: string[];
+  trusted?: boolean | null;
 }
 
 export interface ProvenanceHashCoverage {

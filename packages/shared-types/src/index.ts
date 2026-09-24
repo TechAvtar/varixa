@@ -61,6 +61,7 @@ export type {
   ProvenanceManifestLink,
   ProvenanceSoftwareAgent,
   ProvenanceSourceType,
+  ProvenanceTrust,
   ProvenanceValidationFailure,
 } from "./provenance";
 export type {

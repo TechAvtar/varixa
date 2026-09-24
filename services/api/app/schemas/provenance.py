@@ -49,6 +49,9 @@ class NormalizedProvenanceResponse(BaseModel):
     signer_common_name: str | None = None
     manifest_location: str = "unknown"
     remote_manifest_host: str | None = None
+    # T047: trust run outcome (None = not evaluated / inconclusive) and its details.
+    trusted: bool | None = None
+    trust: dict[str, Any] = {}
 
 
 class ImageProvenanceResponse(BaseModel):

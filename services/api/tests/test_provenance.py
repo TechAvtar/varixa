@@ -1,3 +1,4 @@
+import os
 import uuid
 from pathlib import Path
 from typing import Any
@@ -277,7 +278,7 @@ async def test_run_retries_once_only_for_transient_failures(tmp_path: Path) -> N
     inspector = C2paToolInspector("c2patool-not-real", temp_dir=tmp_path)
     calls: list[int] = []
 
-    async def flaky(args: list[str]) -> tuple[bytes, bytes, int]:
+    async def flaky(args: list[str], cwd: Path | None = None) -> tuple[bytes, bytes, int]:
         calls.append(1)
         if len(calls) == 1:
             raise _TransientError("could not be started")
@@ -287,7 +288,7 @@ async def test_run_retries_once_only_for_transient_failures(tmp_path: Path) -> N
     out, _, _ = await inspector._run(["--version"])
     assert out == b"c2patool 9.9.9" and len(calls) == 2
 
-    async def always(args: list[str]) -> tuple[bytes, bytes, int]:
+    async def always(args: list[str], cwd: Path | None = None) -> tuple[bytes, bytes, int]:
         calls.append(1)
         raise _TransientError("killed")
 
@@ -297,7 +298,7 @@ async def test_run_retries_once_only_for_transient_failures(tmp_path: Path) -> N
         await inspector._run(["--version"])
     assert len(calls) == 2  # exactly one retry
 
-    async def timeout(args: list[str]) -> tuple[bytes, bytes, int]:
+    async def timeout(args: list[str], cwd: Path | None = None) -> tuple[bytes, bytes, int]:
         calls.append(1)
         raise ProvenanceInspectionError("c2patool timed out")
 
@@ -857,3 +858,184 @@ async def test_c2patool_never_fetches_a_remote_manifest(tmp_path: Path) -> None:
     if caps.has_flag("--settings"):
         assert raw.remote_manifest_host == "cdn.example.net"
         assert normalize_provenance(raw).manifest_location == "remote"
+
+
+# -- Phase 4: trust evaluation ----------------------------------------------------------------
+
+
+def test_trust_view_from_0_28_state() -> None:
+    summary = _load_json("summary_0.28.0.json")
+    base = {
+        "engine": "c2patool",
+        "engine_version": "0.28.0",
+        "present": True,
+        "summary": summary,
+        # Integrity comes from the first run; 0.28 reports it in the summary as well.
+        "validation_results": summary["validation_results"],
+        "validation_state": summary["validation_state"],
+    }
+    trusted = _load_json("detailed_trusted_0.28.0.json")
+    n = normalize_provenance(
+        RawProvenance(
+            **base,
+            trust_evaluated=True,
+            trust_mode="bundled",
+            trust_list_version="75cacc98b79e",
+            trust_state=trusted["validation_state"],
+            trust_results=trusted["validation_results"],
+        )
+    )
+    assert n.trusted is True and n.trust["mode"] == "bundled"
+    assert n.trust["list_version"] == "75cacc98b79e" and n.trust["state"] == "Trusted"
+    assert "signingCredential.trusted" in n.trust["codes"]
+    assert any("chains to an anchor" in x for x in provenance_limitations(n))
+
+    untrusted = _load_json("detailed_0.28.0.json")
+    n = normalize_provenance(
+        RawProvenance(
+            **base,
+            trust_evaluated=True,
+            trust_mode="bundled",
+            trust_list_version="75cacc98b79e",
+            trust_state=untrusted["validation_state"],
+            trust_results=untrusted["validation_results"],
+        )
+    )
+    assert n.trusted is False and n.valid_signature is True  # integrity untouched
+    assert any("not on the bundled trust list" in x for x in provenance_limitations(n))
+
+    n = normalize_provenance(RawProvenance(**base))
+    assert n.trusted is None and n.trust["evaluated"] is False
+    assert any("was not evaluated" in x for x in provenance_limitations(n))
+
+
+def test_trust_view_from_0_9_codes() -> None:
+    """Older engines report no state; the codes decide, conservatively."""
+    raw = raw_signed()
+
+    def with_codes(codes: list[str]) -> RawProvenance:
+        return RawProvenance(
+            engine="c2patool",
+            engine_version="0.9.12",
+            present=True,
+            summary=raw.summary,
+            detailed=raw.detailed,
+            validation_status=raw.validation_status,
+            trust_evaluated=True,
+            trust_mode="custom",
+            trust_status=[{"code": c} for c in codes],
+        )
+
+    assert normalize_provenance(with_codes(["signingCredential.trusted"])).trusted is True
+    assert normalize_provenance(with_codes(["signingCredential.untrusted"])).trusted is False
+    assert normalize_provenance(with_codes(["claimSignature.validated"])).trusted is None
+
+
+def test_trust_files_args_are_relative_to_their_directory(tmp_path: Path) -> None:
+    from app.providers.provenance.c2patool import TrustFiles
+
+    anchors = tmp_path / "anchors.pem"
+    anchors.write_text("x", encoding="utf-8")
+    allowed = tmp_path / "sub" / "allowed.pem"
+    allowed.parent.mkdir()
+    allowed.write_text("y", encoding="utf-8")
+    files = TrustFiles(mode="custom", anchors=anchors, allowed_list=allowed)
+    assert files.cwd == tmp_path
+    args = files.args()
+    assert args[:2] == ["--trust_anchors", "anchors.pem"]
+    assert args[2] == "--allowed_list" and args[3].replace("\\", "/") == "sub/allowed.pem"
+    assert not any(":" in a for a in args)  # never an absolute path (read as a URL by the engine)
+
+
+def test_bundled_trust_list_is_present_and_versioned() -> None:
+    from app.providers.provenance.c2patool import (
+        BUNDLED_TRUST_META,
+        BUNDLED_TRUST_PEM,
+        bundled_trust_files,
+    )
+
+    files = bundled_trust_files()
+    assert files is not None and files.mode == "bundled" and files.anchors == BUNDLED_TRUST_PEM
+    assert files.list_version and len(files.list_version) == 12
+    assert BUNDLED_TRUST_META.is_file()
+    assert BUNDLED_TRUST_PEM.read_text("utf-8").count("-----BEGIN CERTIFICATE-----") >= 10
+
+
+def test_trust_files_for_settings(migrated_settings: Any) -> None:
+    from app.providers.provenance import trust_files_for, trust_summary
+
+    migrated_settings.c2pa_trust_mode = "bundled"
+    assert trust_files_for(migrated_settings) is not None
+    assert trust_summary(migrated_settings)["mode"] == "bundled"
+    migrated_settings.c2pa_trust_mode = "off"
+    assert trust_files_for(migrated_settings) is None
+    assert trust_summary(migrated_settings) == {"mode": "off", "list_version": None}
+
+
+@needs_c2patool
+async def test_c2patool_trust_modes(tmp_path: Path) -> None:
+    """Bundled anchors: the test certificate is intact but unlisted. Custom anchors that
+    include the test CA: trusted. Integrity is the same in both runs."""
+    from app.providers.provenance.c2patool import TrustFiles, bundled_trust_files
+
+    assert C2PATOOL is not None
+    bundled = bundled_trust_files()
+    assert bundled is not None
+    raw = await C2paToolInspector(C2PATOOL, temp_dir=tmp_path, trust=bundled).inspect(
+        SIGNED, extension="jpg"
+    )
+    n = normalize_provenance(raw)
+    assert raw.trust_evaluated and n.valid_signature is True and n.trusted is False
+    assert n.trust["list_version"] == bundled.list_version
+
+    anchors = FIXTURES / "sample_trust_anchors.pem"
+    custom = TrustFiles(mode="custom", anchors=anchors, list_version="test")
+    # A *relative* temp dir (the API default ./data/tmp) must survive the trust run's cwd change.
+    relative_tmp = Path(os.path.relpath(tmp_path / "rel", Path.cwd()))
+    raw = await C2paToolInspector(C2PATOOL, temp_dir=relative_tmp, trust=custom).inspect(
+        SIGNED, extension="jpg"
+    )
+    assert not list((tmp_path / "rel").glob("*"))  # temp file removed
+    n = normalize_provenance(raw)
+    assert n.valid_signature is True and n.trusted is True
+    assert "signingCredential.trusted" in n.trust["codes"]
+
+
+@needs_c2patool
+async def test_signed_upload_records_trust_columns(client: AsyncClient) -> None:
+    headers = await auth_headers(client)
+    r = await client.post(
+        "/analysis/image", headers=headers, files={"file": ("C.jpg", SIGNED, "image/jpeg")}
+    )
+    aid = r.json()["id"]
+    body = (await client.get(f"/analysis/{aid}/provenance", headers=headers)).json()
+    n = body["normalized"]
+    assert n["trusted"] is False and n["trust"]["mode"] == "bundled"
+    assert n["trust"]["list_version"]
+    ev = (await client.get(f"/analysis/{aid}/evidence", headers=headers)).json()
+    by = {i["rule"]: i for i in ev["items"]}
+    assert by["provenance.valid"]["level"] == "VERIFIED"
+    assert by["provenance.untrusted-signer"]["level"] == "UNKNOWN"
+    assert "provenance.trusted" not in by
+
+
+def test_refresh_script_refuses_other_hosts() -> None:
+    import importlib.util
+    import sys
+
+    from app.utils.urlpolicy import DisallowedUrlError
+
+    path = Path(__file__).parents[1] / "scripts" / "refresh_trust_list.py"
+    spec = importlib.util.spec_from_file_location("refresh_trust_list", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["refresh_trust_list"] = module
+    spec.loader.exec_module(module)
+    with pytest.raises(DisallowedUrlError):
+        module.fetch_trust_list("https://evil.example.net/list.pem")
+    with pytest.raises(DisallowedUrlError):
+        module.fetch_trust_list("http://raw.githubusercontent.com/x.pem")  # https only
+    assert (
+        module.list_version("abc") == module.list_version("abc")
+        and len(module.list_version("abc")) == 12
+    )

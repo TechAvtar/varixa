@@ -10,7 +10,15 @@ export interface HealthResponse {
   providers: Record<string, string>;
   uptime_seconds: number;
   /** Binary engines the pipeline shells out to (c2patool): status and version, never paths. */
-  engines: Record<string, { status: "ok" | "unavailable" | "not_configured"; version: string | null }>;
+  engines: Record<
+    string,
+    {
+      status: "ok" | "unavailable" | "not_configured";
+      version: string | null;
+      /** Trust-list mode and version the provenance engine evaluates against (c2patool). */
+      trust?: { mode: string; list_version: string | null };
+    }
+  >;
 }
 
 /** Mirrors `app/schemas/health.py::LivenessResponse`. */

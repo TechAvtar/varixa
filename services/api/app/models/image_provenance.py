@@ -25,6 +25,10 @@ class ImageProvenance(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     signer: Mapped[str | None] = mapped_column(String(300))
     signed_at: Mapped[str | None] = mapped_column(String(64))
     claim_generator: Mapped[str | None] = mapped_column(String(300))
+    # Trust run (T047): NULL = not evaluated / inconclusive; the list version names which
+    # trust list the verdict applied.
+    trusted: Mapped[bool | None] = mapped_column(Boolean)
+    trust_list_version: Mapped[str | None] = mapped_column(String(64))
     manifests_json: Mapped[dict[str, Any] | None] = mapped_column(PortableJSON)
     claims_json: Mapped[dict[str, Any] | None] = mapped_column(PortableJSON)
     validation_json: Mapped[dict[str, Any] | None] = mapped_column(PortableJSON)

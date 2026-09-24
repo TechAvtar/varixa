@@ -48,6 +48,8 @@ The system cannot establish the fact.
 | Observation | Level |
 |---|---|
 | Valid C2PA signature | VERIFIED |
+| C2PA signing certificate chains to an anchor on the configured trust list (separate record from validity) | VERIFIED |
+| C2PA signing certificate not on the trust list | UNKNOWN (never a manipulation signal) |
 | Signed C2PA declaration (digital source type, training/mining permission, creator identity) with a valid signature | STRONG (POSSIBLE when the signature does not validate; a declaration is verified as stated, not as true) |
 | C2PA ingredient with recorded validation failures | POSSIBLE |
 | Signed source type disagrees with metadata source type; manifest signed before its ingredient | conflict record (UNKNOWN), both sides retained |

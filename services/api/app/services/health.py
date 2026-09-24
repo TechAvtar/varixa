@@ -14,7 +14,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
-from app.providers.provenance import C2paToolInspector, build_provenance_inspector
+from app.providers.provenance import C2paToolInspector, build_provenance_inspector, trust_summary
 from app.providers.storage.base import ObjectStorage
 from app.utils.metrics import registry
 
@@ -70,7 +70,7 @@ def configured_providers(settings: Settings) -> dict[str, str]:
 async def check_c2patool(settings: Settings) -> dict[str, Any]:
     """Version of the configured c2patool, cached for a minute; the path never leaves."""
     if settings.provenance_engine == "none":
-        return {"status": "not_configured", "version": None}
+        return {"status": "not_configured", "version": None, "trust": trust_summary(settings)}
     now = time.monotonic()
     cached = _engine_cache.get("c2patool")
     if cached and now - cached[0] < _ENGINE_CACHE_TTL:
@@ -80,14 +80,15 @@ async def check_c2patool(settings: Settings) -> dict[str, Any]:
         inspector = build_provenance_inspector(settings)
     except RuntimeError:
         inspector = None
+    trust = trust_summary(settings)
     if not isinstance(inspector, C2paToolInspector):
-        result = {"status": "unavailable", "version": None}
+        result = {"status": "unavailable", "version": None, "trust": trust}
     else:
         try:
             version = await asyncio.wait_for(inspector.version(), _ENGINE_PROBE_TIMEOUT)
-            result = {"status": "ok", "version": version[:64]}
+            result = {"status": "ok", "version": version[:64], "trust": trust}
         except Exception:
-            result = {"status": "unavailable", "version": None}
+            result = {"status": "unavailable", "version": None, "trust": trust}
     _engine_cache["c2patool"] = (now, result)
     return result
 

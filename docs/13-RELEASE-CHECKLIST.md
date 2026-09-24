@@ -36,6 +36,8 @@ recorded at the end.
 - [ ] Logs contain ids, statuses and durations only. Spot-check one analysis's log lines for
       filenames, text content, emails or tokens: none.
 - [ ] Provider allowlist (`VERIXA_OUTBOUND_ALLOWED_HOSTS`) lists only the providers in use.
+- [ ] The bundled C2PA trust list is current: `python services/api/scripts/refresh_trust_list.py --check`
+      exits 0 (refresh and commit otherwise); `VERIXA_C2PA_TRUST_MODE` is `bundled` or `custom`.
 
 ## 3. Core user flows (run against the release candidate)
 
