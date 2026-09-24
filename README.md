@@ -495,6 +495,16 @@ traversal; they are never returned to clients. Reads happen only via short-lived
 Key layout (`app/services/storage_keys.py`): `uploads/{user}/{analysis}/{sha256}.{ext}`,
 `artifacts/{user}/{analysis}/{name}`, `reports/{user}/{analysis}/{report}.{fmt}`.
 
+## Deployment (T042)
+
+Production = PostgreSQL + private S3-compatible bucket + one https origin. `services/api/Dockerfile`
+and `apps/web/Dockerfile` build the two images (CI builds and smoke-tests both);
+`infra/compose.yml` runs the whole stack on one host behind Caddy with automatic TLS. Before
+migrating, the `migrate` service runs `python -m app.preflight`, which refuses configurations that
+must not reach production (debug on, SQLite, local storage, non-https origins, metrics without a
+token, weak secret). See `infra/README.md` for the first deployment, storage options and
+operations. Nothing is committed with secrets: `infra/.env` is git-ignored and gitleaks runs in CI.
+
 ## Configuration
 
 All configuration is via environment variables; see the `.env.example` files. Never commit `.env`.
@@ -543,6 +553,7 @@ All configuration is via environment variables; see the `.env.example` files. Ne
 | `VERIXA_SIGNED_URL_TTL_SECONDS` | API | Lifetime of signed download links (default 300) |
 | `VERIXA_S3_ENDPOINT_URL`, `VERIXA_S3_REGION`, `VERIXA_S3_BUCKET`, `VERIXA_S3_ACCESS_KEY_ID`, `VERIXA_S3_SECRET_ACCESS_KEY` | API | Required only when `VERIXA_STORAGE_BACKEND=s3`; the bucket must be private |
 | `NEXT_PUBLIC_API_BASE_URL` | Web | API origin used by the web app |
+| `API_BASE_URL` | Web | Server-side override of the API origin (runtime, never sent to the browser), e.g. `http://api:8000` inside the compose network |
 
 ## Working with Claude Code
 

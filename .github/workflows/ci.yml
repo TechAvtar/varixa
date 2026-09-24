@@ -113,3 +113,48 @@ jobs:
             apps/web/playwright-report
             apps/web/test-results
           retention-days: 7
+
+  images:
+    name: Container images (build only)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: API image
+        uses: docker/build-push-action@v6
+        with:
+          context: services/api
+          push: false
+          load: true
+          tags: verixa-api:ci
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,scope=api,mode=max
+      - name: Web image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: false
+          load: true
+          tags: verixa-web:ci
+          build-args: NEXT_PUBLIC_API_BASE_URL=https://app.example.com
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,scope=web,mode=max
+      - name: Preflight refuses a non-deployable production configuration
+        run: |
+          set +e
+          docker run --rm -e VERIXA_ENVIRONMENT=production -e VERIXA_SECRET_KEY=ci-only-secret-key-with-32-plus-characters verixa-api:ci python -m app.preflight
+          test $? -eq 1
+      - name: API image starts and answers liveness
+        run: |
+          docker run -d --name api -p 8000:8000 -e VERIXA_ENVIRONMENT=development verixa-api:ci
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8000/api/v1/health/live && break; sleep 2; done
+          curl -fsS http://127.0.0.1:8000/api/v1/health/live
+          docker logs api | tail -20
+          docker rm -f api
+      - name: Web image starts and serves the landing page
+        run: |
+          docker run -d --name web -p 3000:3000 -e API_BASE_URL=http://127.0.0.1:8000 verixa-web:ci
+          for i in $(seq 1 30); do curl -fsS -o /dev/null http://127.0.0.1:3000/ && break; sleep 2; done
+          curl -fsS -o /dev/null http://127.0.0.1:3000/
+          docker rm -f web

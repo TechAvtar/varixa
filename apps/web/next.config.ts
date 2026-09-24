@@ -1,6 +1,10 @@
 import type { NextConfig } from "next";
+import path from "node:path";
 
 const isProduction = process.env.NODE_ENV === "production";
+// The container image (apps/web/Dockerfile) builds a self-contained server; dev, CI and E2E
+// keep the default output so `next start` keeps working.
+const standalone = process.env.NEXT_OUTPUT === "standalone";
 
 /**
  * Security headers for every page (docs/09). The CSP is deliberately limited to the directives
@@ -30,6 +34,9 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   // Lets the E2E web server build beside a running dev server (see playwright.config.ts).
   distDir: process.env.NEXT_DIST_DIR ?? ".next",
+  ...(standalone
+    ? { output: "standalone" as const, outputFileTracingRoot: path.join(__dirname, "../..") }
+    : {}),
   experimental: {
     // Image uploads travel through a server action; match the API's VERIXA_MAX_UPLOAD_BYTES.
     serverActions: { bodySizeLimit: "26mb" },

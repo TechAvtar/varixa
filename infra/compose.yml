@@ -1,0 +1,135 @@
+# Verixa production stack on one host: Caddy (TLS) -> web + api, PostgreSQL, private object
+# storage (external S3-compatible bucket, or the optional MinIO profile).
+#
+#   cp infra/.env.example infra/.env   # then fill it in
+#   docker compose -f infra/compose.yml --env-file infra/.env up -d --build
+#   docker compose -f infra/compose.yml --env-file infra/.env --profile minio up -d --build
+#
+# Only the proxy publishes ports. Every other service stays on the private network.
+
+name: verixa
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-verixa}
+      POSTGRES_USER: ${POSTGRES_USER:-verixa}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in infra/.env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-verixa} -d ${POSTGRES_DB:-verixa}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # Refuses a non-deployable configuration, then applies migrations. Runs once per deploy so
+  # several API replicas never migrate concurrently.
+  migrate:
+    build:
+      context: ../services/api
+    image: verixa-api:${VERIXA_IMAGE_TAG:-local}
+    command: ["sh", "-c", "python -m app.preflight && alembic upgrade head"]
+    env_file: .env
+    environment: &api-env
+      VERIXA_ENVIRONMENT: production
+      VERIXA_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-verixa}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-verixa}
+      VERIXA_STORAGE_BACKEND: s3
+      VERIXA_API_PUBLIC_URL: https://${VERIXA_PUBLIC_HOST:?set VERIXA_PUBLIC_HOST in infra/.env}
+      VERIXA_CORS_ORIGINS: '["https://${VERIXA_PUBLIC_HOST}"]'
+      VERIXA_TRUST_PROXY_HEADERS: "true"
+      VERIXA_LOG_FORMAT: json
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    image: verixa-api:${VERIXA_IMAGE_TAG:-local}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      <<: *api-env
+      # uvicorn honours X-Forwarded-* only from these addresses; the proxy is the sole ingress.
+      FORWARDED_ALLOW_IPS: "*"
+    volumes:
+      # Scratch space for engines that read files (c2patool); nothing durable lives here.
+      - api-scratch:/var/lib/verixa
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    expose: ["8000"]
+
+  web:
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: https://${VERIXA_PUBLIC_HOST}
+    image: verixa-web:${VERIXA_IMAGE_TAG:-local}
+    restart: unless-stopped
+    environment:
+      # Server-side calls stay on the private network.
+      API_BASE_URL: http://api:8000
+    depends_on:
+      api:
+        condition: service_healthy
+    expose: ["3000"]
+
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      VERIXA_PUBLIC_HOST: ${VERIXA_PUBLIC_HOST}
+      VERIXA_ACME_EMAIL: ${VERIXA_ACME_EMAIL:?set VERIXA_ACME_EMAIL in infra/.env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - web
+      - api
+
+  # Optional self-hosted private bucket. Prefer a managed bucket (S3, R2, ...) when available.
+  minio:
+    profiles: ["minio"]
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data
+    environment:
+      MINIO_ROOT_USER: ${VERIXA_S3_ACCESS_KEY_ID:-}
+      MINIO_ROOT_PASSWORD: ${VERIXA_S3_SECRET_ACCESS_KEY:-}
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    expose: ["9000"]
+
+  minio-init:
+    profiles: ["minio"]
+    image: minio/mc:latest
+    entrypoint: ["sh", "-c"]
+    command:
+      - >-
+        mc alias set local http://minio:9000 "$$VERIXA_S3_ACCESS_KEY_ID" "$$VERIXA_S3_SECRET_ACCESS_KEY"
+        && (mc mb --ignore-existing "local/$$VERIXA_S3_BUCKET")
+        && mc anonymous set none "local/$$VERIXA_S3_BUCKET"
+    env_file: .env
+    depends_on:
+      minio:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  api-scratch:
+  caddy-data:
+  caddy-config:
+  minio-data:

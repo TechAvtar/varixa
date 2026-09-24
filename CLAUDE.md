@@ -104,6 +104,18 @@ Every package's `__init__.py` carries a one-line responsibility docstring.
   statuses only. Throttling lives in `services/auth.py` via `utils/ratelimit.py`.
 - New security behaviour gets a test in `tests/test_security.py`.
 
+## Deployment (T042)
+- Images: `services/api/Dockerfile` (context `services/api`) and `apps/web/Dockerfile` (context =
+  repo root, `NEXT_OUTPUT=standalone`). Stack: `infra/compose.yml` + `infra/Caddyfile`; variables
+  in `infra/.env.example`. CI's `images` job builds and smoke-tests both; keep it green.
+- Production-only requirements live in `Settings.production_problems()` and are enforced by
+  `python -m app.preflight` (run by the `migrate` service before `alembic upgrade head`). Add new
+  must-not-ship-with checks there, with a case in `tests/test_config.py`.
+- The web server-side client reads `API_BASE_URL` (runtime) before `NEXT_PUBLIC_API_BASE_URL`
+  (build time); browsers never receive `API_BASE_URL`.
+- New system dependencies of the API (binaries like ExifTool/c2patool) go into both the CI `api`
+  job and the Dockerfile.
+
 ## Non-negotiables
 - Routes → Services → Repositories/Providers. No provider calls from routes.
 - Every schema change ships with an Alembic migration.

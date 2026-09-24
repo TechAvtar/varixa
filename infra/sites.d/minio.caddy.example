@@ -1,0 +1,6 @@
+# MinIO profile only: presigned download links point browsers at this host, so it must be public.
+# Copy to minio.caddy, set VERIXA_S3_ENDPOINT_URL=https://files.<VERIXA_PUBLIC_HOST> in infra/.env
+# and add a DNS record for files.<VERIXA_PUBLIC_HOST>.
+files.{$VERIXA_PUBLIC_HOST} {
+	reverse_proxy minio:9000
+}

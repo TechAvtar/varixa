@@ -1,0 +1,27 @@
+# Single public origin: /api/* goes to the API, everything else to the web app.
+# TLS certificates are issued automatically (ports 80/443 must be reachable, DNS must resolve).
+{
+	email {$VERIXA_ACME_EMAIL}
+}
+
+{$VERIXA_PUBLIC_HOST} {
+	encode zstd gzip
+
+	# Uploads are capped by the API (VERIXA_MAX_UPLOAD_BYTES, 25 MB); allow multipart overhead.
+	request_body {
+		max_size 30MB
+	}
+
+	# The API is reached only under /api; /metrics stays on the private network.
+	@api path /api/*
+	handle @api {
+		reverse_proxy api:8000
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
+}
+
+# Extra sites (e.g. the MinIO profile). Files matching nothing is fine.
+import sites.d/*.caddy

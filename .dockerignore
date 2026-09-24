@@ -1,0 +1,19 @@
+# Web image build context is the repo root (npm workspaces).
+node_modules/
+**/node_modules/
+**/.next/
+**/.next-e2e/
+**/out/
+**/test-results/
+**/playwright-report/
+services/
+infra/
+docs/
+TASKS/
+.git/
+.github/
+.env
+.env.*
+**/.env
+**/.env.*
+**/*.tsbuildinfo

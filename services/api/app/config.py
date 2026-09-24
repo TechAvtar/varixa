@@ -264,6 +264,31 @@ class Settings(BaseSettings):
     def is_sqlite(self) -> bool:
         return self.database_url.startswith("sqlite")
 
+    def production_problems(self) -> list[str]:
+        """Configuration that must not reach production (docs/09, infra/README.md).
+
+        Checked by ``python -m app.preflight`` before migrations run in a deployment; kept
+        out of the validators so tests and local tooling can still build production-mode
+        settings against SQLite.
+        """
+        if self.environment != "production":
+            return []
+        problems: list[str] = []
+        if self.debug:
+            problems.append("VERIXA_DEBUG must be false")
+        if self.is_sqlite:
+            problems.append("VERIXA_DATABASE_URL must point at PostgreSQL, not SQLite")
+        if self.storage_backend != "s3":
+            problems.append("VERIXA_STORAGE_BACKEND must be s3 (private bucket)")
+        if not self.api_public_url.startswith("https://"):
+            problems.append("VERIXA_API_PUBLIC_URL must be an https origin")
+        insecure = [o for o in self.cors_origins if not o.startswith("https://")]
+        if insecure:
+            problems.append(f"VERIXA_CORS_ORIGINS must be https origins only: {insecure}")
+        if self.metrics_enabled and self.metrics_token is None:
+            problems.append("VERIXA_METRICS_TOKEN must be set while metrics are enabled")
+        return problems
+
     def ensure_local_dirs(self) -> None:
         """Create local data directories. Safe to call repeatedly."""
         if self.is_sqlite:
