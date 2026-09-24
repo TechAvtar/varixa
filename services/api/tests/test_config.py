@@ -124,3 +124,14 @@ def test_preflight_reports_invalid_settings(
     assert preflight([]) == 1
     err = capsys.readouterr().err
     assert "configuration invalid" in err and "VERIXA_SECRET_KEY" in err
+
+
+def test_blank_secret_key_falls_back_to_the_dev_default_outside_production(tmp_path: Path) -> None:
+    s = _settings(data_dir=tmp_path, secret_key="")
+    assert s.secret_key.get_secret_value() not in ("", " ")
+    assert len(s.secret_key.get_secret_value()) >= 16
+
+
+def test_blank_secret_key_refused_in_production() -> None:
+    with pytest.raises(ValidationError, match="VERIXA_SECRET_KEY"):
+        _production(secret_key="")

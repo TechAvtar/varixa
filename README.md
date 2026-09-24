@@ -495,6 +495,12 @@ traversal; they are never returned to clients. Reads happen only via short-lived
 Key layout (`app/services/storage_keys.py`): `uploads/{user}/{analysis}/{sha256}.{ext}`,
 `artifacts/{user}/{analysis}/{name}`, `reports/{user}/{analysis}/{report}.{fmt}`.
 
+## Release checklist (T043)
+
+`docs/13-RELEASE-CHECKLIST.md` is the gate for every release candidate: automated checks, security
+and privacy, the core user flows, report quality, failure handling, retention, deployment and
+documentation, plus the dated record of each acceptance run and the known limitations.
+
 ## Deployment (T042)
 
 Production = PostgreSQL + private S3-compatible bucket + one https origin. `services/api/Dockerfile`

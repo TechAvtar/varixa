@@ -213,7 +213,12 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _require_real_secret_outside_dev(self) -> "Settings":
-        secret = self.secret_key.get_secret_value()
+        secret = self.secret_key.get_secret_value().strip()
+        if not secret and self.environment != "production":
+            # A blank VERIXA_SECRET_KEY= (as in .env.example) must not break local sign-in:
+            # an empty HMAC key makes every token operation fail.
+            self.secret_key = SecretStr(_DEV_SECRET)
+            secret = _DEV_SECRET
         if self.environment == "production" and (secret == _DEV_SECRET or len(secret) < 32):
             raise ValueError(
                 "VERIXA_SECRET_KEY must be a random value of at least 32 characters in production"

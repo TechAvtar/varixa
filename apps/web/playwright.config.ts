@@ -20,6 +20,8 @@ const python =
 
 const apiEnv = {
   VERIXA_ENVIRONMENT: "test",
+  // Never depend on a developer's services/api/.env for the key that signs test sessions.
+  VERIXA_SECRET_KEY: "e2e-only-secret-key-not-for-production-000000",
   VERIXA_DATA_DIR: dataDir,
   VERIXA_CORS_ORIGINS: JSON.stringify([webUrl]),
   VERIXA_API_PUBLIC_URL: apiUrl,

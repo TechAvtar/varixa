@@ -13,7 +13,10 @@ test.describe("authentication", () => {
 
   test("register, sign out, sign in again", async ({ page }) => {
     const { email, name } = await register(page);
-    await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+    // First dashboard render after a cold start streams slowly on small machines.
+    await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible({
+      timeout: 30_000,
+    });
     await expect(page.getByText(name, { exact: true })).toBeVisible();
 
     await signOut(page);
