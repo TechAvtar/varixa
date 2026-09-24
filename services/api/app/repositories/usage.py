@@ -1,7 +1,7 @@
 """Persistence for usage counters and storage accounting."""
 
 import uuid
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from datetime import date
 from typing import Any
 
@@ -89,7 +89,8 @@ class UsageRepository:
             )
         )
         artifacts = 0
-        rows = (
+        # Explicit: newer SQLAlchemy stubs no longer infer the JSON column's element type.
+        rows: Iterable[list[dict[str, Any]] | None] = (
             await self._session.execute(
                 select(ImageForensics.artifacts_json).where(
                     ImageForensics.analysis_id.in_(select(live.c.id))
