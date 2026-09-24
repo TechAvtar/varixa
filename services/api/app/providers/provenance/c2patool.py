@@ -26,6 +26,7 @@ log = logging.getLogger("verixa.providers.c2patool")
 
 _MAX_OUTPUT = 16 * 1024 * 1024
 _MAX_INFO = 4 * 1024
+_MAX_TREE = 64 * 1024
 _NO_CLAIM_MARKERS = ("No claim found", "no claim found", "no manifest")
 # Only extensions c2patool understands for the formats Verixa accepts; anything else -> "bin".
 _SAFE_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "tif", "tiff"}
@@ -162,6 +163,10 @@ class C2paToolInspector:
             if caps.has_flag("--info"):
                 info_out, _, _ = await self._run([str(path), "--info"])
                 info = info_out.decode("utf-8", "replace").strip()[:_MAX_INFO] or None
+            tree: str | None = None
+            if caps.has_flag("--tree"):
+                tree_out, _, _ = await self._run([str(path), "--tree"])
+                tree = tree_out.decode("utf-8", "replace").strip()[:_MAX_TREE] or None
 
             warnings = [
                 line.strip()
@@ -180,6 +185,7 @@ class C2paToolInspector:
                 validation_state=str(state) if isinstance(state, str) else None,
                 info=info,
                 capabilities=caps.to_json(),
+                tree=tree,
             )
         finally:
             await asyncio.to_thread(path.unlink, True)

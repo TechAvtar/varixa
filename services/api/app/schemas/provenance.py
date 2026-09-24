@@ -38,6 +38,13 @@ class NormalizedProvenanceResponse(BaseModel):
     # per-ingredient results) and `--info` facts; empty for rows written before T044.
     validation: dict[str, Any] = {}
     info: dict[str, Any] = {}
+    # T045: signed declarations, software agents, ingredient tree and manifest chain.
+    assertions: dict[str, Any] = {}
+    software_agents: list[dict[str, Any]] = []
+    ingredients: list[dict[str, Any]] = []
+    ingredient_failures: int = 0
+    manifest_chain: list[dict[str, Any]] = []
+    manifest_order_conflict: bool = False
 
 
 class ImageProvenanceResponse(BaseModel):
@@ -45,3 +52,5 @@ class ImageProvenanceResponse(BaseModel):
     manifests: dict[str, Any]
     validation_status: list[dict[str, Any]]
     limitations: list[str]
+    # `c2patool --tree` text diagram of the manifest store, when the engine produced one.
+    tree: str | None = None

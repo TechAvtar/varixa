@@ -3,6 +3,8 @@ import path from "node:path";
 
 export const PASSWORD = "e2e-password-123456";
 export const SAMPLE_IMAGE = path.resolve(__dirname, "fixtures/sample.jpg");
+/** c2pa-rs test asset with a valid (test-certificate) Content Credential manifest. */
+export const SIGNED_IMAGE = path.resolve(__dirname, "fixtures/signed_sample.jpg");
 
 /** Long enough for language detection and the statistics step; plainly human-written. */
 export const SAMPLE_TEXT = `The harbour master kept a ledger of every vessel that entered the bay, noting the tide, the weather and the cargo declared at the quay. Over the years the ledger became the town's memory: fishermen consulted it to settle arguments about storms, and the council read it aloud when the old lighthouse was finally repaired.
@@ -78,8 +80,12 @@ export async function pickImage(
 }
 
 /** Uploads the sample JPEG and returns the analysis id from the report URL. */
-export async function createImageAnalysis(page: Page, title?: string): Promise<string> {
-  await pickImage(page, SAMPLE_IMAGE);
+export async function createImageAnalysis(
+  page: Page,
+  title?: string,
+  file: string = SAMPLE_IMAGE,
+): Promise<string> {
+  await pickImage(page, file);
   if (title) await page.getByLabel("Title (optional)").fill(title);
   await page.getByRole("button", { name: "Start analysis" }).click();
   await expect(page).toHaveURL(/\/analyses\/[0-9a-f-]{36}/);

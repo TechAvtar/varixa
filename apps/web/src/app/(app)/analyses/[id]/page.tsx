@@ -326,6 +326,9 @@ export default async function AnalysisPage({
               <div className="space-y-2">
                 <RawJson title="Manifest store" data={prov.manifests} />
                 <RawJson title="Validation status" data={prov.validation_status} />
+                {prov.tree ? (
+                  <RawJson title="Manifest tree (c2patool --tree)" data={prov.tree} />
+                ) : null}
               </div>
             ) : null}
           </>

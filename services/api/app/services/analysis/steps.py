@@ -232,7 +232,11 @@ class InspectProvenanceStep:
             else None,
             validation_json={"status": raw.validation_status} if raw.present else None,
             normalized_json=normalized.to_json(),
-            raw_json={"summary": raw.summary, "detailed": raw.detailed} if raw.present else None,
+            raw_json=(
+                {"summary": raw.summary, "detailed": raw.detailed, "tree": raw.tree}
+                if raw.present
+                else None
+            ),
         )
         await AnalysisRepository(ctx.session).replace_provenance(row)
         ctx.artifacts["provenance"] = normalized

@@ -13,6 +13,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Literal
 
 from app.providers.provenance.base import RawProvenance
+from app.services.image.provenance_depth import read_depth
 
 CodeFamily = Literal["integrity", "trust", "identity", "info"]
 
@@ -111,6 +112,17 @@ class NormalizedProvenance:
     validation: dict[str, Any] = field(default_factory=dict)
     # `--info` facts: manifest store size and count as reported by the engine.
     info: dict[str, Any] = field(default_factory=dict)
+    # Signed declarations read from the active manifest (T045): hash coverage, training/mining
+    # permissions, action source types, identity presence.
+    assertions: dict[str, Any] = field(default_factory=dict)
+    software_agents: list[dict[str, Any]] = field(default_factory=list)
+    # Ingredient tree (recursive nodes with per-ingredient validation codes).
+    ingredients: list[dict[str, Any]] = field(default_factory=list)
+    ingredient_failures: int = 0
+    # Every manifest in the store, active first, with signing times; a child signed after its
+    # parent is an ordering conflict.
+    manifest_chain: list[dict[str, Any]] = field(default_factory=list)
+    manifest_order_conflict: bool = False
 
     def to_json(self) -> dict[str, Any]:
         return asdict(self)
@@ -268,6 +280,13 @@ def normalize_provenance(raw: RawProvenance) -> NormalizedProvenance:
 
     n.validation = _structured_validation(raw)
     n.info = _parse_info(raw.info)
+    depth = read_depth(raw.summary, raw.detailed, n.active_manifest, classify_code)
+    n.assertions = depth.assertions
+    n.software_agents = depth.software_agents
+    n.ingredients = depth.ingredients
+    n.ingredient_failures = depth.ingredient_failures
+    n.manifest_chain = depth.manifest_chain
+    n.manifest_order_conflict = depth.manifest_order_conflict
     if raw.validation_results:
         # Structured results are authoritative when present: any integrity failure there
         # counts, even if the flat list is empty.
@@ -307,6 +326,17 @@ def provenance_limitations(n: NormalizedProvenance) -> list[str]:
         )
     if n.manifest_count > 1:
         notes.append(
-            "Only the active manifest is summarised; earlier manifests are in the raw data."
+            "Only the active manifest is summarised in full; earlier manifests appear in the "
+            "manifest chain and the raw data."
+        )
+    if n.assertions.get("source_types") or n.assertions.get("training_mining"):
+        notes.append(
+            "Declared source types and training/mining permissions are the signer's statements: "
+            "verified as stated, not as true."
+        )
+    if n.ingredient_failures:
+        notes.append(
+            "Some ingredients carry validation failures recorded at composition time; the active "
+            "manifest can still validate on its own."
         )
     return notes

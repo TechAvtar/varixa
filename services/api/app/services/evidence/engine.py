@@ -43,6 +43,11 @@ LEVEL_CEILING: dict[str, str] = {
     "file.identity": EvidenceLevel.VERIFIED,
     "provenance.valid": EvidenceLevel.VERIFIED,
     "provenance.invalid": EvidenceLevel.POSSIBLE,
+    # Signed declarations are the signer's statements: STRONG at most, never VERIFIED.
+    "provenance.source-type": EvidenceLevel.STRONG,
+    "provenance.training-mining": EvidenceLevel.STRONG,
+    "provenance.identity": EvidenceLevel.STRONG,
+    "provenance.ingredient.invalid": EvidenceLevel.POSSIBLE,
     "metadata.software": EvidenceLevel.STRONG,
     "metadata.camera": EvidenceLevel.POSSIBLE,
     "metadata.captured": EvidenceLevel.POSSIBLE,
@@ -344,33 +349,45 @@ def _provenance_rules(o: Observations, t: EvidenceThresholds) -> list[EvidenceDr
                 provider_version=p.engine_version,
             )
         ]
+    assertions = n.get("assertions") or {}
+    hash_data = assertions.get("hash_data") or {}
+    agents = n.get("software_agents") or []
     if p.valid_signature:
-        return [
-            EvidenceDraft(
-                rule="provenance.valid",
-                category="provenance",
-                level=EvidenceLevel.VERIFIED,
-                kind="fact",
-                claim="A C2PA manifest is present and its signature validates (issuer as stated: "
-                f"{p.signer or 'unknown'}).",
-                source=src,
-                confidence=_conf(EvidenceLevel.VERIFIED, t),
-                detail=f"Claim generator: {p.claim_generator}." if p.claim_generator else None,
-                limitation="Validity shows the manifest is intact, not that its claims are true; "
-                "issuer trust is not evaluated.",
-                refs=refs,
-                provider_version=p.engine_version,
-                data={
-                    "signer": p.signer,
-                    "signed_at": p.signed_at,
-                    "claim_generator": p.claim_generator,
-                    "actions": n.get("actions") or [],
-                },
-            )
-        ]
-    failures = [str(x.get("code")) for x in (n.get("validation_failures") or []) if x]
-    return [
-        EvidenceDraft(
+        head = EvidenceDraft(
+            rule="provenance.valid",
+            category="provenance",
+            level=EvidenceLevel.VERIFIED,
+            kind="fact",
+            claim="A C2PA manifest is present and its signature validates (issuer as stated: "
+            f"{p.signer or 'unknown'}).",
+            source=src,
+            confidence=_conf(EvidenceLevel.VERIFIED, t),
+            detail=_provenance_detail(p.claim_generator, hash_data),
+            limitation="Validity shows the manifest is intact, not that its claims are true; "
+            "issuer trust is not evaluated.",
+            refs=refs,
+            provider_version=p.engine_version,
+            data={
+                "signer": p.signer,
+                "signed_at": p.signed_at,
+                "claim_generator": p.claim_generator,
+                "actions": n.get("actions") or [],
+                **(
+                    {
+                        "hash_coverage": {
+                            "algorithm": hash_data.get("alg"),
+                            "excluded_ranges": hash_data.get("exclusion_count"),
+                        }
+                    }
+                    if hash_data
+                    else {}
+                ),
+                **({"software_agents": agents} if agents else {}),
+            },
+        )
+    else:
+        failures = [str(x.get("code")) for x in (n.get("validation_failures") or []) if x]
+        head = EvidenceDraft(
             rule="provenance.invalid",
             category="provenance",
             level=EvidenceLevel.POSSIBLE,
@@ -384,7 +401,152 @@ def _provenance_rules(o: Observations, t: EvidenceThresholds) -> list[EvidenceDr
             provider_version=p.engine_version,
             data={"validation_failures": failures},
         )
-    ]
+    return [head, *_provenance_declaration_rules(p, n, src, refs, t)]
+
+
+def _provenance_detail(claim_generator: str | None, hash_data: dict[str, Any]) -> str | None:
+    parts = []
+    if claim_generator:
+        parts.append(f"Claim generator: {claim_generator}.")
+    if hash_data:
+        excluded = hash_data.get("exclusion_count") or 0
+        parts.append(
+            f"The signature covers the file bytes ({hash_data.get('alg') or 'hash'}) except "
+            f"{excluded} excluded range(s), normally the manifest itself."
+        )
+    return " ".join(parts) or None
+
+
+def _provenance_declaration_rules(
+    p: Any, n: dict[str, Any], src: str, refs: list[str], t: EvidenceThresholds
+) -> list[EvidenceDraft]:
+    """What the signer *declared* (source type, permitted use, identity) and what the
+    ingredient tree records. Declarations cap at STRONG when the signature validates and
+    drop to POSSIBLE when it does not; they are never VERIFIED."""
+    out: list[EvidenceDraft] = []
+    assertions = n.get("assertions") or {}
+    intact = bool(p.valid_signature)
+    declared_level = EvidenceLevel.STRONG if intact else EvidenceLevel.POSSIBLE
+    declared_caveat = (
+        "" if intact else " The signature did not validate, so this declaration is unverified."
+    )
+
+    source_types = assertions.get("source_types") or []
+    if source_types:
+        # The most specific declaration wins: any algorithmic type over a capture type.
+        algorithmic_entries = [
+            s for s in source_types if s.get("short") in ALGORITHMIC_SOURCE_TYPES
+        ]
+        chosen = (algorithmic_entries or source_types)[0]
+        short = chosen.get("short") or chosen.get("uri")
+        algorithmic = bool(algorithmic_entries)
+        level = declared_level if algorithmic else EvidenceLevel.POSSIBLE
+        out.append(
+            EvidenceDraft(
+                rule="provenance.source-type",
+                category="provenance",
+                level=level,
+                kind="signal",
+                claim=f'The signed manifest declares the digital source type "{short}"'
+                + (f" for the action {chosen.get('action')}" if chosen.get("action") else "")
+                + (" (algorithmic / AI-generated, as declared)." if algorithmic else "."),
+                source=src,
+                confidence=_conf(level, t),
+                limitation="A declared source type is the signer's statement, not a measurement: "
+                "verified as stated, not as true." + declared_caveat,
+                refs=refs,
+                provider_version=p.engine_version,
+                data={
+                    "digital_source_type": short,
+                    "uri": chosen.get("uri"),
+                    "algorithmic": algorithmic,
+                    "action": chosen.get("action"),
+                    "declared_types": [s.get("short") for s in source_types],
+                },
+            )
+        )
+
+    training = assertions.get("training_mining") or {}
+    if training:
+        summary = ", ".join(f"{k}: {v}" for k, v in sorted(training.items()))
+        out.append(
+            EvidenceDraft(
+                rule="provenance.training-mining",
+                category="provenance",
+                level=declared_level,
+                kind="signal",
+                claim="The signed manifest declares permitted uses for AI training and data "
+                "mining.",
+                source=src,
+                confidence=_conf(declared_level, t),
+                detail=summary,
+                limitation="A permitted-use declaration; it is not enforced and says nothing "
+                "about how the content was made." + declared_caveat,
+                refs=refs,
+                provider_version=p.engine_version,
+                data={"entries": training},
+            )
+        )
+
+    identity = assertions.get("identity") or {}
+    if identity.get("present"):
+        codes = _identity_codes(n)
+        validated = "cawg.ica.credential_valid" in codes or "cawg.identity.validated" in codes
+        level = declared_level if validated else EvidenceLevel.POSSIBLE
+        out.append(
+            EvidenceDraft(
+                rule="provenance.identity",
+                category="provenance",
+                level=level,
+                kind="signal",
+                claim="The manifest carries a creator identity assertion (CAWG)"
+                + (" that the engine validated." if validated else " that was not validated."),
+                source=src,
+                confidence=_conf(level, t),
+                detail=", ".join(identity.get("names") or []) or None,
+                limitation="Identity credentials are validated against the engine's own identity "
+                "trust list, not by Verixa; a name is what the credential issuer recorded."
+                + declared_caveat,
+                refs=refs,
+                provider_version=p.engine_version,
+                data={"kind": identity.get("kind"), "codes": codes, "validated": validated},
+            )
+        )
+
+    failed = int(n.get("ingredient_failures") or 0)
+    if failed:
+        out.append(
+            EvidenceDraft(
+                rule="provenance.ingredient.invalid",
+                category="provenance",
+                level=EvidenceLevel.POSSIBLE,
+                kind="signal",
+                claim=f"{failed} ingredient(s) in the manifest carry validation failures.",
+                source=src,
+                confidence=_conf(EvidenceLevel.POSSIBLE, t),
+                limitation="Ingredient failures were recorded by the signer at composition time; "
+                "the active manifest itself may still validate.",
+                refs=refs,
+                provider_version=p.engine_version,
+                data={
+                    "ingredient_failures": failed,
+                    "ingredient_count": p.ingredient_count
+                    if hasattr(p, "ingredient_count")
+                    else n.get("ingredient_count"),
+                },
+            )
+        )
+    return out
+
+
+def _identity_codes(n: dict[str, Any]) -> list[str]:
+    codes = [c for c in (n.get("validation_codes") or []) if str(c).startswith("cawg.")]
+    validation = n.get("validation") or {}
+    for family in ("success", "informational", "failure"):
+        for c in (validation.get("active_manifest") or {}).get(family) or []:
+            if str(c).startswith("cawg.") and c not in codes:
+                codes.append(c)
+    return codes
 
 
 def _metadata_rules(o: Observations, t: EvidenceThresholds) -> list[EvidenceDraft]:
@@ -1632,6 +1794,49 @@ def _conflict_rules(
                         "or lack a timezone. Both records are retained.",
                     )
                 )
+    signed_type = by_rule.get("provenance.source-type")
+    declared_type = by_rule.get("metadata.source-type")
+    if (
+        signed_type
+        and declared_type
+        and bool(signed_type.data.get("algorithmic")) != bool(declared_type.data.get("algorithmic"))
+    ):
+        out.append(
+            _conflict(
+                "conflict.source-type",
+                "Evidence conflicts: the signed C2PA source type and the metadata source type "
+                "disagree on algorithmic origin.",
+                signed_type,
+                declared_type,
+                detail=f'Signed "{signed_type.data.get("digital_source_type")}" versus metadata '
+                f'"{declared_type.data.get("digital_source_type")}".',
+                limitation="Metadata fields can be edited freely after signing; the signed value "
+                "is the one the signer vouched for. Both records are retained.",
+            )
+        )
+    prov_row = o.provenance if o is not None else None
+    chain_conflict = bool(
+        (getattr(prov_row, "normalized_json", None) or {}).get("manifest_order_conflict")
+    )
+    head = verified_prov or by_rule.get("provenance.invalid")
+    if chain_conflict and head is not None:
+        out.append(
+            EvidenceDraft(
+                rule="conflict.manifest-order",
+                category="synthesis",
+                level=EvidenceLevel.UNKNOWN,
+                kind="conflict",
+                claim="Evidence conflicts: a manifest in the chain was signed before one of the "
+                "ingredients it claims to derive from.",
+                source="evidence-engine",
+                confidence=None,
+                detail="Signing times of the manifest chain are out of order.",
+                limitation="Signing clocks may be wrong or unsynchronised; the order is compared "
+                "with a tolerance. Both manifests are retained.",
+                refs=list(head.refs),
+                conflicts_with=[head.rule],
+            )
+        )
     if verified_prov:
         opposing = [
             d

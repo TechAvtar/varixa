@@ -85,6 +85,65 @@ def _table(rows: Sequence[Sequence[Any]], widths: Sequence[float], *, header: bo
     return t
 
 
+def _provenance_depth_rows(p: dict[str, Any]) -> list[tuple[str, Any]]:
+    """Signed declarations and the ingredient tree (T045); empty for pre-T045 rows."""
+    rows: list[tuple[str, Any]] = []
+    assertions = p.get("assertions") or {}
+    hash_data = assertions.get("hash_data") or {}
+    if hash_data:
+        rows.append(
+            (
+                "Signature covers",
+                f"file bytes ({hash_data.get('alg') or 'hash'}), "
+                f"{hash_data.get('exclusion_count') or 0} excluded range(s)",
+            )
+        )
+    for entry in assertions.get("source_types") or []:
+        rows.append(("Declared source type (signed)", entry.get("short") or entry.get("uri")))
+    training = assertions.get("training_mining") or {}
+    if training:
+        rows.append(
+            ("Training / mining", ", ".join(f"{k}: {v}" for k, v in sorted(training.items())))
+        )
+    identity = assertions.get("identity") or {}
+    if identity.get("present"):
+        rows.append(
+            ("Creator identity (CAWG)", ", ".join(identity.get("names") or []) or "present")
+        )
+    agents = p.get("software_agents") or []
+    if agents:
+        rows.append(
+            (
+                "Software agents",
+                ", ".join(f"{a.get('name')} {a.get('version') or ''}".strip() for a in agents[:8]),
+            )
+        )
+    ingredients = p.get("ingredients") or []
+    if ingredients:
+        titles = [str(i.get("title") or i.get("format") or "untitled") for i in ingredients[:8]]
+        rows.append(
+            (
+                "Ingredients",
+                f"{len(ingredients)} ({', '.join(titles)})"
+                + (
+                    f"; {p.get('ingredient_failures')} with validation failures"
+                    if p.get("ingredient_failures")
+                    else ""
+                ),
+            )
+        )
+    chain = p.get("manifest_chain") or []
+    if len(chain) > 1:
+        rows.append(
+            (
+                "Manifest chain",
+                f"{len(chain)} manifests"
+                + (" (signing order conflict)" if p.get("manifest_order_conflict") else ""),
+            )
+        )
+    return rows
+
+
 def _yes_no(value: object) -> str:
     if value is True:
         return "yes"
@@ -373,6 +432,7 @@ def render_pdf(b: ReportBundle) -> tuple[bytes, int]:
                     ("Signer (as stated)", p.get("signer")),
                     ("Signed at", p.get("signed_at")),
                     ("Claim generator", p.get("claim_generator")),
+                    *_provenance_depth_rows(p),
                 ],
                 width,
             )

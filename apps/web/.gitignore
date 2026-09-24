@@ -46,3 +46,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# screenshot walkthrough output (E2E_SCREENSHOTS=1)
+/e2e/screenshots/

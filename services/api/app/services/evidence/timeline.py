@@ -100,6 +100,29 @@ def build_timeline(o: Observations, drafts: Sequence[EvidenceDraft]) -> list[Tim
                 )
             )
 
+        for entry in (o.provenance.normalized_json or {}).get("manifest_chain") or []:
+            if not isinstance(entry, dict) or not entry.get("parent") or not entry.get("signed_at"):
+                continue  # the active manifest is the "provenance.signed" event above
+            dt, tz = parse_timestamp(entry["signed_at"])
+            events.append(
+                TimelineEventDraft(
+                    event_type="provenance.ingredient-signed",
+                    certainty=certainty,
+                    description="An ingredient's manifest was signed"
+                    + (f" by {entry.get('signer')}" if entry.get("signer") else "")
+                    + ".",
+                    source=prov.source,
+                    event_time=_placeable(dt),
+                    raw_time=str(entry["signed_at"]),
+                    tz_known=tz,
+                    source_rules=[prov.rule],
+                    data={
+                        "manifest": entry.get("label"),
+                        "claim_generator": entry.get("claim_generator"),
+                    },
+                )
+            )
+
     # -- metadata: capture and modification times --------------------------------------------
     meta = o.metadata
     if meta is not None:

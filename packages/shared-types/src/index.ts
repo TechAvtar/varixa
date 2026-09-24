@@ -54,6 +54,13 @@ export type {
   ImageProvenanceResponse,
   NormalizedProvenance,
   ProvenanceAction,
+  ProvenanceAssertions,
+  ProvenanceHashCoverage,
+  ProvenanceIdentity,
+  ProvenanceIngredient,
+  ProvenanceManifestLink,
+  ProvenanceSoftwareAgent,
+  ProvenanceSourceType,
   ProvenanceValidationFailure,
 } from "./provenance";
 export type {

@@ -48,6 +48,9 @@ The system cannot establish the fact.
 | Observation | Level |
 |---|---|
 | Valid C2PA signature | VERIFIED |
+| Signed C2PA declaration (digital source type, training/mining permission, creator identity) with a valid signature | STRONG (POSSIBLE when the signature does not validate; a declaration is verified as stated, not as true) |
+| C2PA ingredient with recorded validation failures | POSSIBLE |
+| Signed source type disagrees with metadata source type; manifest signed before its ingredient | conflict record (UNKNOWN), both sides retained |
 | Exact SHA-256 match | VERIFIED |
 | EXIF software tag | STRONG |
 | Multiple independent forensic anomalies | STRONG |

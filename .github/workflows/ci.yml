@@ -88,6 +88,12 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: services/api/pyproject.toml
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libimage-exiftool-perl
+      - name: Install c2patool
+        run: |
+          curl -sSL -o /tmp/c2patool.tar.gz https://github.com/contentauth/c2patool/releases/download/v0.9.12/c2patool-v0.9.12-x86_64-unknown-linux-gnu.tar.gz
+          sudo tar -xzf /tmp/c2patool.tar.gz -C /usr/local/bin --strip-components=1 c2patool/c2patool
+          c2patool --version
       - name: Install the API into the venv the Playwright config expects
         working-directory: services/api
         run: |

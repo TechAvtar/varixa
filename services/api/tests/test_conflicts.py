@@ -183,3 +183,57 @@ def test_several_conflicts_stack_and_each_is_counted() -> None:
     assert synthesis_confidence(records, T) == 0.5  # 1.0 - 2 x 0.25
     for c in conflicts:
         assert set(c.refs) and c.category == "synthesis" and c.source == "evidence-engine"
+
+
+# -- T045 conflicts: signed source type vs metadata; manifest order ---------------------------
+
+
+def test_signed_and_metadata_source_types_conflict_when_they_disagree() -> None:
+    prov = Row(
+        engine="c2patool",
+        engine_version="0.9",
+        has_c2pa=True,
+        valid_signature=True,
+        signer="Cam Co",
+        signed_at="2026-01-01T00:00:00Z",
+        claim_generator="cam/1.0",
+        ingredient_count=0,
+        normalized_json={
+            "assertions": {
+                "source_types": [{"action": "c2pa.created", "uri": "x", "short": "digitalCapture"}]
+            }
+        },
+    )
+    meta = Row(
+        engine="exiftool",
+        engine_version="13",
+        software=None,
+        camera_make=None,
+        camera_model=None,
+        normalized_json={"has_exif": True, "digital_source_type": "trainedAlgorithmicMedia"},
+    )
+    drafts = build_evidence(Observations("image", provenance=prov, metadata=meta), T)
+    c = by_rule(drafts, "conflict.source-type")
+    assert c.kind == "conflict" and c.level == "UNKNOWN"
+    assert set(c.conflicts_with) == {"provenance.source-type", "metadata.source-type"}
+    # Both sides are retained at their own levels.
+    assert by_rule(drafts, "provenance.source-type").level == "POSSIBLE"
+    assert by_rule(drafts, "metadata.source-type").level == "STRONG"
+
+
+def test_manifest_order_conflict_is_recorded() -> None:
+    prov = Row(
+        engine="c2patool",
+        engine_version="0.9",
+        has_c2pa=True,
+        valid_signature=True,
+        signer="Editor Inc",
+        signed_at="2026-01-02T00:00:00Z",
+        claim_generator="editor/2.0",
+        ingredient_count=1,
+        normalized_json={"manifest_order_conflict": True, "manifest_chain": [{}, {}]},
+    )
+    drafts = build_evidence(Observations("image", provenance=prov), T)
+    c = by_rule(drafts, "conflict.manifest-order")
+    assert c.kind == "conflict" and c.conflicts_with == ["provenance.valid"]
+    assert by_rule(drafts, "provenance.valid").level == "VERIFIED"

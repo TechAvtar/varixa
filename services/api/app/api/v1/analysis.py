@@ -696,6 +696,7 @@ async def get_analysis_provenance(
         normalized=normalized,
         manifests=row.manifests_json or {},
         validation_status=(row.validation_json or {}).get("status", []),
+        tree=(row.raw_json or {}).get("tree"),
         limitations=limitations,
     )
 

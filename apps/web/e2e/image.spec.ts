@@ -1,5 +1,12 @@
 import { expect, test } from "@playwright/test";
-import { createImageAnalysis, formAlert, pickImage, register, waitForCompleted } from "./helpers";
+import {
+  SIGNED_IMAGE,
+  createImageAnalysis,
+  formAlert,
+  pickImage,
+  register,
+  waitForCompleted,
+} from "./helpers";
 
 test.describe("image analysis", () => {
   test("upload runs the pipeline and the report shows verified file facts", async ({ page }) => {
@@ -26,6 +33,27 @@ test.describe("image analysis", () => {
     // The new analysis is listed on the dashboard.
     await page.goto("/dashboard");
     await expect(page.getByRole("link", { name: "Harbour photo" })).toBeVisible();
+  });
+
+  test("a signed image shows its content credentials and what the signature covers", async ({
+    page,
+  }) => {
+    await register(page);
+    const id = await createImageAnalysis(page, "Signed sample", SIGNED_IMAGE);
+    await waitForCompleted(page, id);
+    await page.getByRole("tab", { name: "Provenance" }).click();
+    const panel = page.getByRole("tabpanel", { name: "provenance" });
+    await expect(panel).toBeVisible();
+    // The step only runs when c2patool is installed (CI installs it; a dev box may not).
+    const inspected = await panel.getByText("VERIFIED · manifest intact").isVisible();
+    test.skip(!inspected, "c2patool not available on this machine");
+    await expect(panel.getByText("C2PA Test Signing Cert").first()).toBeVisible();
+    await expect(panel.getByRole("heading", { name: "Signed declarations" })).toBeVisible();
+    await expect(panel.getByText(/Signature covers/)).toBeVisible();
+    // The coverage sentence appears in the evidence record and in the card; either proves it.
+    await expect(panel.getByText(/excluded range/).first()).toBeVisible();
+    // Evidence data is rendered generically: the hash coverage row comes from the record's data.
+    await expect(panel.getByText("hash_coverage")).toBeVisible();
   });
 
   test("a non-image is refused and nothing is created", async ({ page }) => {

@@ -177,13 +177,19 @@ def edit_history(raw: RawMetadata) -> list[EditEvent]:
     return events
 
 
+def short_source_type(value: str) -> str:
+    """`http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia` ->
+    `trainedAlgorithmicMedia`. Shared with the C2PA reader (signed action source types)."""
+    return value.strip().removeprefix(_SOURCE_TYPE_PREFIX).rstrip("/").split("/")[-1][:80]
+
+
 def digital_source_type(raw: RawMetadata) -> str | None:
     value = _text(_prop(xmp_properties(raw), "DigitalSourceType")) or _text(
         raw.get("IPTC", "DigitalSourceType")
     )
     if not value:
         return None
-    return value.removeprefix(_SOURCE_TYPE_PREFIX).rstrip("/").split("/")[-1][:80]
+    return short_source_type(value)
 
 
 # -- generator markers -----------------------------------------------------------------------------

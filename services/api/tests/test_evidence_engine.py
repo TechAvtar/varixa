@@ -9,6 +9,7 @@ from app.config import Settings
 from app.enums import EvidenceLevel
 from app.services.evidence.engine import (
     ENGINE_VERSION,
+    LEVEL_CEILING,
     EvidenceThresholds,
     Observations,
     ai_level,
@@ -492,3 +493,140 @@ async def test_rerun_replaces_rather_than_duplicates(
     second = (await client.get(f"/analysis/{aid}/evidence", headers=headers)).json()
     assert len(second["items"]) == len(first["items"])
     assert {i["rule"] for i in second["items"]} == {i["rule"] for i in first["items"]}
+
+
+# -- T045: signed declarations, ingredients, manifest chain ----------------------------------
+
+
+def provenance_row(**normalized: Any) -> Any:
+    base: dict[str, Any] = {
+        "actions": [],
+        "assertions": {},
+        "software_agents": [],
+        "ingredients": [],
+        "ingredient_failures": 0,
+        "manifest_chain": [],
+        "manifest_order_conflict": False,
+        "validation_codes": ["claimSignature.validated"],
+    }
+    base.update(normalized)
+    return Row(
+        engine="c2patool",
+        engine_version="0.9",
+        has_c2pa=True,
+        valid_signature=True,
+        signer="Cam Co",
+        signed_at="2026-01-01T00:00:00Z",
+        claim_generator="cam/1.0",
+        ingredient_count=len(base["ingredients"]),
+        normalized_json=base,
+    )
+
+
+def test_signed_source_type_is_strong_when_algorithmic_and_intact() -> None:
+    row = provenance_row(
+        assertions={
+            "source_types": [
+                {
+                    "action": "c2pa.created",
+                    "uri": "http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia",
+                    "short": "trainedAlgorithmicMedia",
+                }
+            ]
+        }
+    )
+    drafts = build_evidence(Observations("image", provenance=row), T)
+    d = by_rule(drafts, "provenance.source-type")
+    assert d.level == "STRONG" and d.kind == "signal" and d.data["algorithmic"] is True
+    assert "verified as stated" in (d.limitation or "")
+    assert "hash_coverage" not in by_rule(drafts, "provenance.valid").data
+
+
+def test_signed_capture_source_type_is_possible() -> None:
+    row = provenance_row(
+        assertions={
+            "source_types": [{"action": "c2pa.created", "uri": "x", "short": "digitalCapture"}]
+        }
+    )
+    d = by_rule(build_evidence(Observations("image", provenance=row), T), "provenance.source-type")
+    assert d.level == "POSSIBLE" and d.data["algorithmic"] is False
+
+
+def test_declarations_drop_to_possible_when_signature_invalid() -> None:
+    row = Row(
+        engine="c2patool",
+        engine_version="0.9",
+        has_c2pa=True,
+        valid_signature=False,
+        signer=None,
+        signed_at=None,
+        claim_generator=None,
+        ingredient_count=0,
+        normalized_json={
+            "validation_failures": [{"code": "assertion.dataHash.mismatch"}],
+            "assertions": {
+                "training_mining": {"c2pa.ai_generative_training": "notAllowed"},
+                "source_types": [{"action": None, "uri": "x", "short": "trainedAlgorithmicMedia"}],
+            },
+        },
+    )
+    drafts = build_evidence(Observations("image", provenance=row), T)
+    assert by_rule(drafts, "provenance.invalid").level == "POSSIBLE"
+    assert by_rule(drafts, "provenance.training-mining").level == "POSSIBLE"
+    assert by_rule(drafts, "provenance.source-type").level == "POSSIBLE"
+    assert "did not validate" in (by_rule(drafts, "provenance.source-type").limitation or "")
+
+
+def test_training_mining_identity_and_ingredient_rules() -> None:
+    row = provenance_row(
+        assertions={
+            "training_mining": {"c2pa.ai_generative_training": "notAllowed"},
+            "identity": {
+                "present": True,
+                "kind": "cawg.identity_claims_aggregation",
+                "names": ["Ada"],
+            },
+        },
+        ingredients=[
+            {"title": "a", "failure_codes": ["assertion.dataHash.mismatch"], "children": []}
+        ],
+        ingredient_failures=1,
+        validation_codes=["claimSignature.validated", "cawg.ica.credential_valid"],
+    )
+    drafts = build_evidence(Observations("image", provenance=row), T)
+    tm = by_rule(drafts, "provenance.training-mining")
+    assert tm.level == "STRONG" and "notAllowed" in (tm.detail or "")
+    ident = by_rule(drafts, "provenance.identity")
+    assert ident.level == "STRONG" and ident.data["validated"] is True and ident.detail == "Ada"
+    ing = by_rule(drafts, "provenance.ingredient.invalid")
+    assert ing.level == "POSSIBLE" and ing.data["ingredient_failures"] == 1
+
+
+def test_unvalidated_identity_is_possible() -> None:
+    row = provenance_row(
+        assertions={"identity": {"present": True, "kind": None, "names": []}},
+        validation_codes=["claimSignature.validated", "cawg.ica.untrusted_issuer"],
+    )
+    d = by_rule(build_evidence(Observations("image", provenance=row), T), "provenance.identity")
+    assert d.level == "POSSIBLE" and d.data["validated"] is False
+
+
+def test_hash_coverage_and_agents_enrich_the_valid_record() -> None:
+    row = provenance_row(
+        assertions={"hash_data": {"alg": "sha256", "exclusion_count": 1, "exclusions": []}},
+        software_agents=[{"name": "Editor", "version": "2.0", "origin": "action"}],
+    )
+    d = by_rule(build_evidence(Observations("image", provenance=row), T), "provenance.valid")
+    assert d.data["hash_coverage"] == {"algorithm": "sha256", "excluded_ranges": 1}
+    assert d.data["software_agents"][0]["name"] == "Editor"
+    assert "covers the file bytes" in (d.detail or "")
+
+
+def test_new_provenance_rules_have_ceilings() -> None:
+    for rule in (
+        "provenance.source-type",
+        "provenance.training-mining",
+        "provenance.identity",
+        "provenance.ingredient.invalid",
+    ):
+        assert rule in LEVEL_CEILING and LEVEL_CEILING[rule] in {"STRONG", "POSSIBLE"}

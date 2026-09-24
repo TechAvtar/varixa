@@ -28,6 +28,8 @@ class RawProvenance:
     info: str | None = None
     # What the engine binary supports (version, flag names); informational only.
     capabilities: dict[str, Any] = field(default_factory=dict)
+    # `--tree` text diagram of the manifest store (raw only; never interpreted).
+    tree: str | None = None
 
 
 class ProvenanceInspector(Protocol):

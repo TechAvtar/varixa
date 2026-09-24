@@ -232,3 +232,18 @@ async def test_timeline_endpoint_enforces_ownership(
         await client.get(f"/analysis/{uuid.uuid4()}/timeline", headers=owner)
     ).status_code == 404
     assert (await client.get(f"/analysis/{aid}/timeline")).status_code == 401
+
+
+def test_ingredient_manifest_signing_times_become_events() -> None:
+    row = provenance(valid=True, signed_at="2026-01-02T00:00:00Z", actions=[])
+    row.normalized_json["manifest_chain"] = [
+        {"label": "urn:b", "parent": None, "signed_at": "2026-01-02T00:00:00Z", "signer": "E"},
+        {"label": "urn:a", "parent": "urn:b", "signed_at": "2026-01-01T00:00:00Z", "signer": "Cam"},
+    ]
+    drafts = build_evidence(Observations("image", provenance=row), T)
+    events = build_timeline(Observations("image", provenance=row), drafts)
+    kinds = [e.event_type for e in events]
+    assert kinds.index("provenance.ingredient-signed") < kinds.index("provenance.signed")
+    ev = next(e for e in events if e.event_type == "provenance.ingredient-signed")
+    assert ev.raw_time == "2026-01-01T00:00:00Z" and ev.tz_known and "Cam" in ev.description
+    assert ev.data["manifest"] == "urn:a" and ev.certainty == "VERIFIED"

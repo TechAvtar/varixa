@@ -461,3 +461,217 @@ def test_capabilities_value_object() -> None:
         version="1.0.0", flags=frozenset({"--info"}), subcommands=frozenset()
     )
     assert caps.has_flag("--info") and caps.version_tuple == (1, 0, 0)
+
+
+# -- Phase 2: assertion depth, ingredient tree, manifest chain ------------------------------
+
+SOURCE_AI = "http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia"
+
+
+def composite_summary() -> dict[str, Any]:
+    """An edit (urn:b) whose parent ingredient (urn:a) was itself signed, plus a second
+    ingredient whose recorded validation failed. urn:a was signed *after* urn:b."""
+    return {
+        "active_manifest": "urn:b",
+        "manifests": {
+            "urn:b": {
+                "claim_generator": "editor/2.0",
+                "title": "edit.jpg",
+                "claim_generator_info": [{"name": "Editor", "version": "2.0"}],
+                "ingredients": [
+                    {
+                        "title": "parent.jpg",
+                        "format": "image/jpeg",
+                        "relationship": "parentOf",
+                        "document_id": "xmp:did:1",
+                        "instance_id": "xmp:iid:1",
+                        "active_manifest": "urn:a",
+                        "thumbnail": {"format": "image/jpeg", "identifier": "self#jumbf=x"},
+                        "validation_status": [{"code": "claimSignature.validated"}],
+                    },
+                    {
+                        "title": "sticker.png",
+                        "format": "image/png",
+                        "relationship": "componentOf",
+                        "validation_status": [{"code": "assertion.dataHash.mismatch"}],
+                    },
+                ],
+                "assertions": [
+                    {
+                        "label": "c2pa.actions.v2",
+                        "data": {
+                            "actions": [
+                                {
+                                    "action": "c2pa.opened",
+                                    "softwareAgent": {"name": "Editor", "version": "2.0"},
+                                },
+                                {
+                                    "action": "c2pa.edited",
+                                    "digitalSourceType": SOURCE_AI,
+                                    "softwareAgent": "Plugin 1.1",
+                                },
+                            ]
+                        },
+                    },
+                    {
+                        "label": "c2pa.training-mining",
+                        "data": {
+                            "entries": {
+                                "c2pa.ai_generative_training": {"use": "notAllowed"},
+                                "c2pa.data_mining": {"use": "allowed"},
+                            }
+                        },
+                    },
+                    {
+                        "label": "cawg.identity",
+                        "data": {
+                            "signer_payload": {"referenced_assertions": [{"url": "x"}]},
+                            "signature_type": "cawg.identity_claims_aggregation",
+                            "verifiedIdentities": [{"type": "cawg.social_media", "name": "Ada"}],
+                        },
+                    },
+                ],
+                "signature_info": {
+                    "alg": "Ps256",
+                    "issuer": "Editor Inc",
+                    "time": "2026-01-02T00:00:00+00:00",
+                },
+            },
+            "urn:a": {
+                "claim_generator": "camera/1.0",
+                "title": "parent.jpg",
+                "ingredients": [],
+                "assertions": [
+                    {
+                        "label": "c2pa.actions",
+                        "data": {
+                            "actions": [
+                                {
+                                    "action": "c2pa.created",
+                                    "digitalSourceType": "http://cv.iptc.org/newscodes/"
+                                    "digitalsourcetype/digitalCapture",
+                                }
+                            ]
+                        },
+                    }
+                ],
+                "signature_info": {
+                    "alg": "Es256",
+                    "issuer": "Cam Co",
+                    "time": "2026-01-03T00:00:00+00:00",
+                },
+            },
+        },
+    }
+
+
+def composite_detailed() -> dict[str, Any]:
+    return {
+        "active_manifest": "urn:b",
+        "manifests": {
+            "urn:b": {
+                "assertion_store": {
+                    "c2pa.hash.data": {
+                        "exclusions": [{"start": 20, "length": 51179}],
+                        "name": "jumbf manifest",
+                        "alg": "sha256",
+                    }
+                }
+            }
+        },
+        "validation_status": [
+            {"code": "claimSignature.validated", "explanation": "ok"},
+            {"code": "cawg.ica.credential_valid", "explanation": "identity ok"},
+        ],
+    }
+
+
+def composite_raw() -> RawProvenance:
+    d = composite_detailed()
+    return RawProvenance(
+        engine="c2patool",
+        engine_version="0.9.12",
+        present=True,
+        summary=composite_summary(),
+        detailed=d,
+        validation_status=d["validation_status"],
+        tree="Tree View:\n Asset:edit.jpg, Manifest:urn:b\n",
+    )
+
+
+def test_depth_reads_signed_declarations() -> None:
+    n = normalize_provenance(composite_raw())
+    a = n.assertions
+    assert a["hash_data"]["alg"] == "sha256" and a["hash_data"]["exclusion_count"] == 1
+    assert a["source_types"] == [
+        {"action": "c2pa.edited", "uri": SOURCE_AI, "short": "trainedAlgorithmicMedia"}
+    ]
+    assert a["training_mining"] == {
+        "c2pa.ai_generative_training": "notAllowed",
+        "c2pa.data_mining": "allowed",
+    }
+    assert a["identity"]["present"] and a["identity"]["names"] == ["Ada"]
+    assert a["identity"]["kind"] == "cawg.identity_claims_aggregation"
+    names = {(x["name"], x["version"], x["origin"]) for x in n.software_agents}
+    assert ("Editor", "2.0", "action") in names and ("Plugin 1.1", None, "action") in names
+
+
+def test_depth_reads_ingredient_tree_and_failures() -> None:
+    n = normalize_provenance(composite_raw())
+    assert n.ingredient_count == 2 and len(n.ingredients) == 2
+    parent, sticker = n.ingredients
+    assert parent["title"] == "parent.jpg" and parent["relationship"] == "parentOf"
+    assert parent["manifest_label"] == "urn:a" and parent["failure_codes"] == []
+    assert parent["children"] == []  # urn:a has no ingredients of its own
+    assert sticker["failure_codes"] == ["assertion.dataHash.mismatch"]
+    assert n.ingredient_failures == 1
+    assert any("ingredients carry validation failures" in x for x in provenance_limitations(n))
+
+
+def test_depth_reads_manifest_chain_and_order_conflict() -> None:
+    n = normalize_provenance(composite_raw())
+    labels = [m["label"] for m in n.manifest_chain]
+    assert labels == ["urn:b", "urn:a"]
+    assert n.manifest_chain[1]["parent"] == "urn:b"
+    assert n.manifest_order_conflict is True  # parent signed a day after the derived manifest
+    assert n.manifest_chain[1]["signed_after_parent"] is True
+
+
+def test_depth_ignores_cycles_and_caps_nodes() -> None:
+    summary = composite_summary()
+    summary["manifests"]["urn:a"]["ingredients"] = [{"title": "loop", "active_manifest": "urn:b"}]
+    n = normalize_provenance(
+        RawProvenance(engine="c2patool", engine_version="0.9.12", present=True, summary=summary)
+    )
+    assert [m["label"] for m in n.manifest_chain] == ["urn:b", "urn:a"]
+    assert n.ingredients[0]["children"][0]["title"] == "loop"
+
+
+def test_depth_is_empty_for_a_plain_signed_manifest() -> None:
+    n = normalize_provenance(raw_signed())
+    assert n.assertions == {} and n.software_agents == []
+    # raw_signed() lists one ingredient without a manifest of its own: a leaf node, no failures.
+    assert [i["title"] for i in n.ingredients] == ["parent"] and n.ingredient_failures == 0
+    assert n.manifest_chain[0]["label"] == "urn:a" and not n.manifest_order_conflict
+
+
+@needs_c2patool
+async def test_c2patool_tree_is_captured(tmp_path: Path) -> None:
+    assert C2PATOOL is not None
+    raw = await C2paToolInspector(C2PATOOL, temp_dir=tmp_path).inspect(SIGNED, extension="jpg")
+    assert raw.tree and "Tree View" in raw.tree and "c2pa.hash.data" in raw.tree
+    n = normalize_provenance(raw)
+    assert n.assertions["hash_data"]["exclusion_count"] == 1
+
+
+@needs_c2patool
+async def test_signed_upload_exposes_depth_and_tree(client: AsyncClient) -> None:
+    headers = await auth_headers(client)
+    r = await client.post(
+        "/analysis/image", headers=headers, files={"file": ("C.jpg", SIGNED, "image/jpeg")}
+    )
+    aid = r.json()["id"]
+    body = (await client.get(f"/analysis/{aid}/provenance", headers=headers)).json()
+    assert body["tree"] and body["tree"].startswith("Tree View")
+    assert body["normalized"]["assertions"]["hash_data"]["alg"] == "sha256"
+    assert body["normalized"]["manifest_chain"][0]["signer"] == "C2PA Test Signing Cert"
