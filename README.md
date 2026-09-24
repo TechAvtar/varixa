@@ -449,7 +449,7 @@ Steps today:
 | ---- | -------- | --------------- |
 | `validate` | yes | Re-reads the stored original, checks SHA-256 against the record, re-runs upload validation; format, dimensions, frames |
 | `hashing` | yes | SHA-256, MD5 (compatibility only), aHash, dHash, pHash (64-bit, imagehash-compatible), persisted to `image_fingerprints` (replaced on re-run); `GET /analysis/{id}/fingerprints` also lists exact/near duplicates among the user's own analyses (Hamming ≤ `VERIXA_FINGERPRINT_NEAR_THRESHOLD`) — similarity is a *signal*, not proof of origin |
-| `provenance` | no | C2PA manifests via c2patool (temp file, fixed args); presence, signature validity, stated signer, claim generator, actions, authors, validation codes; absence is UNKNOWN, issuer trust not evaluated; `GET /analysis/{id}/provenance` |
+| `provenance` | no | C2PA manifests via c2patool (temp file, fixed args; capabilities probed once per process from `--help`; one retry only when the process cannot start); presence, signature validity (integrity codes only: a trust-list failure is never read as "altered"), stated signer, claim generator, actions, authors, validation codes grouped as success / informational / failure (`validation`, from `validation_results` on newer engines or synthesised from the flat list), `--info` facts; absence is UNKNOWN; `GET /analysis/{id}/provenance` |
 | `ai` | no | AI-generation signal via the configured `AIDetector` adapter (`VERIXA_AI_DETECTOR_PROVIDER`: `none` skips the step; `mock` is a deterministic stand-in). Results are cached by content hash + provider/model/version, persisted to `ai_detections` with provider, model, version, score, label, thresholds and raw response; `GET /analysis/{id}/ai`. A score maps to PROBABLE/POSSIBLE/UNKNOWN per docs/07 and is never presented as proof |
 | `search` | no | Reverse-image / phrase source search via `ImageSourceSearch` / `TextSourceSearch` adapters (`VERIXA_SOURCE_SEARCH_PROVIDER`: `none` skips; `mock` returns synthetic `.invalid` hits). Distinctive phrases are chosen deterministically (`services/text/phrases.py`, capped by `VERIXA_TEXT_SEARCH_MAX_PHRASES`); matches persist to `reverse_matches` with the run summary in `source_search_runs`; `GET /analysis/{id}/matches`. A match is a discovery signal (POSSIBLE), never origin proof |
 | `metadata` | no | EXIF/XMP/IPTC/ICC via ExifTool (stdin, fixed args) or Pillow fallback; raw groups preserved in `image_metadata`, normalised camera/software/timestamps/orientation/GPS-presence; `GET /analysis/{id}/metadata` |
@@ -480,7 +480,9 @@ source search, evidence and report steps.
 - **Health**: `GET /api/v1/health/live` answers as soon as the process is up;
   `GET /api/v1/health` is the readiness probe (database, storage writable, configured
   engine/provider *names*, uptime) and reports `degraded` when a dependency is down. The
-  landing page shows it.
+  landing page shows it. It also reports `engines` (binary tools the pipeline shells out to,
+  today `c2patool`): status `ok` / `unavailable` / `not_configured` and the version, cached for a
+  minute; never a path.
 
 ## Object storage
 

@@ -25,6 +25,7 @@ from app.repositories.reports import ReportRepository
 from app.services import storage_keys
 from app.services.authorization import assert_owns_analysis
 from app.services.evidence.engine import EvidenceThresholds, ai_level
+from app.services.image.provenance import NormalizedProvenance, provenance_limitations
 from app.services.reports.bundle import ReportBundle, evidence_lines, forensic_methods
 from app.services.reports.overview import build_overview
 from app.services.reports.pdf import render_pdf
@@ -165,6 +166,7 @@ class ReportService:
             }
 
         metadata = provenance = ai = matches = None
+        provenance_notes: list[str] = []
         forensics_row = None
         maps: dict[str, bytes] = {}
         thumbnail: bytes | None = None
@@ -174,6 +176,11 @@ class ReportService:
             metadata = dict(md.normalized_json or {}) if md else None
             pv = await repo.get_provenance(aid)
             provenance = dict(pv.normalized_json or {}) if pv else None
+            if provenance:
+                try:
+                    provenance_notes = provenance_limitations(NormalizedProvenance(**provenance))
+                except TypeError:  # a row written by a newer/older normaliser shape
+                    provenance_notes = []
             forensics_row = await repo.get_forensics(aid)
             for art in (forensics_row.artifacts_json or []) if forensics_row else []:
                 key = art.get("object_key")
@@ -257,6 +264,7 @@ class ReportService:
             synthesis=synthesis,
             metadata=metadata,
             provenance=provenance,
+            provenance_limitations=provenance_notes,
             ai=ai,
             forensics=forensic_methods(forensics_row, maps),
             matches=matches,

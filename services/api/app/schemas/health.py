@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
@@ -17,3 +17,5 @@ class HealthResponse(BaseModel):
     # Configured engine/provider names only (never keys or endpoints).
     providers: dict[str, str]
     uptime_seconds: float
+    # Binary engines the pipeline shells out to: name -> {status, version}; never paths.
+    engines: dict[str, dict[str, Any]] = {}

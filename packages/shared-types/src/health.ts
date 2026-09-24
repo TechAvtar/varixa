@@ -9,6 +9,8 @@ export interface HealthResponse {
   /** Configured engine/provider names only (never keys or endpoints). */
   providers: Record<string, string>;
   uptime_seconds: number;
+  /** Binary engines the pipeline shells out to (c2patool): status and version, never paths. */
+  engines: Record<string, { status: "ok" | "unavailable" | "not_configured"; version: string | null }>;
 }
 
 /** Mirrors `app/schemas/health.py::LivenessResponse`. */

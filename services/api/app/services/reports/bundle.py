@@ -62,6 +62,7 @@ class ReportBundle:
     timeline: list[dict[str, Any]]
     thumbnail_png: bytes | None = field(default=None, repr=False)
     app_version: str = "dev"
+    provenance_limitations: list[str] = field(default_factory=list)
 
     def summary_json(self) -> dict[str, Any]:
         return {

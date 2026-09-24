@@ -384,6 +384,8 @@ def render_pdf(b: ReportBundle) -> tuple[bytes, int]:
                 SMALL,
             )
         )
+        for note in b.provenance_limitations:
+            story.append(_p(note, SMALL))
     else:
         story.append(
             _p(

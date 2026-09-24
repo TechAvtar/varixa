@@ -20,6 +20,14 @@ class RawProvenance:
     detailed: dict[str, Any] | None = None
     validation_status: list[dict[str, Any]] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    # Newer engines (c2pa-rs >= 0.4x) report a structured result per manifest and an
+    # overall state ("Invalid" | "Valid" | "Trusted"); older ones only the flat status list.
+    validation_results: dict[str, Any] | None = None
+    validation_state: str | None = None
+    # Human-readable `--info` report (size of the manifest store, count, validated/errors).
+    info: str | None = None
+    # What the engine binary supports (version, flag names); informational only.
+    capabilities: dict[str, Any] = field(default_factory=dict)
 
 
 class ProvenanceInspector(Protocol):

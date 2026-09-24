@@ -34,6 +34,10 @@ class NormalizedProvenanceResponse(BaseModel):
     validation_codes: list[str]
     validation_failures: list[ProvenanceValidationFailure]
     warnings: list[str]
+    # Structured validation view (state, per-family codes for the active manifest and
+    # per-ingredient results) and `--info` facts; empty for rows written before T044.
+    validation: dict[str, Any] = {}
+    info: dict[str, Any] = {}
 
 
 class ImageProvenanceResponse(BaseModel):

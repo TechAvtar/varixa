@@ -26,4 +26,5 @@ async def health(settings: AppSettings, session: DbSession, storage: Storage) ->
         storage=report.storage,
         providers=report.providers,
         uptime_seconds=report.uptime_seconds,
+        engines=report.engines,
     )

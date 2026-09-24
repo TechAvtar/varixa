@@ -4,23 +4,85 @@ Epistemics matter here:
 - No manifest => UNKNOWN. It is never evidence of manipulation or AI generation.
 - A validated signature proves the manifest is intact and was signed by the
   holder of the certificate named as issuer. It does not prove the claims are
-  true, nor that the issuer is trustworthy (trust lists are not evaluated).
+  true. Whether that certificate chains to a trust list is a *separate*
+  observation (a trust failure never reads as "manifest altered").
 """
 
 import re
 from dataclasses import asdict, dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 from app.providers.provenance.base import RawProvenance
 
-# Any status code matching these is treated as a validation failure.
-_FAILURE_RE = re.compile(
-    r"(mismatch|invalid|untrusted|expired|revoked|error|missing|failure)", re.I
-)
+CodeFamily = Literal["integrity", "trust", "identity", "info"]
+
 _SIGNATURE_OK = "claimSignature.validated"
+
+# Validation code families (c2pa-rs ValidationStatus codes). Trust and identity codes are
+# never treated as integrity failures; unknown codes fall back to a conservative regex.
+_TRUST_CODES = {
+    "signingCredential.untrusted",
+    "signingCredential.trusted",
+    "signingCredential.expired",
+    "signingCredential.revoked",
+    "signingCredential.invalid",
+    "signingCredential.ocsp.unknown",
+    "signingCredential.ocsp.revoked",
+    "signingCredential.ocsp.inaccessible",
+    "timeStamp.untrusted",
+    "timeStamp.trusted",
+    "timeStamp.mismatch",
+    "timeStamp.outsideValidity",
+}
+_SUCCESS_CODES = {
+    _SIGNATURE_OK,
+    "assertion.hashedURI.match",
+    "assertion.dataHash.match",
+    "assertion.bmffHash.match",
+    "assertion.boxesHash.match",
+    "assertion.collectionHash.match",
+    "ingredient.manifest.validated",
+    "ingredient.claimSignature.validated",
+    "timeStamp.validated",
+    "claim.signature.validated",
+}
+_FAILURE_RE = re.compile(
+    r"(mismatch|invalid|expired|revoked|error|missing|failure|malformed|notFound|unsupported)",
+    re.I,
+)
 
 MAX_ACTIONS = 100
 MAX_ASSERTIONS = 200
+MAX_CODES = 200
+
+
+def classify_code(code: str, explanation: str | None = None) -> CodeFamily:
+    """Which question a validation code answers.
+
+    ``integrity``: the manifest bytes and hashes (a failure means altered or mismatched).
+    ``trust``: whether the signing certificate chains to a configured trust list.
+    ``identity``: CAWG identity assertions (validated by the engine's own identity trust).
+    ``info``: successes and neutral notes.
+    """
+    if (
+        code in _TRUST_CODES
+        or code.startswith("signingCredential.")
+        or code.startswith("timeStamp.")
+    ):
+        return "trust"
+    if code.startswith("cawg."):
+        return "identity"
+    if code in _SUCCESS_CODES:
+        return "info"
+    if code == "general.error":
+        # c2patool 0.9.x mirrors an untrusted certificate as a general error too.
+        text = (explanation or "").lower()
+        if "untrusted" in text or "trust" in text:
+            return "trust"
+        return "integrity"
+    if _FAILURE_RE.search(code):
+        return "integrity"
+    return "info"
 
 
 @dataclass
@@ -44,6 +106,11 @@ class NormalizedProvenance:
     validation_codes: list[str] = field(default_factory=list)
     validation_failures: list[dict[str, Any]] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    # Structured view of the validation outcome: engine state (when the engine reports one),
+    # per-family code lists for the active manifest, and per-ingredient results.
+    validation: dict[str, Any] = field(default_factory=dict)
+    # `--info` facts: manifest store size and count as reported by the engine.
+    info: dict[str, Any] = field(default_factory=dict)
 
     def to_json(self) -> dict[str, Any]:
         return asdict(self)
@@ -54,6 +121,88 @@ def _str(value: Any, limit: int = 300) -> str | None:
         return None
     text = str(value).strip()
     return text[:limit] or None
+
+
+def _empty_families() -> dict[str, list[str]]:
+    return {"success": [], "informational": [], "failure": []}
+
+
+def _codes_from_results_block(block: Any) -> dict[str, list[str]]:
+    """c2pa-rs `validation_results` block: {success: [...], informational: [...], failure: [...]}
+    where each entry is a status object. Codes only; explanations stay in raw."""
+    out = _empty_families()
+    if not isinstance(block, dict):
+        return out
+    for family in ("success", "informational", "failure"):
+        for entry in (block.get(family) or [])[:MAX_CODES]:
+            code = _str(entry.get("code"), 120) if isinstance(entry, dict) else None
+            if code:
+                out[family].append(code)
+    return out
+
+
+def _structured_validation(raw: RawProvenance) -> dict[str, Any]:
+    """Prefer the engine's structured results; otherwise synthesise them from the flat list
+    with `classify_code` so both engine generations produce the same shape."""
+    validation: dict[str, Any] = {
+        "state": raw.validation_state,
+        "source": "validation_results" if raw.validation_results else "validation_status",
+        "active_manifest": _empty_families(),
+        "ingredients": {},
+    }
+    if raw.validation_results:
+        active = raw.validation_results.get("activeManifest") or raw.validation_results.get(
+            "active_manifest"
+        )
+        validation["active_manifest"] = _codes_from_results_block(active)
+        ingredients = raw.validation_results.get("ingredientDeltas") or raw.validation_results.get(
+            "ingredient_deltas"
+        )
+        if isinstance(ingredients, list):
+            for delta in ingredients[:MAX_CODES]:
+                if not isinstance(delta, dict):
+                    continue
+                label = _str(delta.get("ingredientAssertionURI") or delta.get("label"), 200)
+                if label:
+                    validation["ingredients"][label] = _codes_from_results_block(
+                        delta.get("validationDeltas") or delta.get("validation_deltas")
+                    )
+        return validation
+    families = validation["active_manifest"]
+    for status in raw.validation_status[:MAX_CODES]:
+        code = _str(status.get("code"), 120)
+        if not code:
+            continue
+        family = classify_code(code, _str(status.get("explanation"), 500))
+        if family == "info":
+            families["success" if code in _SUCCESS_CODES else "informational"].append(code)
+        elif family == "integrity":
+            families["failure"].append(code)
+        else:
+            families["informational"].append(code)
+    return validation
+
+
+_INFO_SIZE_RE = re.compile(r"Manifest store size = (\d+)")
+_INFO_COUNT_RE = re.compile(r"(One|\d+) manifests?", re.I)
+
+
+def _parse_info(text: str | None) -> dict[str, Any]:
+    if not text:
+        return {}
+    out: dict[str, Any] = {}
+    m = _INFO_SIZE_RE.search(text)
+    if m:
+        out["manifest_store_bytes"] = int(m.group(1))
+    m = _INFO_COUNT_RE.search(text)
+    if m:
+        word = m.group(1)
+        out["manifest_count"] = 1 if word.lower() == "one" else int(word)
+    if "Validated" in text:
+        out["validated"] = True
+    elif "error" in text.lower():
+        out["validated"] = False
+    return out
 
 
 def normalize_provenance(raw: RawProvenance) -> NormalizedProvenance:
@@ -108,17 +257,30 @@ def normalize_provenance(raw: RawProvenance) -> NormalizedProvenance:
                 if _str(name):
                     n.authors.append(str(name)[:200])
 
-    for status in raw.validation_status:
+    for status in raw.validation_status[:MAX_CODES]:
         code = _str(status.get("code"), 120)
         if not code:
             continue
         n.validation_codes.append(code)
-        if _FAILURE_RE.search(code):
-            n.validation_failures.append(
-                {"code": code, "explanation": _str(status.get("explanation"), 500)}
-            )
+        explanation = _str(status.get("explanation"), 500)
+        if classify_code(code, explanation) == "integrity":
+            n.validation_failures.append({"code": code, "explanation": explanation})
 
-    n.valid_signature = _SIGNATURE_OK in n.validation_codes and not n.validation_failures
+    n.validation = _structured_validation(raw)
+    n.info = _parse_info(raw.info)
+    if raw.validation_results:
+        # Structured results are authoritative when present: any integrity failure there
+        # counts, even if the flat list is empty.
+        failures = n.validation["active_manifest"]["failure"]
+        known = {f["code"] for f in n.validation_failures}
+        for code in failures:
+            if code not in known and classify_code(code) == "integrity":
+                n.validation_failures.append({"code": code, "explanation": None})
+        successes = n.validation["active_manifest"]["success"]
+        signed_ok = _SIGNATURE_OK in n.validation_codes or _SIGNATURE_OK in successes
+    else:
+        signed_ok = _SIGNATURE_OK in n.validation_codes
+    n.valid_signature = signed_ok and not n.validation_failures
     return n
 
 

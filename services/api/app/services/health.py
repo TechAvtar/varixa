@@ -1,20 +1,29 @@
 """Readiness checks: database, object storage, and which engines/providers are configured.
 
-Only non-sensitive facts leave this module: statuses, provider *names* and uptime.
+Only non-sensitive facts leave this module: statuses, provider *names*, engine versions
+and uptime. Never a path, a key or an endpoint.
 """
 
-from dataclasses import dataclass
-from typing import Literal
+import asyncio
+import time
+from dataclasses import dataclass, field
+from typing import Any, Literal
 
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
+from app.providers.provenance import C2paToolInspector, build_provenance_inspector
 from app.providers.storage.base import ObjectStorage
 from app.utils.metrics import registry
 
 CheckStatus = Literal["ok", "unavailable"]
+EngineStatus = Literal["ok", "unavailable", "not_configured"]
+
+_ENGINE_PROBE_TIMEOUT = 2.0
+_ENGINE_CACHE_TTL = 60.0
+_engine_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 
 
 @dataclass(frozen=True)
@@ -23,9 +32,12 @@ class HealthReport:
     storage: CheckStatus
     providers: dict[str, str]
     uptime_seconds: float
+    # Binary engines the pipeline shells out to: {"c2patool": {"status", "version"}}.
+    engines: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     @property
     def status(self) -> Literal["ok", "degraded"]:
+        # An absent optional engine degrades a feature (reported as such), not the service.
         return "ok" if self.database == "ok" and self.storage == "ok" else "degraded"
 
 
@@ -55,6 +67,31 @@ def configured_providers(settings: Settings) -> dict[str, str]:
     }
 
 
+async def check_c2patool(settings: Settings) -> dict[str, Any]:
+    """Version of the configured c2patool, cached for a minute; the path never leaves."""
+    if settings.provenance_engine == "none":
+        return {"status": "not_configured", "version": None}
+    now = time.monotonic()
+    cached = _engine_cache.get("c2patool")
+    if cached and now - cached[0] < _ENGINE_CACHE_TTL:
+        return cached[1]
+    result: dict[str, Any]
+    try:
+        inspector = build_provenance_inspector(settings)
+    except RuntimeError:
+        inspector = None
+    if not isinstance(inspector, C2paToolInspector):
+        result = {"status": "unavailable", "version": None}
+    else:
+        try:
+            version = await asyncio.wait_for(inspector.version(), _ENGINE_PROBE_TIMEOUT)
+            result = {"status": "ok", "version": version[:64]}
+        except Exception:
+            result = {"status": "unavailable", "version": None}
+    _engine_cache["c2patool"] = (now, result)
+    return result
+
+
 async def readiness(
     session: AsyncSession, storage: ObjectStorage, settings: Settings
 ) -> HealthReport:
@@ -63,4 +100,5 @@ async def readiness(
         storage=await check_storage(storage),
         providers=configured_providers(settings),
         uptime_seconds=round(registry.uptime_seconds, 3),
+        engines={"c2patool": await check_c2patool(settings)},
     )

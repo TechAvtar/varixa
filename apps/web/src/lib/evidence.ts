@@ -43,6 +43,8 @@ export interface EvidenceItem {
   confidence?: number | null;
   refs?: string[];
   conflictsWith?: string[];
+  /** Raw observation values the rule recorded (numbers, ids, names); never a level. */
+  data?: Record<string, unknown>;
 }
 
 /** Records produced by the server-side evidence engine, in the report's item shape. */
@@ -63,6 +65,7 @@ export function recordsToItems(records: EvidenceRecord[]): EvidenceItem[] {
     confidence: r.confidence,
     refs: r.refs,
     conflictsWith: r.conflicts_with,
+    data: r.data && Object.keys(r.data).length > 0 ? r.data : undefined,
   }));
 }
 

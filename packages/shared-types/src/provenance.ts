@@ -32,6 +32,22 @@ export interface NormalizedProvenance {
   validation_codes: string[];
   validation_failures: ProvenanceValidationFailure[];
   warnings: string[];
+  /** Structured validation view: engine state, per-family codes, per-ingredient results. */
+  validation: {
+    state?: string | null;
+    source?: string;
+    active_manifest?: {
+      success: string[];
+      informational: string[];
+      failure: string[];
+    };
+    ingredients?: Record<
+      string,
+      { success: string[]; informational: string[]; failure: string[] }
+    >;
+  };
+  /** `--info` facts reported by the engine (manifest store size, count, validated). */
+  info: Record<string, unknown>;
 }
 
 export interface ImageProvenanceResponse {

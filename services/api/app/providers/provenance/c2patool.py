@@ -1,23 +1,36 @@
 """c2patool adapter (Content Authenticity Initiative reference CLI).
 
 c2patool only reads files, so the verified bytes are written to a private temp
-file with a random name and the *validated* extension, then removed. Two runs:
-the summary (manifest store) and ``-d`` (detailed, includes validation_status).
+file with a random name and the *validated* extension, then removed. Runs per
+inspection: ``--info`` (one-line facts), the summary (manifest store) and ``-d``
+(detailed, includes validation_status / validation_results).
+
+The binary's capabilities (version and the flags its ``--help`` lists) are probed
+once per process and cached, so features are switched on by *flag presence*, never
+by comparing version numbers; a renamed flag simply disables a feature.
 """
 
 import asyncio
 import json
+import logging
+import re
 import shutil
 import uuid
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
 from app.providers.provenance.base import ProvenanceInspectionError, RawProvenance
 
+log = logging.getLogger("verixa.providers.c2patool")
+
 _MAX_OUTPUT = 16 * 1024 * 1024
+_MAX_INFO = 4 * 1024
 _NO_CLAIM_MARKERS = ("No claim found", "no claim found", "no manifest")
 # Only extensions c2patool understands for the formats Verixa accepts; anything else -> "bin".
 _SAFE_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "tif", "tiff"}
+_FLAG_RE = re.compile(r"(?m)^\s*(?:-\w,\s*)?(--[a-z][a-z0-9_-]*)")
+_SUBCOMMAND_RE = re.compile(r"(?m)^\s{2,}([a-z][a-z0-9_-]*)\s{2,}\S")
 
 _WINDOWS_CANDIDATES = (
     Path.home() / "AppData/Local/Programs/c2patool/c2patool/c2patool.exe",
@@ -37,6 +50,48 @@ def find_c2patool(configured: str | None = None) -> str | None:
     return None
 
 
+@dataclass(frozen=True)
+class C2paToolCapabilities:
+    """What the installed binary offers, read from ``--version`` and ``--help``."""
+
+    version: str
+    flags: frozenset[str]
+    subcommands: frozenset[str]
+
+    @property
+    def version_tuple(self) -> tuple[int, ...]:
+        return tuple(int(p) for p in re.findall(r"\d+", self.version)[:3])
+
+    def has_flag(self, flag: str) -> bool:
+        return flag in self.flags
+
+    @property
+    def has_trust_subcommand(self) -> bool:
+        return "trust" in self.subcommands
+
+    def to_json(self) -> dict[str, Any]:
+        data = asdict(self)
+        data["flags"] = sorted(self.flags)
+        data["subcommands"] = sorted(self.subcommands)
+        return data
+
+
+def parse_help(version_text: str, help_text: str) -> C2paToolCapabilities:
+    """Pure parser for the probe output (unit-tested without the binary)."""
+    version = version_text.strip().removeprefix("c2patool").strip() or "unknown"
+    flags = frozenset(m.group(1) for m in _FLAG_RE.finditer(help_text))
+    subcommands = frozenset(
+        m.group(1)
+        for m in _SUBCOMMAND_RE.finditer(help_text)
+        if m.group(1) not in {"help", "options", "arguments", "usage"}
+    )
+    return C2paToolCapabilities(version=version, flags=flags, subcommands=subcommands)
+
+
+# One probe per binary per process; keyed by path and mtime so an upgrade is noticed.
+_CAPABILITY_CACHE: dict[tuple[str, int], C2paToolCapabilities] = {}
+
+
 class C2paToolInspector:
     name = "c2patool"
 
@@ -46,8 +101,29 @@ class C2paToolInspector:
         self._timeout = timeout_seconds
 
     async def version(self) -> str:
-        out, _, _ = await self._run(["--version"])
-        return out.decode("ascii", "replace").strip().removeprefix("c2patool ").strip()
+        return (await self.capabilities()).version
+
+    async def capabilities(self) -> C2paToolCapabilities:
+        try:
+            mtime = Path(self._exe).stat().st_mtime_ns
+        except OSError:
+            mtime = 0
+        key = (self._exe, mtime)
+        cached = _CAPABILITY_CACHE.get(key)
+        if cached is not None:
+            return cached
+        version_out, _, _ = await self._run(["--version"])
+        help_out, help_err, _ = await self._run(["--help"])
+        caps = parse_help(
+            version_out.decode("ascii", "replace"),
+            (help_out + help_err).decode("utf-8", "replace"),
+        )
+        _CAPABILITY_CACHE[key] = caps
+        log.info(
+            "c2patool probed",
+            extra={"version": caps.version, "flags": len(caps.flags)},
+        )
+        return caps
 
     async def inspect(self, data: bytes, *, extension: str) -> RawProvenance:
         ext = extension.lower().lstrip(".")
@@ -57,12 +133,18 @@ class C2paToolInspector:
         path = self._temp_dir / f"c2pa-{uuid.uuid4().hex}.{ext}"
         try:
             await asyncio.to_thread(path.write_bytes, data)
-            version = await self.version()
+            caps = await self.capabilities()
+            version = caps.version
             summary_out, summary_err, rc = await self._run([str(path)])
             summary_text = summary_out.decode("utf-8", "replace")
             err_text = summary_err.decode("utf-8", "replace")
             if any(marker in summary_text + err_text for marker in _NO_CLAIM_MARKERS):
-                return RawProvenance(engine=self.name, engine_version=version, present=False)
+                return RawProvenance(
+                    engine=self.name,
+                    engine_version=version,
+                    present=False,
+                    capabilities=caps.to_json(),
+                )
             if rc != 0 and not summary_text.lstrip().startswith("{"):
                 first = next((ln.strip() for ln in err_text.splitlines() if ln.strip()), "")
                 raise ProvenanceInspectionError(
@@ -73,6 +155,14 @@ class C2paToolInspector:
             detailed_out, detailed_err, _ = await self._run([str(path), "-d"])
             detailed = _parse_json(detailed_out.decode("utf-8", "replace"), "detailed")
             status = detailed.get("validation_status") or []
+            results = detailed.get("validation_results")
+            state = detailed.get("validation_state")
+
+            info: str | None = None
+            if caps.has_flag("--info"):
+                info_out, _, _ = await self._run([str(path), "--info"])
+                info = info_out.decode("utf-8", "replace").strip()[:_MAX_INFO] or None
+
             warnings = [
                 line.strip()
                 for line in (summary_err + detailed_err).decode("utf-8", "replace").splitlines()
@@ -86,11 +176,31 @@ class C2paToolInspector:
                 detailed=detailed,
                 validation_status=[s for s in status if isinstance(s, dict)],
                 warnings=warnings[:50],
+                validation_results=results if isinstance(results, dict) else None,
+                validation_state=str(state) if isinstance(state, str) else None,
+                info=info,
+                capabilities=caps.to_json(),
             )
         finally:
             await asyncio.to_thread(path.unlink, True)
 
     async def _run(self, args: list[str]) -> tuple[bytes, bytes, int]:
+        """Run once; retry a single time only when the process could not start or was
+        killed by a signal (transient host conditions). Timeouts and ordinary non-zero
+        exits are never retried: the input is the same and the answer would be too."""
+        last_error: ProvenanceInspectionError | None = None
+        for attempt in range(2):
+            try:
+                return await self._run_once(args)
+            except _TransientError as exc:
+                last_error = ProvenanceInspectionError(str(exc))
+                if attempt == 0:
+                    log.warning("c2patool transient failure, retrying", extra={"reason": str(exc)})
+                    continue
+        assert last_error is not None
+        raise last_error
+
+    async def _run_once(self, args: list[str]) -> tuple[bytes, bytes, int]:
         try:
             proc = await asyncio.create_subprocess_exec(
                 self._exe,
@@ -100,7 +210,7 @@ class C2paToolInspector:
                 stderr=asyncio.subprocess.PIPE,
             )
         except OSError as exc:
-            raise ProvenanceInspectionError("c2patool could not be started") from exc
+            raise _TransientError("c2patool could not be started") from exc
         try:
             stdout, stderr = await asyncio.wait_for(proc.communicate(), self._timeout)
         except TimeoutError as exc:
@@ -109,7 +219,14 @@ class C2paToolInspector:
             raise ProvenanceInspectionError("c2patool timed out") from exc
         if len(stdout) > _MAX_OUTPUT:
             raise ProvenanceInspectionError("c2patool output exceeded the size limit")
-        return stdout, stderr, proc.returncode or 0
+        rc = proc.returncode or 0
+        if rc < 0:  # killed by a signal (POSIX); Windows never reports negative codes
+            raise _TransientError(f"c2patool was killed by signal {-rc}")
+        return stdout, stderr, rc
+
+
+class _TransientError(Exception):
+    """Internal: a failure worth exactly one retry."""
 
 
 def _parse_json(text: str, what: str) -> dict[str, Any]:
