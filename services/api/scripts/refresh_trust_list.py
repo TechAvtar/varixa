@@ -22,7 +22,7 @@ import httpx
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.utils.urlpolicy import assert_outbound_allowed  # noqa: E402
+from app.utils.urlpolicy import assert_outbound_allowed
 
 OFFICIAL_URL = (
     "https://raw.githubusercontent.com/c2pa-org/conformance-public/refs/heads/main/"
@@ -66,7 +66,9 @@ def write_bundle(pem: str, *, url: str = OFFICIAL_URL) -> dict[str, object]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--check", action="store_true", help="only report whether the bundle is stale")
+    parser.add_argument(
+        "--check", action="store_true", help="only report whether the bundle is stale"
+    )
     args = parser.parse_args(argv)
     pem = fetch_trust_list()
     fresh = hashlib.sha256(pem.encode("utf-8")).hexdigest()
