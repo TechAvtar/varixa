@@ -18,7 +18,8 @@ COPY --from=deps /repo/node_modules ./node_modules
 COPY package.json package-lock.json ./
 COPY packages/shared-types ./packages/shared-types
 COPY apps/web ./apps/web
-RUN npm run build --workspace @verixa/web
+# public/ is empty in git (no tracked files), so make sure the runtime COPY has something to take.
+RUN mkdir -p apps/web/public && npm run build --workspace @verixa/web
 
 FROM node:24-alpine AS runtime
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 HOSTNAME=0.0.0.0 PORT=3000
