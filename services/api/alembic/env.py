@@ -17,7 +17,14 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # "alembic -x url=..." overrides; otherwise use application settings.
-_url = context.get_x_argument(as_dictionary=True).get("url") or get_settings().database_url
+_x_url = context.get_x_argument(as_dictionary=True).get("url")
+if _x_url:
+    _url = _x_url
+else:
+    _settings = get_settings()
+    # SQLite cannot create its file in a missing directory (fresh checkouts, CI).
+    _settings.ensure_local_dirs()
+    _url = _settings.database_url
 config.set_main_option("sqlalchemy.url", _url)
 
 target_metadata = Base.metadata
