@@ -21,7 +21,7 @@ from app.services.evidence.engine import (
 )
 from app.services.image.similarity import compare
 from tests.test_evidence_engine import CLONE, ELA_ANOMALY, NOISE_ANOMALY, by_rule, forensics, rules
-from tests.test_image_upload import auth_headers, make_image
+from tests.test_image_upload import auth_headers, image_with_mock_search_hits
 
 T = EvidenceThresholds()
 
@@ -278,7 +278,7 @@ async def test_api_echoes_thresholds_and_applies_overrides(
     r = await client.post(
         "/analysis/image",
         headers=headers,
-        files={"file": ("a.png", make_image("PNG"), "image/png")},
+        files={"file": ("a.png", image_with_mock_search_hits("PNG"), "image/png")},
     )
     aid = r.json()["id"]
     body = (await client.get(f"/analysis/{aid}/evidence", headers=headers)).json()

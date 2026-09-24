@@ -84,12 +84,15 @@ def _dct_matrix(n: int) -> NDArray[np.float64]:
 
 
 _DCT32 = _dct_matrix(PHASH_INPUT)
+PHASH_DECIMALS = 6
 
 
 def perceptual_hash(img: Image.Image) -> str:
     pixels = _grayscale(img, (PHASH_INPUT, PHASH_INPUT))
     dct = _DCT32 @ pixels @ _DCT32.T
-    low = dct[:HASH_SIZE, :HASH_SIZE]
+    # Round away floating-point noise: flat inputs leave coefficients within 1e-13 of
+    # zero, and comparing that noise with the median made the hash platform-dependent.
+    low = np.round(dct[:HASH_SIZE, :HASH_SIZE], PHASH_DECIMALS)
     return _pack_bits(low > np.median(low))
 
 

@@ -51,7 +51,7 @@ GOLDEN: dict[str, dict[str, str]] = {
         "md5": "25a5ff191dd552910c35490173bc249f",
         "ahash": "0f0f0f0f0f0f0f0f",
         "dhash": "2424242424242424",
-        "phash": "93d94cb34cb3b164",
+        "phash": "9100000000000000",
     },
 }
 

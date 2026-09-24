@@ -8,6 +8,7 @@ import pytest
 from httpx import AsyncClient
 from PIL import Image
 
+from app.providers.search.mock import _bucket
 from app.services.image import InvalidImageError, validate_image
 from tests.test_auth import bearer, login, register
 
@@ -20,6 +21,21 @@ def make_image(fmt: str, size: tuple[int, int] = (64, 48), mode: str = "RGB") ->
     buf = io.BytesIO()
     Image.new(mode, size, color=(200, 30, 30) if mode == "RGB" else 128).save(buf, format=fmt)
     return buf.getvalue()
+
+
+def image_with_mock_search_hits(fmt: str) -> bytes:
+    """An image whose bytes make the mock search provider return at least one hit.
+
+    The mock buckets on the encoded bytes, and encoders differ between platforms, so a
+    fixed picture cannot be relied on; vary one channel until the bucket is non-zero.
+    """
+    for shade in range(256):
+        buf = io.BytesIO()
+        Image.new("RGB", (64, 48), color=(200, 30, shade)).save(buf, format=fmt)
+        data = buf.getvalue()
+        if _bucket(data, 3):
+            return data
+    raise AssertionError("no payload produced a mock search hit")
 
 
 def png_with_declared_size(width: int, height: int) -> bytes:

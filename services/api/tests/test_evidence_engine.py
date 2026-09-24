@@ -15,7 +15,7 @@ from app.services.evidence.engine import (
     build_evidence,
     summarise,
 )
-from tests.test_image_upload import auth_headers, make_image
+from tests.test_image_upload import auth_headers, image_with_mock_search_hits
 from tests.test_text import ENGLISH
 
 T = EvidenceThresholds()
@@ -418,7 +418,7 @@ async def test_image_pipeline_persists_evidence_and_api_serves_it(
     r = await client.post(
         "/analysis/image",
         headers=headers,
-        files={"file": ("a.jpg", make_image("JPEG", (64, 48)), "image/jpeg")},
+        files={"file": ("a.jpg", image_with_mock_search_hits("JPEG"), "image/jpeg")},
     )
     aid = r.json()["id"]
     detail = (await client.get(f"/analysis/{aid}", headers=headers)).json()
