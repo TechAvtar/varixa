@@ -76,7 +76,7 @@ class S3ObjectStorage:
     async def probe(self) -> bool:
         try:
             await asyncio.to_thread(self._client.head_bucket, Bucket=self._bucket)
-        except Exception:  # noqa: BLE001 - readiness only; the reason stays out of responses
+        except Exception:  # readiness only; the reason stays out of responses
             return False
         return True
 
