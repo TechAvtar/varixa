@@ -37,6 +37,8 @@ export function ImageUploadForm() {
   const [picked, setPicked] = useState<Picked | null>(null);
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const sidecarRef = useRef<HTMLInputElement>(null);
+  const [sidecar, setSidecar] = useState<File | null>(null);
   const dropId = useId();
 
   // Release object URLs when the selection changes or the form unmounts.
@@ -78,6 +80,11 @@ export function ImageUploadForm() {
         // would drop the file on a retry after an error. Restore it from state.
         if (picked && inputRef.current && inputRef.current.files?.length === 0) {
           syncInput(picked.file);
+        }
+        if (sidecar && sidecarRef.current && sidecarRef.current.files?.length === 0) {
+          const dt = new DataTransfer();
+          dt.items.add(sidecar);
+          sidecarRef.current.files = dt.files;
         }
       }}
     >
@@ -171,6 +178,29 @@ export function ImageUploadForm() {
           </div>
         </div>
       ) : null}
+
+      <div className="space-y-2">
+        <Label htmlFor="sidecar">Content Credentials sidecar (optional)</Label>
+        <Input
+          ref={sidecarRef}
+          id="sidecar"
+          name="sidecar"
+          type="file"
+          accept={IMAGE_UPLOAD.sidecarExtension}
+          aria-describedby="sidecar-hint"
+          onChange={(e) => setSidecar(e.target.files?.[0] ?? null)}
+        />
+        <p id="sidecar-hint" className="text-xs text-muted-foreground">
+          A .c2pa manifest file that came with the image, up to{" "}
+          {IMAGE_UPLOAD.sidecarMaxBytes / (1024 * 1024)} MB. Leave empty when the credentials are
+          inside the image or there are none.
+        </p>
+        {sidecar && sidecar.size > IMAGE_UPLOAD.sidecarMaxBytes ? (
+          <p className="text-xs text-destructive">
+            This sidecar is larger than {IMAGE_UPLOAD.sidecarMaxBytes / (1024 * 1024)} MB.
+          </p>
+        ) : null}
+      </div>
 
       <div className="space-y-2">
         <Label htmlFor="title">Title (optional)</Label>

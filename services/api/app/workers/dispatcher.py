@@ -122,7 +122,7 @@ async def _run_analysis(
         )
         ctx = PipelineContext(
             analysis=analysis,
-            file=analysis.files[0] if analysis.files else None,
+            file=analysis.original_file,
             session=session,
             storage=storage,
             settings=settings,

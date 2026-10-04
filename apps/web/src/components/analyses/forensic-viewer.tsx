@@ -7,6 +7,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 type MapKey = "ela" | "noise" | "copy_move" | "double_compression" | "thumbnail" | "c2pa_thumbnail";
 type RegionKey = MapKey;
 
+/** The signed (C2PA) thumbnail comparison; named once so call sites stay readable. */
+const SIGNED_THUMBNAIL = "c2pa_thumbnail" satisfies MapKey;
+
 const MAP_KEYS: readonly MapKey[] = [
   "ela",
   "noise",
@@ -114,7 +117,7 @@ function collect(f: ImageForensicsResponse): { boxes: Box[]; arrows: Arrow[] } {
   );
   f.c2pa_thumbnail?.regions.forEach((r, i) =>
     boxes.push({
-      key: "c2pa_thumbnail",
+      key: SIGNED_THUMBNAIL,
       x: r.x,
       y: r.y,
       w: r.width,

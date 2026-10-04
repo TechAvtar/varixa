@@ -5,6 +5,9 @@ export const PASSWORD = "e2e-password-123456";
 export const SAMPLE_IMAGE = path.resolve(__dirname, "fixtures/sample.jpg");
 /** c2pa-rs test asset with a valid (test-certificate) Content Credential manifest. */
 export const SIGNED_IMAGE = path.resolve(__dirname, "fixtures/signed_sample.jpg");
+/** A plain JPEG and the C2PA sidecar manifest that was signed for exactly these bytes. */
+export const SIDECAR_IMAGE = path.resolve(__dirname, "fixtures/sidecar_sample.jpg");
+export const SIDECAR_MANIFEST = path.resolve(__dirname, "fixtures/sidecar_sample.c2pa");
 
 /** Long enough for language detection and the statistics step; plainly human-written. */
 export const SAMPLE_TEXT = `The harbour master kept a ledger of every vessel that entered the bay, noting the tide, the weather and the cargo declared at the quay. Over the years the ledger became the town's memory: fishermen consulted it to settle arguments about storms, and the council read it aloud when the old lighthouse was finally repaired.

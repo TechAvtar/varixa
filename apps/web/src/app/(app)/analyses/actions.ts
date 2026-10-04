@@ -28,6 +28,16 @@ export async function createImageAnalysisAction(
   upstream.append("file", file, file.name);
   const title = form.get("title");
   if (typeof title === "string" && title.trim()) upstream.append("title", title.trim());
+  const sidecar = form.get("sidecar");
+  if (sidecar instanceof File && sidecar.size > 0) {
+    if (sidecar.size > IMAGE_UPLOAD.sidecarMaxBytes) {
+      return {
+        error: `The sidecar is larger than ${IMAGE_UPLOAD.sidecarMaxBytes / (1024 * 1024)} MB.`,
+      };
+    }
+    // The name is not forwarded: the API stores the sidecar under its content hash.
+    upstream.append("sidecar", sidecar, "manifest.c2pa");
+  }
 
   const result = await apiUpload<AnalysisCreatedResponse>("/analysis/image", upstream, {
     token: await getAccessToken(),

@@ -186,6 +186,18 @@ class ExtractMetadataStep:
         )
 
 
+async def _load_sidecar(ctx: PipelineContext) -> bytes | None:
+    """Bytes of the .c2pa sidecar stored with this analysis, if one was uploaded."""
+    record = ctx.analysis.sidecar_file
+    if record is None:
+        return None
+    try:
+        data, _ = await ctx.storage.get(record.object_key)
+    except Exception:
+        return None  # purged or missing: inspect the image on its own
+    return data
+
+
 class InspectProvenanceStep:
     """C2PA / Content Credentials via c2patool. Absence is UNKNOWN, never a red flag.
 
@@ -210,10 +222,17 @@ class InspectProvenanceStep:
                 operation="provenance.inspect",
                 request_hash=image.sha256,
             ) as call:
-                raw = await inspector.inspect(image.data, extension=image.extension)
+                sidecar = await _load_sidecar(ctx)
+                raw = await inspector.inspect(
+                    image.data, extension=image.extension, sidecar=sidecar
+                )
                 call.model_version = raw.engine_version
                 call.estimated_cost = 0.0
-                call.response = {"present": raw.present, "warnings": len(raw.warnings)}
+                call.response = {
+                    "present": raw.present,
+                    "warnings": len(raw.warnings),
+                    "sidecar": sidecar is not None,
+                }
         except ProvenanceInspectionError as exc:
             raise StepFailedError("PROVENANCE_ENGINE_FAILED", str(exc)) from exc
 

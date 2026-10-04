@@ -562,6 +562,7 @@ All configuration is via environment variables; see the `.env.example` files. Ne
 | `VERIXA_MAX_TEXT_CHARS` | API | Pasted-text cap in characters (default 200000) |
 | `VERIXA_MAX_UPLOAD_BYTES` | API | Upload size cap (default 26214400 = 25 MB); mirror it in `next.config.ts` `serverActions.bodySizeLimit` |
 | `VERIXA_MAX_IMAGE_PIXELS` | API | Width × height cap checked from the header (default 40 MP) |
+| `VERIXA_SIDECAR_UPLOAD_ENABLED` / `VERIXA_SIDECAR_MAX_BYTES` | API | Accept an optional C2PA sidecar (`.c2pa`) beside an image (default true) and its size cap (default 4194304 = 4 MB); mirror the cap in `IMAGE_UPLOAD.sidecarMaxBytes` |
 | `VERIXA_DATA_DIR` | API | Root for local runtime data (default `./data`, git-ignored) |
 | `VERIXA_DATABASE_URL` | API | SQLAlchemy URL. Default: SQLite at `${VERIXA_DATA_DIR}/verixa.db`. Use `postgresql+asyncpg://…` for PostgreSQL |
 | `VERIXA_STORAGE_BACKEND` | API | `local` (default, files under `${VERIXA_DATA_DIR}/storage`) or `s3` |

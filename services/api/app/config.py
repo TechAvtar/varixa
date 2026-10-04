@@ -195,6 +195,9 @@ class Settings(BaseSettings):
     # Upload limits (untrusted input). Pixels are checked from the header before decoding.
     max_upload_bytes: int = Field(default=25 * 1024 * 1024, ge=1024)
     max_image_pixels: int = Field(default=40_000_000, ge=10_000)
+    # Optional C2PA sidecar (.c2pa) uploaded beside an image; validated against that image.
+    sidecar_upload_enabled: bool = True
+    sidecar_max_bytes: int = Field(default=4 * 1024 * 1024, ge=1024, le=64 * 1024 * 1024)
 
     # Root directory for all local, non-versioned runtime data (DB file, uploads).
     data_dir: Path = Path("./data")

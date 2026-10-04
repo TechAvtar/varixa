@@ -410,8 +410,14 @@ def _provenance_rules(o: Observations, t: EvidenceThresholds) -> list[EvidenceDr
             confidence=_conf(EvidenceLevel.VERIFIED, t),
             detail=_provenance_detail(p.claim_generator, hash_data),
             limitation="Validity shows the manifest is intact, not that its claims are true; "
-            + _trust_clause(n),
-            refs=refs,
+            + _trust_clause(n)
+            + (
+                " The manifest was supplied as a sidecar file; its data hash is what binds it "
+                "to these bytes."
+                if _from_sidecar(n)
+                else ""
+            ),
+            refs=[*refs, "row:analysis_files"] if _from_sidecar(n) else refs,
             provider_version=p.engine_version,
             data={
                 "signer": p.signer,
@@ -430,6 +436,7 @@ def _provenance_rules(o: Observations, t: EvidenceThresholds) -> list[EvidenceDr
                 ),
                 **({"software_agents": agents} if agents else {}),
                 **_certificate_data(n),
+                **({"manifest_location": "sidecar"} if _from_sidecar(n) else {}),
             },
         )
     else:
@@ -508,6 +515,10 @@ def _certificate_rules(
             },
         )
     ]
+
+
+def _from_sidecar(n: dict[str, Any]) -> bool:
+    return n.get("manifest_location") == "sidecar"
 
 
 def _trust_clause(n: dict[str, Any]) -> str:

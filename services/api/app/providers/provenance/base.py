@@ -48,12 +48,16 @@ class RawProvenance:
     # extracted to memory for the comparison step; never stored in the raw row.
     claim_thumbnail: bytes | None = field(default=None, repr=False)
     claim_thumbnail_format: str | None = None
+    # True when the manifest came from a sidecar supplied with the upload.
+    sidecar_used: bool = False
 
 
 class ProvenanceInspector(Protocol):
     name: str
 
-    async def inspect(self, data: bytes, *, extension: str) -> RawProvenance: ...
+    async def inspect(
+        self, data: bytes, *, extension: str, sidecar: bytes | None = None
+    ) -> RawProvenance: ...
 
 
 class NullProvenanceInspector:
@@ -61,5 +65,7 @@ class NullProvenanceInspector:
 
     name = "none"
 
-    async def inspect(self, data: bytes, *, extension: str) -> RawProvenance:
+    async def inspect(
+        self, data: bytes, *, extension: str, sidecar: bytes | None = None
+    ) -> RawProvenance:
         raise ProvenanceInspectionError("no C2PA engine is configured")

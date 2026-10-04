@@ -53,6 +53,22 @@ class Analysis(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     files: Mapped[list["AnalysisFile"]] = relationship(
         back_populates="analysis", cascade="all, delete-orphan"
     )
+
+    @property
+    def original_file(self) -> "AnalysisFile | None":
+        """The analysed upload (never the sidecar), whatever order the rows load in."""
+        for f in self.files:
+            if (f.role or "original") == "original":
+                return f
+        return None
+
+    @property
+    def sidecar_file(self) -> "AnalysisFile | None":
+        for f in self.files:
+            if f.role == "sidecar":
+                return f
+        return None
+
     steps: Mapped[list["AnalysisStep"]] = relationship(
         back_populates="analysis",
         cascade="all, delete-orphan",
@@ -107,6 +123,11 @@ class AnalysisFile(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
 
     analysis_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("analyses.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    # What the stored object is: the analysed "original", or a "sidecar" (.c2pa manifest
+    # supplied beside it). Exactly one original per analysis.
+    role: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="original", server_default="original"
     )
     # Storage key is internal; never exposed to clients directly.
     object_key: Mapped[str] = mapped_column(String(512), nullable=False)

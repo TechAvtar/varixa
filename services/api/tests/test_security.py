@@ -577,3 +577,19 @@ async def test_remote_manifest_reference_is_reported_without_any_network(
     assert by["provenance.remote"]["level"] == "UNKNOWN"
     assert by["provenance.remote"]["data"] == {"host": "cdn.example.net"}
     assert "abc.c2pa" not in str(body)  # the path never leaves the metadata row
+
+
+# -- T050: sidecar uploads are untrusted input ---------------------------------------------------
+
+
+async def test_sidecar_content_is_sniffed_not_trusted(client: AsyncClient) -> None:
+    """A file named .c2pa with a manifest MIME type but other content is refused, and the
+    refusal leaves no analysis, file row or stored object behind."""
+    headers = await auth_headers(client)
+    files = {
+        "file": ("a.jpg", make_image("JPEG", (64, 48)), "image/jpeg"),
+        "sidecar": ("real.c2pa", b"<html>" + b"A" * 300, "application/c2pa"),
+    }
+    r = await client.post("/analysis/image", headers=headers, files=files)
+    assert r.status_code == 422 and r.json()["error"]["code"] == "INVALID_FILE"
+    assert (await client.get("/analysis", headers=headers)).json()["total"] == 0

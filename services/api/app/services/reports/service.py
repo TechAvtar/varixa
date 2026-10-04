@@ -170,7 +170,7 @@ class ReportService:
         forensics_row = None
         maps: dict[str, bytes] = {}
         thumbnail: bytes | None = None
-        file = analysis.files[0] if analysis.files else None
+        file = analysis.original_file
         if analysis.type == "image":
             md = await repo.get_metadata(aid)
             metadata = dict(md.normalized_json or {}) if md else None

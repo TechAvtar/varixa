@@ -10,6 +10,11 @@ def upload_key(user_id: uuid.UUID, analysis_id: uuid.UUID, sha256: str, extensio
     return f"uploads/{user_id}/{analysis_id}/{sha256}.{ext}"
 
 
+def sidecar_key(user_id: uuid.UUID, analysis_id: uuid.UUID, sha256: str) -> str:
+    """A .c2pa manifest supplied beside the upload; lives under the same upload prefix."""
+    return f"uploads/{user_id}/{analysis_id}/{sha256}.c2pa"
+
+
 def artifact_key(user_id: uuid.UUID, analysis_id: uuid.UUID, name: str) -> str:
     return f"artifacts/{user_id}/{analysis_id}/{name}"
 

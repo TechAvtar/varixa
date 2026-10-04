@@ -387,7 +387,9 @@ def normalize_provenance(raw: RawProvenance) -> NormalizedProvenance:
             if code not in n.validation_codes:
                 n.validation_codes.append(code)
     n.info = _parse_info(raw.info)
-    n.manifest_location = n.info.get("provenance_uri_kind") or "embedded"
+    n.manifest_location = (
+        "sidecar" if raw.sidecar_used else n.info.get("provenance_uri_kind") or "embedded"
+    )
     depth = read_depth(raw.summary, raw.detailed, n.active_manifest, classify_code)
     n.assertions = depth.assertions
     n.software_agents = depth.software_agents
@@ -464,6 +466,11 @@ def provenance_limitations(n: NormalizedProvenance) -> list[str]:
         notes.append(
             "Validation reported problems; the manifest may have been altered, or the file "
             "changed after signing. Treat all claims with caution."
+        )
+    if n.manifest_location == "sidecar":
+        notes.append(
+            "The manifest came from a sidecar file supplied with the upload, not from inside "
+            "the image. It is bound to these exact bytes only because its data hash validates."
         )
     if n.manifest_count > 1:
         notes.append(

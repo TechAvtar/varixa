@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 import {
+  SIDECAR_IMAGE,
+  SIDECAR_MANIFEST,
   SIGNED_IMAGE,
   createImageAnalysis,
   formAlert,
@@ -54,6 +56,38 @@ test.describe("image analysis", () => {
     await expect(panel.getByText(/excluded range/).first()).toBeVisible();
     // Evidence data is rendered generically: the hash coverage row comes from the record's data.
     await expect(panel.getByText("hash_coverage")).toBeVisible();
+  });
+
+  test("a sidecar manifest uploaded beside the image is validated against it", async ({ page }) => {
+    await register(page);
+    await pickImage(page, SIDECAR_IMAGE);
+    await page.getByLabel("Content Credentials sidecar (optional)").setInputFiles(SIDECAR_MANIFEST);
+    await page.getByLabel("Title (optional)").fill("Sidecar sample");
+    await page.getByRole("button", { name: "Start analysis" }).click();
+    await expect(page).toHaveURL(/\/analyses\/[0-9a-f-]{36}/);
+    const id = page.url().split("/analyses/")[1]?.split(/[?#]/)[0] ?? "";
+    await waitForCompleted(page, id);
+    await page.getByRole("tab", { name: "Provenance" }).click();
+    const panel = page.getByRole("tabpanel", { name: "provenance" });
+    await expect(panel).toBeVisible();
+    const inspected = await panel.getByText("VERIFIED · manifest intact").isVisible();
+    test.skip(!inspected, "c2patool not available on this machine");
+    await expect(panel.getByText("Sidecar file supplied with the upload")).toBeVisible();
+    await expect(panel.getByText(/sidecar file; its data hash/).first()).toBeVisible();
+  });
+
+  test("a sidecar that is not a C2PA manifest is refused", async ({ page }) => {
+    await register(page);
+    await pickImage(page, SIDECAR_IMAGE);
+    await page.getByLabel("Content Credentials sidecar (optional)").setInputFiles({
+      name: "fake.c2pa",
+      mimeType: "application/octet-stream",
+      buffer: Buffer.from("this is not a manifest store, just some text padding ".repeat(4)),
+    });
+    await page.getByRole("button", { name: "Start analysis" }).click();
+    await expect(formAlert(page)).toContainText("not a C2PA manifest store");
+    await page.goto("/dashboard");
+    await expect(page.getByText("Total analyses").locator("..")).toContainText("0");
   });
 
   test("a non-image is refused and nothing is created", async ({ page }) => {

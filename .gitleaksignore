@@ -1,0 +1,4 @@
+# False positives of the generic-api-key rule: a UI lookup property named `key` holding the
+# forensic method name "c2pa_thumbnail" (commit d7effa5). Not credentials.
+d7effa5af02b3f88040c829d3e3b6f81f55e7ad7:apps/web/src/components/analyses/forensic-viewer.tsx:generic-api-key:117
+d7effa5af02b3f88040c829d3e3b6f81f55e7ad7:apps/web/src/components/analyses/thumbnail-card.tsx:generic-api-key:53

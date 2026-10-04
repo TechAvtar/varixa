@@ -40,7 +40,7 @@ function Verdict({ data }: { data: Finding }) {
 
 const VARIANTS = {
   exif: {
-    key: "thumbnail",
+    method: "thumbnail",
     title: "Embedded thumbnail",
     description:
       "Compares the picture with the small preview stored in its own EXIF block. Editors that " +
@@ -50,7 +50,7 @@ const VARIANTS = {
     alt: "Embedded EXIF thumbnail as stored in the file",
   },
   c2pa: {
-    key: "c2pa_thumbnail",
+    method: "c2pa_thumbnail",
     title: "Signed thumbnail (C2PA)",
     description:
       "Compares the picture with the thumbnail signed into its Content Credentials manifest: " +
@@ -70,12 +70,12 @@ export function ThumbnailCard({
 }) {
   const v = VARIANTS[variant];
   const t = (variant === "c2pa" ? data?.c2pa_thumbnail : data?.thumbnail) ?? null;
-  const skipped = data?.skipped.find((s) => s.method === v.key) ?? null;
-  const diffMap = data?.artifacts.find((a) => a.method === v.key) ?? null;
-  const embedded = data?.artifacts.find((a) => a.method === `${v.key}_embedded`) ?? null;
+  const skipped = data?.skipped.find((s) => s.method === v.method) ?? null;
+  const diffMap = data?.artifacts.find((a) => a.method === v.method) ?? null;
+  const embedded = data?.artifacts.find((a) => a.method === `${v.method}_embedded`) ?? null;
   const hashValid = variant === "c2pa" ? (data?.c2pa_thumbnail?.data_hash_valid ?? null) : null;
   return (
-    <Card id={`forensic-${v.key}`}>
+    <Card id={`forensic-${v.method}`}>
       <CardHeader>
         <CardTitle>{v.title}</CardTitle>
         <CardDescription>{v.description}</CardDescription>

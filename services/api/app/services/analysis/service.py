@@ -36,6 +36,7 @@ from app.services import storage_keys
 from app.services.analysis.similar import similar_images, similar_texts
 from app.services.authorization import assert_owns_analysis
 from app.services.image import validate_image
+from app.services.image.sidecar import SIDECAR_MIME, InvalidSidecarError, validate_sidecar
 from app.services.image.similarity import SimilarityMatch
 from app.services.image.validation import ImageTooLargeError
 from app.services.usage import UsageService
@@ -86,7 +87,13 @@ class AnalysisService:
         return analysis
 
     async def create_image_analysis(
-        self, user: User, *, data: bytes, filename: str | None, title: str | None
+        self,
+        user: User,
+        *,
+        data: bytes,
+        filename: str | None,
+        title: str | None,
+        sidecar: bytes | None = None,
     ) -> Analysis:
         """Validate an untrusted upload, store the original privately, create the record.
 
@@ -98,7 +105,13 @@ class AnalysisService:
             max_bytes=self._settings.max_upload_bytes,
             max_pixels=self._settings.max_image_pixels,
         )
-        await self._usage.assert_can_create(user.id, incoming_bytes=image.size_bytes)
+        manifest = None
+        if sidecar:
+            if not self._settings.sidecar_upload_enabled:
+                raise InvalidSidecarError("Sidecar uploads are disabled on this deployment.")
+            manifest = validate_sidecar(sidecar, max_bytes=self._settings.sidecar_max_bytes)
+        incoming = image.size_bytes + (manifest.size_bytes if manifest else 0)
+        await self._usage.assert_can_create(user.id, incoming_bytes=incoming)
         safe_name = _clean_filename(filename)
         analysis = Analysis(
             user_id=user.id,
@@ -128,9 +141,28 @@ class AnalysisService:
                 height=image.height,
             )
         )
-        await self._usage.record_analysis(
-            user.id, analysis_type="image", size_bytes=image.size_bytes
-        )
+        if manifest is not None:
+            # The key derives from the content hash; the client's file name is never used.
+            sidecar_key = storage_keys.sidecar_key(user.id, analysis.id, manifest.sha256)
+            try:
+                await self._storage.put(sidecar_key, manifest.data, content_type=SIDECAR_MIME)
+            except Exception:
+                await self._storage.delete(key)
+                await self._db.rollback()
+                log.exception("sidecar storage failed analysis_id=%s", analysis.id)
+                raise
+            await self._analyses.add_file(
+                AnalysisFile(
+                    analysis_id=analysis.id,
+                    role="sidecar",
+                    object_key=sidecar_key,
+                    original_filename=None,
+                    mime_type=SIDECAR_MIME,
+                    size_bytes=manifest.size_bytes,
+                    sha256=manifest.sha256,
+                )
+            )
+        await self._usage.record_analysis(user.id, analysis_type="image", size_bytes=incoming)
         await self._db.commit()
         return analysis
 
@@ -254,11 +286,11 @@ class AnalysisService:
     async def original_file_link(self, user: User, analysis_id: uuid.UUID) -> tuple[str, Any]:
         """Signed, short-lived URL for the stored original plus its file record (owner only)."""
         analysis = await self.get_owned(user, analysis_id)
-        if not analysis.files:
+        if analysis.original_file is None:
             raise NotFoundError("This analysis has no stored file.")
         if analysis.content_purged_at is not None:
             raise NotFoundError("The original was removed under the retention policy.")
-        file = analysis.files[0]
+        file = analysis.original_file
         url = await self._storage.signed_url(
             file.object_key,
             ttl_seconds=self._settings.signed_url_ttl_seconds,

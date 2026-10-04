@@ -75,4 +75,7 @@ export interface AnalysisCounts {
 export const IMAGE_UPLOAD = {
   acceptedMimeTypes: ["image/jpeg", "image/png", "image/webp", "image/tiff"],
   maxBytes: 25 * 1024 * 1024,
+  /** Optional C2PA sidecar (.c2pa) sent beside the image; mirrors VERIXA_SIDECAR_MAX_BYTES. */
+  sidecarMaxBytes: 4 * 1024 * 1024,
+  sidecarExtension: ".c2pa",
 } as const;

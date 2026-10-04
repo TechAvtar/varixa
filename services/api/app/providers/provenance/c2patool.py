@@ -197,12 +197,17 @@ class C2paToolInspector:
     def trust(self) -> TrustFiles | None:
         return self._trust
 
-    def asset_args(self, path: Path, caps: C2paToolCapabilities) -> list[str]:
-        """Arguments every asset run starts with. Only a local path and, when the engine
-        supports it, our settings file: never a URL, never anything from the asset."""
+    def asset_args(
+        self, path: Path, caps: C2paToolCapabilities, sidecar: Path | None = None
+    ) -> list[str]:
+        """Arguments every asset run starts with. Only local paths we created and, when the
+        engine supports it, our settings file: never a URL, never anything from the asset."""
         args = [str(path)]
         if self._settings_file is not None and caps.has_flag("--settings"):
             args += ["--settings", str(self._settings_file)]
+        if sidecar is not None and caps.has_flag("--external-manifest"):
+            # Explicit on newer engines; older ones pick up the same-stem .c2pa beside the asset.
+            args += ["--external-manifest", str(sidecar)]
         return args
 
     async def version(self) -> str:
@@ -230,18 +235,24 @@ class C2paToolInspector:
         )
         return caps
 
-    async def inspect(self, data: bytes, *, extension: str) -> RawProvenance:
+    async def inspect(
+        self, data: bytes, *, extension: str, sidecar: bytes | None = None
+    ) -> RawProvenance:
         ext = extension.lower().lstrip(".")
         if ext not in _SAFE_EXTENSIONS:
             ext = "bin"
         self._temp_dir.mkdir(parents=True, exist_ok=True)
         # Absolute: the trust run changes the working directory to the trust files' folder.
         path = (self._temp_dir / f"c2pa-{uuid.uuid4().hex}.{ext}").resolve()
+        # Same stem, .c2pa: where every engine generation looks for a sidecar by itself.
+        sidecar_path = path.with_suffix(".c2pa") if sidecar else None
         try:
             await asyncio.to_thread(path.write_bytes, data)
+            if sidecar_path is not None and sidecar is not None:
+                await asyncio.to_thread(sidecar_path.write_bytes, sidecar)
             caps = await self.capabilities()
             version = caps.version
-            base = self.asset_args(path, caps)
+            base = self.asset_args(path, caps, sidecar_path)
             summary_out, summary_err, rc = await self._run(base)
             summary_text = summary_out.decode("utf-8", "replace")
             err_text = summary_err.decode("utf-8", "replace")
@@ -354,9 +365,12 @@ class C2paToolInspector:
                 certificates_pem=certificates_pem,
                 claim_thumbnail=claim_thumbnail,
                 claim_thumbnail_format=claim_thumbnail_format,
+                sidecar_used=sidecar_path is not None,
             )
         finally:
             await asyncio.to_thread(path.unlink, True)
+            if sidecar_path is not None:
+                await asyncio.to_thread(sidecar_path.unlink, True)
 
     async def _claim_thumbnail(
         self, base: list[str], asset: Path, active_folder: str | None

@@ -105,11 +105,16 @@ async def create_image_analysis(
     jobs: Jobs,
     file: Annotated[UploadFile, File()],
     title: Annotated[str | None, Form(max_length=MAX_TITLE_LENGTH)] = None,
+    sidecar: Annotated[UploadFile | None, File()] = None,
 ) -> AnalysisCreatedResponse:
-    """Accept one image (JPEG/PNG/WebP/TIFF). Filename and MIME are treated as untrusted."""
+    """Accept one image (JPEG/PNG/WebP/TIFF) and, optionally, its C2PA sidecar (.c2pa).
+    File names and MIME types are treated as untrusted."""
     data = await _read_capped(file, settings.max_upload_bytes)
+    sidecar_data = (
+        await _read_capped(sidecar, settings.sidecar_max_bytes) if sidecar is not None else None
+    )
     analysis = await analyses.create_image_analysis(
-        user, data=data, filename=file.filename, title=title
+        user, data=data, filename=file.filename, title=title, sidecar=sidecar_data or None
     )
     jobs.dispatch(analysis.id)
     return AnalysisCreatedResponse(id=analysis.id, status=analysis.status, type=analysis.type)
@@ -144,10 +149,10 @@ async def get_analysis_text(
     analysis = await analyses.get_owned(user, analysis_id)
     original = ""
     original_sha = None
-    if analysis.files:
-        original_sha = analysis.files[0].sha256
+    if analysis.original_file is not None:
+        original_sha = analysis.original_file.sha256
         try:
-            data, _ = await storage.get(analysis.files[0].object_key)
+            data, _ = await storage.get(analysis.original_file.object_key)
             original = data.decode("utf-8", "replace")
         except ObjectNotFoundError:
             original = ""
@@ -738,7 +743,7 @@ async def delete_analysis(analysis_id: uuid.UUID, user: CurrentUser, analyses: A
 
 def _to_response(analysis: Analysis) -> AnalysisResponse:
     response = AnalysisResponse.model_validate(analysis)
-    if analysis.files:
-        response.file = AnalysisFileResponse.model_validate(analysis.files[0])
+    if analysis.original_file is not None:
+        response.file = AnalysisFileResponse.model_validate(analysis.original_file)
     response.steps = [AnalysisStepResponse.model_validate(s) for s in analysis.steps]
     return response

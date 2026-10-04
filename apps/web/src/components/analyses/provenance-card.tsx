@@ -359,6 +359,17 @@ export function ProvenanceCard({ provenance }: { provenance: ImageProvenanceResp
                   <dd>{n.title ?? "—"}</dd>
                   <dt className="text-muted-foreground">Authors (as claimed)</dt>
                   <dd>{n.authors.length ? n.authors.join(", ") : "—"}</dd>
+                  {n.manifest_location === "sidecar" ? (
+                    <>
+                      <dt className="text-muted-foreground">Manifest source</dt>
+                      <dd>
+                        Sidecar file supplied with the upload{" "}
+                        <span className="text-muted-foreground">
+                          (bound to this image by its data hash)
+                        </span>
+                      </dd>
+                    </>
+                  ) : null}
                   <dt className="text-muted-foreground">Manifests / ingredients</dt>
                   <dd>
                     {n.manifest_count} / {n.ingredient_count}
