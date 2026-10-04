@@ -72,7 +72,7 @@ test.describe("image analysis", () => {
     await expect(panel).toBeVisible();
     const inspected = await panel.getByText("VERIFIED · manifest intact").isVisible();
     test.skip(!inspected, "c2patool not available on this machine");
-    await expect(panel.getByText("Sidecar file supplied with the upload")).toBeVisible();
+    await expect(panel.getByText(/^Sidecar file supplied with the upload/)).toBeVisible();
     await expect(panel.getByText(/sidecar file; its data hash/).first()).toBeVisible();
   });
 
