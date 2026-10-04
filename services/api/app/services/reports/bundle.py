@@ -104,6 +104,7 @@ FORENSIC_ORDER = (
     "compression",
     "double_compression",
     "thumbnail",
+    "c2pa_thumbnail",
     "resampling",
     "noise",
     "copy_move",

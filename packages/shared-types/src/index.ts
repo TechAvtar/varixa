@@ -74,6 +74,7 @@ export type {
   CopyMoveFinding,
   DoubleCompressionFinding,
   GhostRegion,
+  C2paThumbnailFinding,
   ThumbnailFinding,
   ThumbnailRegion,
   ELAFinding,

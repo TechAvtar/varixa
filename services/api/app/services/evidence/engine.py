@@ -77,6 +77,8 @@ LEVEL_CEILING: dict[str, str] = {
     "forensics.noise.anomaly": EvidenceLevel.POSSIBLE,
     "forensics.copy-move.detected": EvidenceLevel.POSSIBLE,
     "forensics.thumbnail.mismatch": EvidenceLevel.POSSIBLE,
+    "forensics.c2pa-thumbnail.mismatch": EvidenceLevel.POSSIBLE,
+    "forensics.c2pa-thumbnail.region": EvidenceLevel.POSSIBLE,
     "forensics.thumbnail.region": EvidenceLevel.POSSIBLE,
     "forensics.thumbnail.geometry": EvidenceLevel.POSSIBLE,
     "forensics.double-compression.localized": EvidenceLevel.POSSIBLE,
@@ -1835,7 +1837,7 @@ def _forensic_rules(o: Observations, t: EvidenceThresholds) -> list[EvidenceDraf
                     },
                 )
             )
-        if flagged_here:
+        if flagged_here and "thumbnail" not in families:
             families.append("thumbnail")
         else:
             out.append(
@@ -1851,6 +1853,105 @@ def _forensic_rules(o: Observations, t: EvidenceThresholds) -> list[EvidenceDraf
                     "about edits made before the last save.",
                     refs=refs,
                     provider_version=th.get("version"),
+                )
+            )
+
+    # -- C2PA claim thumbnail (same family as the EXIF thumbnail: never counted twice) --------
+    ct_raw = method("c2pa_thumbnail")
+    ct = applicable(ct_raw)
+    if ct_raw and not ct:
+        out.append(
+            EvidenceDraft(
+                rule="forensics.c2pa-thumbnail.na",
+                category="forensics",
+                level=EvidenceLevel.UNKNOWN,
+                kind="unknown",
+                claim="No signed C2PA thumbnail is available to compare against.",
+                source="c2pa_thumbnail",
+                detail=ct_raw.get("reason"),
+                limitation="Most files carry no content credentials, and a manifest need not "
+                "include a thumbnail; absence proves nothing.",
+                refs=["step:c2pa_thumbnail", "row:image_forensics"],
+            )
+        )
+    elif ct:
+        refs = ["step:c2pa_thumbnail", "step:provenance", "row:image_forensics"]
+        intact = ct.get("data_hash_valid")
+        reading = (
+            " The manifest validates, so the pixels are unchanged since signing: the difference "
+            "reflects how the signer produced the thumbnail."
+            if intact
+            else " The manifest does not validate, so the thumbnail shows what the signer saw; "
+            "the difference is consistent with a change after signing."
+        )
+        if ct.get("mismatch_global"):
+            out.append(
+                EvidenceDraft(
+                    rule="forensics.c2pa-thumbnail.mismatch",
+                    category="forensics",
+                    level=EvidenceLevel.POSSIBLE,
+                    kind="signal",
+                    claim="The thumbnail signed into the C2PA manifest does not depict the "
+                    "current image content.",
+                    source="c2pa_thumbnail",
+                    confidence=_conf(EvidenceLevel.POSSIBLE, t),
+                    detail=f"Correlation {float(ct.get('correlation') or 0):.2f} between the "
+                    "claim thumbnail and the downscaled image." + reading,
+                    limitation="Signing tools render thumbnails with their own scaling and "
+                    "tone; a thumbnail of a different picture can also be a signer error.",
+                    refs=refs,
+                    provider_version=ct.get("version"),
+                    data={
+                        "correlation": ct.get("correlation"),
+                        "data_hash_valid": intact,
+                        "family": "thumbnail",
+                    },
+                )
+            )
+            if "thumbnail" not in families:
+                families.append("thumbnail")
+        elif ct.get("anomaly"):
+            regions = ct.get("regions") or []
+            r = regions[0] if regions else None
+            out.append(
+                EvidenceDraft(
+                    rule="forensics.c2pa-thumbnail.region",
+                    category="forensics",
+                    level=EvidenceLevel.POSSIBLE,
+                    kind="signal",
+                    claim=f"{len(regions)} localised region(s) differ from the thumbnail signed "
+                    "into the C2PA manifest while the rest of the image matches it.",
+                    source="c2pa_thumbnail",
+                    confidence=_conf(EvidenceLevel.POSSIBLE, t),
+                    detail=(
+                        f"Largest region at ({r['x']}, {r['y']}), {r['width']} x {r['height']} px."
+                        if r
+                        else ""
+                    )
+                    + reading,
+                    limitation="Thumbnail rendering can differ locally (sharpening, tone); the "
+                    "comparison runs at thumbnail resolution.",
+                    refs=refs,
+                    provider_version=ct.get("version"),
+                    data={"regions": regions, "data_hash_valid": intact, "family": "thumbnail"},
+                )
+            )
+            if "thumbnail" not in families:
+                families.append("thumbnail")
+        else:
+            out.append(
+                EvidenceDraft(
+                    rule="forensics.c2pa-thumbnail.consistent",
+                    category="forensics",
+                    level=EvidenceLevel.UNKNOWN,
+                    kind="signal",
+                    claim="The thumbnail signed into the C2PA manifest matches the current image.",
+                    source="c2pa_thumbnail",
+                    detail=ct.get("observation"),
+                    limitation="A match at thumbnail resolution does not rule out small edits; "
+                    "the manifest's own validation is the stronger statement.",
+                    refs=refs,
+                    provider_version=ct.get("version"),
                 )
             )
 

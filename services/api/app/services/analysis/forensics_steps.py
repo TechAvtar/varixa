@@ -30,6 +30,8 @@ NOISE_ARTIFACT = "noise.png"
 COPY_MOVE_ARTIFACT = "copy_move.png"
 THUMBNAIL_DIFF_ARTIFACT = "thumbnail_diff.png"
 THUMBNAIL_EMBEDDED_ARTIFACT = "thumbnail_embedded.png"
+C2PA_THUMBNAIL_DIFF_ARTIFACT = "c2pa_thumbnail_diff.png"
+C2PA_THUMBNAIL_EMBEDDED_ARTIFACT = "c2pa_thumbnail_embedded.png"
 GHOST_ARTIFACT = "ghost.png"
 
 
@@ -124,6 +126,90 @@ class ThumbnailStep:
             regions=len(result.regions),
             anomaly=result.anomaly,
             artifact=THUMBNAIL_DIFF_ARTIFACT,
+        )
+
+
+class C2paThumbnailStep:
+    """Compares the image with the thumbnail signed into its C2PA manifest. Non-critical.
+
+    Runs after the provenance step, which publishes the claim thumbnail in memory. Skipped
+    (with the reason recorded) when there is no manifest or no claim thumbnail. Persists
+    ``c2pa_thumbnail_json`` plus the difference map and the decoded claim thumbnail.
+    """
+
+    name = "c2pa_thumbnail"
+    critical = False
+
+    async def run(self, ctx: PipelineContext) -> StepOutcome:
+        image = ctx.artifacts.get("image")
+        if image is None:
+            raise StepFailedError("NO_VERIFIED_IMAGE", "Validation did not publish an image.")
+        repo = AnalysisRepository(ctx.session)
+        provenance = ctx.artifacts.get("provenance")
+        if provenance is None or not getattr(provenance, "has_c2pa", False):
+            await repo.upsert_forensics(
+                ctx.analysis.id,
+                c2pa_thumbnail_json=thumbnail.not_applicable_json(
+                    thumbnail.C2PA_NO_MANIFEST_REASON, method=thumbnail.C2PA_METHOD
+                )
+                | {"limitations": list(thumbnail.C2PA_LIMITATIONS)},
+            )
+            return StepOutcome.skipped("no C2PA manifest")
+        claim = ctx.artifacts.get("claim_thumbnail")
+        s = ctx.settings
+        result = (
+            await asyncio.to_thread(
+                thumbnail.compare_with_thumbnail,
+                image.data,
+                claim,
+                min_correlation=s.thumbnail_min_correlation,
+                outlier_sigma=s.thumbnail_outlier_sigma,
+                anomaly_min_fraction=s.thumbnail_anomaly_min_fraction,
+                anomaly_max_fraction=s.thumbnail_anomaly_max_fraction,
+                aspect_tolerance=s.thumbnail_aspect_tolerance,
+            )
+            if isinstance(claim, bytes) and claim
+            else None
+        )
+        if result is None:
+            await repo.upsert_forensics(
+                ctx.analysis.id,
+                c2pa_thumbnail_json=thumbnail.not_applicable_json(
+                    thumbnail.C2PA_NO_THUMBNAIL_REASON, method=thumbnail.C2PA_METHOD
+                )
+                | {"limitations": list(thumbnail.C2PA_LIMITATIONS)},
+            )
+            return StepOutcome.skipped("no usable claim thumbnail")
+        data_hash_valid = getattr(provenance, "valid_signature", None)
+        payload = result.to_json(thumbnail.C2PA_METHOD) | {
+            "limitations": list(thumbnail.C2PA_LIMITATIONS),
+            # Whether the manifest (incl. its data hash) validated: decides how a difference reads.
+            "data_hash_valid": data_hash_valid,
+        }
+        row = await repo.upsert_forensics(ctx.analysis.id, c2pa_thumbnail_json=payload)
+        await _store_artifact(
+            ctx,
+            row,
+            name=C2PA_THUMBNAIL_DIFF_ARTIFACT,
+            method=thumbnail.C2PA_METHOD,
+            png=result.visualization_png,
+        )
+        await _store_artifact(
+            ctx,
+            row,
+            name=C2PA_THUMBNAIL_EMBEDDED_ARTIFACT,
+            method=thumbnail.C2PA_EMBEDDED_ARTIFACT_METHOD,
+            png=result.thumbnail_png,
+        )
+        await ctx.session.flush()
+        return StepOutcome.ok(
+            version=thumbnail.THUMBNAIL_VERSION,
+            thumbnail_size=[result.thumbnail_width, result.thumbnail_height],
+            correlation=result.correlation,
+            mismatch_global=result.mismatch_global,
+            anomaly=result.anomaly,
+            regions=len(result.regions),
+            data_hash_valid=data_hash_valid,
         )
 
 

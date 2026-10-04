@@ -258,3 +258,56 @@ async def test_upload_without_thumbnail_is_skipped_not_failed(client: AsyncClien
     assert f["thumbnail"] is None
     assert any(s["method"] == "thumbnail" for s in f["skipped"])
     assert not any(a["method"].startswith("thumbnail") for a in f["artifacts"])
+
+
+# -- T049: comparison against a supplied (C2PA claim) thumbnail ---------------------------------
+
+
+def _png(img: Image.Image) -> bytes:
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def _textured(size: tuple[int, int] = (640, 480)) -> Image.Image:
+    rng = np.random.default_rng(7)
+    base = rng.integers(0, 255, size=(size[1] // 8, size[0] // 8, 3), dtype=np.uint8)
+    return Image.fromarray(base, mode="RGB").resize(size, Image.Resampling.BICUBIC)
+
+
+def test_compare_with_supplied_thumbnail_matches_itself() -> None:
+    from app.services.image.thumbnail import C2PA_METHOD, compare_with_thumbnail
+
+    img = _textured()
+    thumb = img.resize((160, 120), Image.Resampling.LANCZOS)
+    r = compare_with_thumbnail(_png(img), _png(thumb))
+    assert r is not None and not r.mismatch_global and not r.anomaly and r.correlation > 0.95
+    payload = r.to_json(C2PA_METHOD)
+    assert payload["method"] == "c2pa_thumbnail" and payload["applicable"] is True
+    assert r.to_json()["method"] == "thumbnail"  # the EXIF default is unchanged
+
+
+def test_compare_with_supplied_thumbnail_detects_other_content_and_local_change() -> None:
+    from app.services.image.thumbnail import compare_with_thumbnail
+
+    thumb = PHOTO.resize((160, 120), Image.Resampling.LANCZOS)
+    r = compare_with_thumbnail(_png(other_picture()), _png(thumb))
+    assert r is not None and r.mismatch_global
+
+    edited = PHOTO.copy()
+    edited.paste(Image.new("RGB", (160, 120), (250, 250, 250)), (300, 200))  # after "signing"
+    r = compare_with_thumbnail(_png(edited), _png(thumb))
+    assert r is not None and not r.mismatch_global and r.anomaly and r.regions
+    top = r.regions[0]
+    assert top.x < 460 and top.x + top.width > 300  # reported in original pixels, over the edit
+
+
+def test_compare_with_supplied_thumbnail_rejects_unusable_input() -> None:
+    from app.services.image.thumbnail import compare_with_thumbnail, not_applicable_json
+
+    img = _png(_textured())
+    assert compare_with_thumbnail(img, b"not an image") is None
+    assert compare_with_thumbnail(img, _png(Image.new("RGB", (8, 8)))) is None  # too small
+    assert compare_with_thumbnail(img, b"\x00" * (5 * 1024 * 1024)) is None  # over the cap
+    na = not_applicable_json("no manifest", method="c2pa_thumbnail")
+    assert na["method"] == "c2pa_thumbnail" and na["applicable"] is False

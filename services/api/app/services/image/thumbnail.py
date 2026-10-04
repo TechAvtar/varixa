@@ -22,6 +22,20 @@ from app.services.image.regions import Region, connected_regions
 THUMBNAIL_VERSION = "v1"
 METHOD = "thumbnail"
 EMBEDDED_ARTIFACT_METHOD = "thumbnail_embedded"
+# The same comparison against the thumbnail signed into a C2PA manifest.
+C2PA_METHOD = "c2pa_thumbnail"
+C2PA_EMBEDDED_ARTIFACT_METHOD = "c2pa_thumbnail_embedded"
+C2PA_LIMITATIONS = [
+    "The claim thumbnail is whatever the signer stored; signing tools render it with their "
+    "own scaling and tone, so small differences are normal.",
+    "When the manifest's data hash validates, the pixels are unchanged since signing: a "
+    "difference then reflects how the signer produced the thumbnail, not a later edit.",
+    "When the data hash does not validate, the thumbnail shows what the signer saw; a "
+    "difference is consistent with a change after signing but is not proof of one.",
+    "The comparison runs at thumbnail resolution, so small edits are below its reach.",
+]
+C2PA_NO_MANIFEST_REASON = "The file carries no C2PA manifest, so there is no signed thumbnail."
+C2PA_NO_THUMBNAIL_REASON = "The C2PA manifest carries no claim thumbnail to compare against."
 
 # EXIF thumbnails live in TIFF-structured blocks: JPEG APP1 and TIFF files.
 APPLICABLE_FORMATS = frozenset({"JPEG", "TIFF"})
@@ -88,9 +102,9 @@ class ThumbnailResult:
             or self.orientation_mismatch
         )
 
-    def to_json(self) -> dict[str, Any]:
+    def to_json(self, method: str = METHOD) -> dict[str, Any]:
         return {
-            "method": METHOD,
+            "method": method,
             "version": THUMBNAIL_VERSION,
             "applicable": True,
             "has_thumbnail": True,
@@ -119,9 +133,11 @@ class ThumbnailResult:
         }
 
 
-def not_applicable_json(reason: str, *, pil_format: str | None = None) -> dict[str, Any]:
+def not_applicable_json(
+    reason: str, *, pil_format: str | None = None, method: str = METHOD
+) -> dict[str, Any]:
     out: dict[str, Any] = {
-        "method": METHOD,
+        "method": method,
         "version": THUMBNAIL_VERSION,
         "applicable": False,
         "has_thumbnail": False,
@@ -281,6 +297,31 @@ def compare_thumbnail(
     """Compare the image with its EXIF thumbnail; None when there is no usable thumbnail."""
     thumb_bytes = extract_exif_thumbnail(data)
     if thumb_bytes is None:
+        return None
+    return compare_with_thumbnail(
+        data,
+        thumb_bytes,
+        min_correlation=min_correlation,
+        outlier_sigma=outlier_sigma,
+        anomaly_min_fraction=anomaly_min_fraction,
+        anomaly_max_fraction=anomaly_max_fraction,
+        aspect_tolerance=aspect_tolerance,
+    )
+
+
+def compare_with_thumbnail(
+    data: bytes,
+    thumb_bytes: bytes,
+    *,
+    min_correlation: float = 0.9,
+    outlier_sigma: float = 2.5,
+    anomaly_min_fraction: float = 0.01,
+    anomaly_max_fraction: float = 0.3,
+    aspect_tolerance: float = 0.05,
+) -> ThumbnailResult | None:
+    """Compare the image with a thumbnail supplied by the caller (the EXIF preview, or the
+    signed C2PA claim thumbnail); None when the thumbnail cannot be decoded or is too small."""
+    if len(thumb_bytes) > _MAX_THUMBNAIL_BYTES:
         return None
     try:
         with Image.open(io.BytesIO(thumb_bytes)) as t:

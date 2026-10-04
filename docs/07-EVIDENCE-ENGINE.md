@@ -51,6 +51,7 @@ The system cannot establish the fact.
 | C2PA signing certificate chains to an anchor on the configured trust list (separate record from validity) | VERIFIED |
 | C2PA signing certificate not on the trust list | UNKNOWN (never a manipulation signal) |
 | C2PA signing time outside the signing certificate's validity period | POSSIBLE |
+| Signed C2PA claim thumbnail differs from the current image (whole picture or a region) | POSSIBLE (same family as the EXIF thumbnail) |
 | Signed C2PA declaration (digital source type, training/mining permission, creator identity) with a valid signature | STRONG (POSSIBLE when the signature does not validate; a declaration is verified as stated, not as true) |
 | C2PA ingredient with recorded validation failures | POSSIBLE |
 | Signed source type disagrees with metadata source type; manifest signed before its ingredient | conflict record (UNKNOWN), both sides retained |

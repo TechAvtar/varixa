@@ -262,6 +262,13 @@ export interface ForensicArtifact {
   expires_in_seconds: number;
 }
 
+/** The same comparison against the thumbnail signed into the C2PA manifest. */
+export interface C2paThumbnailFinding extends Omit<ThumbnailFinding, "method"> {
+  method: "c2pa_thumbnail";
+  /** Whether the manifest (and its data hash) validated; decides how a difference reads. */
+  data_hash_valid: boolean | null;
+}
+
 export interface ImageForensicsResponse {
   ela: ELAFinding | null;
   compression: CompressionFinding | null;
@@ -269,6 +276,7 @@ export interface ImageForensicsResponse {
   noise: NoiseFinding | null;
   copy_move: CopyMoveFinding | null;
   thumbnail: ThumbnailFinding | null;
+  c2pa_thumbnail: C2paThumbnailFinding | null;
   double_compression: DoubleCompressionFinding | null;
   skipped: ForensicSkipped[];
   artifacts: ForensicArtifact[];

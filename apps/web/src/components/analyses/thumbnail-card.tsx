@@ -3,7 +3,11 @@ import Image from "next/image";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
-function Verdict({ data }: { data: NonNullable<ImageForensicsResponse["thumbnail"]> }) {
+type Finding = NonNullable<
+  ImageForensicsResponse["thumbnail"] | ImageForensicsResponse["c2pa_thumbnail"]
+>;
+
+function Verdict({ data }: { data: Finding }) {
   const amber =
     "border-transparent bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200";
   if (data.mismatch_global) {
@@ -34,20 +38,47 @@ function Verdict({ data }: { data: NonNullable<ImageForensicsResponse["thumbnail
   );
 }
 
-export function ThumbnailCard({ data }: { data: ImageForensicsResponse | null }) {
-  const t = data?.thumbnail ?? null;
-  const skipped = data?.skipped.find((s) => s.method === "thumbnail") ?? null;
-  const diffMap = data?.artifacts.find((a) => a.method === "thumbnail") ?? null;
-  const embedded = data?.artifacts.find((a) => a.method === "thumbnail_embedded") ?? null;
+const VARIANTS = {
+  exif: {
+    key: "thumbnail",
+    title: "Embedded thumbnail",
+    description:
+      "Compares the picture with the small preview stored in its own EXIF block. Editors that " +
+      "change pixels without regenerating the preview leave a thumbnail of the earlier image. " +
+      "Any full resave replaces it, so a match proves nothing.",
+    stored: "Embedded thumbnail",
+    alt: "Embedded EXIF thumbnail as stored in the file",
+  },
+  c2pa: {
+    key: "c2pa_thumbnail",
+    title: "Signed thumbnail (C2PA)",
+    description:
+      "Compares the picture with the thumbnail signed into its Content Credentials manifest: " +
+      "what the signer recorded at signing time. When the manifest validates, the pixels are " +
+      "unchanged since signing and a difference reflects how the signer made the thumbnail.",
+    stored: "Signed claim thumbnail",
+    alt: "Thumbnail signed into the C2PA manifest",
+  },
+} as const;
+
+export function ThumbnailCard({
+  data,
+  variant = "exif",
+}: {
+  data: ImageForensicsResponse | null;
+  variant?: keyof typeof VARIANTS;
+}) {
+  const v = VARIANTS[variant];
+  const t = (variant === "c2pa" ? data?.c2pa_thumbnail : data?.thumbnail) ?? null;
+  const skipped = data?.skipped.find((s) => s.method === v.key) ?? null;
+  const diffMap = data?.artifacts.find((a) => a.method === v.key) ?? null;
+  const embedded = data?.artifacts.find((a) => a.method === `${v.key}_embedded`) ?? null;
+  const hashValid = variant === "c2pa" ? (data?.c2pa_thumbnail?.data_hash_valid ?? null) : null;
   return (
-    <Card id="forensic-thumbnail">
+    <Card id={`forensic-${v.key}`}>
       <CardHeader>
-        <CardTitle>Embedded thumbnail</CardTitle>
-        <CardDescription>
-          Compares the picture with the small preview stored in its own EXIF block. Editors that
-          change pixels without regenerating the preview leave a thumbnail of the earlier image. Any
-          full resave replaces it, so a match proves nothing.
-        </CardDescription>
+        <CardTitle>{v.title}</CardTitle>
+        <CardDescription>{v.description}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {!data ? (
@@ -69,6 +100,15 @@ export function ThumbnailCard({ data }: { data: ImageForensicsResponse | null })
               </span>
             </div>
             <p className="text-sm">{t.observation}</p>
+            {variant === "c2pa" ? (
+              <p className="text-xs text-muted-foreground">
+                {hashValid === true
+                  ? "The manifest validates: the pixels are unchanged since signing."
+                  : hashValid === false
+                    ? "The manifest does not validate: the thumbnail shows what the signer saw."
+                    : "The manifest's validation state is unknown."}
+              </p>
+            ) : null}
 
             <div className="grid gap-4 sm:grid-cols-2">
               {embedded ? (
@@ -76,7 +116,7 @@ export function ThumbnailCard({ data }: { data: ImageForensicsResponse | null })
                   <div className="overflow-hidden rounded border bg-black">
                     <Image
                       src={embedded.url}
-                      alt="Embedded EXIF thumbnail as stored in the file"
+                      alt={v.alt}
                       width={embedded.width}
                       height={embedded.height}
                       unoptimized
@@ -84,7 +124,7 @@ export function ThumbnailCard({ data }: { data: ImageForensicsResponse | null })
                     />
                   </div>
                   <figcaption className="text-xs text-muted-foreground">
-                    Embedded thumbnail, {t.thumbnail_width} × {t.thumbnail_height} px, as stored.
+                    {v.stored}, {t.thumbnail_width} × {t.thumbnail_height} px, as stored.
                   </figcaption>
                 </figure>
               ) : null}

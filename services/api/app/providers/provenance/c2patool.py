@@ -30,6 +30,8 @@ _MAX_OUTPUT = 16 * 1024 * 1024
 _MAX_INFO = 4 * 1024
 _MAX_TREE = 64 * 1024
 _MAX_CERTS = 64 * 1024
+_MAX_CLAIM_THUMBNAIL = 8 * 1024 * 1024
+_CLAIM_THUMBNAIL_PREFIX = "c2pa.thumbnail.claim."
 _NO_CLAIM_MARKERS = ("No claim found", "no claim found", "no manifest")
 # 0.28 with fetching disabled refuses a remote reference; without it, it would try the network.
 _REMOTE_MARKERS = (
@@ -289,6 +291,9 @@ class C2paToolInspector:
                 certs_text = certs_out.decode("ascii", "replace")
                 if "-----BEGIN CERTIFICATE-----" in certs_text:
                     certificates_pem = certs_text.replace("\r\n", "\n")[:_MAX_CERTS]
+            claim_thumbnail, claim_thumbnail_format = await self._claim_thumbnail(
+                base, path, _safe_label(summary.get("active_manifest"))
+            )
 
             warnings = [
                 line.strip()
@@ -347,9 +352,43 @@ class C2paToolInspector:
                 trust_status=trust_status,
                 trust_results=trust_results,
                 certificates_pem=certificates_pem,
+                claim_thumbnail=claim_thumbnail,
+                claim_thumbnail_format=claim_thumbnail_format,
             )
         finally:
             await asyncio.to_thread(path.unlink, True)
+
+    async def _claim_thumbnail(
+        self, base: list[str], asset: Path, active_folder: str | None
+    ) -> tuple[bytes | None, str | None]:
+        """The signed claim thumbnail of the active manifest, or (None, None).
+
+        `--output <dir>` writes each manifest's assertions as files; the directory is a fresh
+        random sibling of the temp asset and is removed whatever happens."""
+        out_dir = asset.with_name(asset.stem + "-out")
+        try:
+            _, _, rc = await self._run([*base, "--output", str(out_dir)])
+            if rc != 0 or not out_dir.is_dir():
+                return None, None
+            candidates = sorted(
+                p
+                for p in out_dir.rglob(_CLAIM_THUMBNAIL_PREFIX + "*")
+                if p.is_file() and out_dir in p.resolve().parents
+            )
+            if active_folder:
+                preferred = [p for p in candidates if active_folder in p.parts]
+                candidates = preferred or candidates
+            for candidate in candidates:
+                if candidate.stat().st_size > _MAX_CLAIM_THUMBNAIL:
+                    continue
+                data = await asyncio.to_thread(candidate.read_bytes)
+                fmt = candidate.name.removeprefix(_CLAIM_THUMBNAIL_PREFIX).lower()[:16]
+                return data, fmt or None
+            return None, None
+        except ProvenanceInspectionError:
+            return None, None  # the thumbnail is optional; the inspection itself succeeded
+        finally:
+            await asyncio.to_thread(shutil.rmtree, out_dir, True)
 
     async def _run(self, args: list[str], cwd: Path | None = None) -> tuple[bytes, bytes, int]:
         """Run once; retry a single time only when the process could not start or was
@@ -391,6 +430,13 @@ class C2paToolInspector:
         if rc < 0:  # killed by a signal (POSIX); Windows never reports negative codes
             raise _TransientError(f"c2patool was killed by signal {-rc}")
         return stdout, stderr, rc
+
+
+def _safe_label(label: Any) -> str | None:
+    """Folder name c2patool derives from a manifest label (':' and '/' become '_')."""
+    if not isinstance(label, str) or not label:
+        return None
+    return re.sub(r"[^A-Za-z0-9._-]", "_", label)
 
 
 def remote_host_from_error(text: str) -> str | None:

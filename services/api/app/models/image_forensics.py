@@ -30,6 +30,8 @@ class ImageForensics(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     copy_move_json: Mapped[dict[str, Any] | None] = mapped_column(PortableJSON)
     thumbnail_json: Mapped[dict[str, Any] | None] = mapped_column(PortableJSON)
     double_compression_json: Mapped[dict[str, Any] | None] = mapped_column(PortableJSON)
+    # Comparison with the thumbnail signed into the C2PA manifest (T049).
+    c2pa_thumbnail_json: Mapped[dict[str, Any] | None] = mapped_column(PortableJSON)
     statistics_json: Mapped[dict[str, Any] | None] = mapped_column(PortableJSON)
     # [{"name", "method", "object_key", "content_type", "width", "height"}]
     artifacts_json: Mapped[list[dict[str, Any]] | None] = mapped_column(PortableJSON)

@@ -4,8 +4,8 @@ import type { AnalysisFileLink, ImageForensicsResponse } from "@verixa/shared-ty
 import { useId, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
-type MapKey = "ela" | "noise" | "copy_move" | "double_compression" | "thumbnail";
-type RegionKey = "ela" | "noise" | "copy_move" | "double_compression" | "thumbnail";
+type MapKey = "ela" | "noise" | "copy_move" | "double_compression" | "thumbnail" | "c2pa_thumbnail";
+type RegionKey = MapKey;
 
 const MAP_KEYS: readonly MapKey[] = [
   "ela",
@@ -13,6 +13,7 @@ const MAP_KEYS: readonly MapKey[] = [
   "copy_move",
   "double_compression",
   "thumbnail",
+  "c2pa_thumbnail",
 ];
 const REGION_KEYS: readonly RegionKey[] = [
   "ela",
@@ -20,6 +21,7 @@ const REGION_KEYS: readonly RegionKey[] = [
   "copy_move",
   "double_compression",
   "thumbnail",
+  "c2pa_thumbnail",
 ];
 
 const MAP_LABEL: Record<MapKey, string> = {
@@ -28,6 +30,7 @@ const MAP_LABEL: Record<MapKey, string> = {
   copy_move: "Copy-move mask",
   double_compression: "JPEG ghost map",
   thumbnail: "Thumbnail difference map",
+  c2pa_thumbnail: "Signed thumbnail difference map",
 };
 
 const REGION_LABEL: Record<RegionKey, string> = {
@@ -36,6 +39,7 @@ const REGION_LABEL: Record<RegionKey, string> = {
   copy_move: "Copy-move source → target",
   double_compression: "JPEG ghost regions",
   thumbnail: "Thumbnail difference regions",
+  c2pa_thumbnail: "Signed thumbnail difference regions",
 };
 
 // Colours are reinforcement only: every box also carries a text label and a legend entry.
@@ -45,6 +49,7 @@ const STROKE: Record<RegionKey, string> = {
   copy_move: "#dc2626", // red-600
   double_compression: "#7c3aed", // violet-600
   thumbnail: "#059669", // emerald-600
+  c2pa_thumbnail: "#0891b2", // cyan-600
 };
 
 interface Box {
@@ -107,6 +112,16 @@ function collect(f: ImageForensicsResponse): { boxes: Box[]; arrows: Arrow[] } {
       label: `thumbnail ${i + 1}`,
     }),
   );
+  f.c2pa_thumbnail?.regions.forEach((r, i) =>
+    boxes.push({
+      key: "c2pa_thumbnail",
+      x: r.x,
+      y: r.y,
+      w: r.width,
+      h: r.height,
+      label: `signed thumbnail ${i + 1}`,
+    }),
+  );
   f.copy_move?.matches.forEach((m, i) => {
     boxes.push({
       key: "copy_move",
@@ -164,6 +179,7 @@ export function ForensicViewer({
     copy_move: true,
     double_compression: true,
     thumbnail: true,
+    c2pa_thumbnail: true,
   });
 
   if (!original || !width || !height) {

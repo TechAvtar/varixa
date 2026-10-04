@@ -263,6 +263,12 @@ Two more local heuristics run on every image (`services/image/thumbnail.py`,
   the thumbnail was made. Evidence: `forensics.thumbnail.region`, `.mismatch`, `.geometry` at
   POSSIBLE, an independent family for the STRONG rule; `.consistent` and `.na` are UNKNOWN.
   Most sharing paths strip thumbnails and any resave regenerates them, so absence proves nothing.
+- **Signed thumbnail (C2PA)**: when a manifest carries a claim thumbnail, the same comparison
+  runs against it (step `c2pa_thumbnail`, column `c2pa_thumbnail_json`). What a difference means
+  depends on the manifest: if it validates, the pixels are unchanged since signing and the
+  difference reflects how the signer made the thumbnail; if it does not, the thumbnail shows what
+  the signer saw. Evidence: `forensics.c2pa-thumbnail.mismatch` / `.region` at POSSIBLE, in the
+  same `thumbnail` family as the EXIF rules, so the two never count as independent methods.
 - **JPEG ghosts (double compression)**: the image is re-saved at qualities 50 to 100 and the
   per-block error curve is read for a second dip, the trace of an earlier, lower-quality save.
   A dip everywhere is compression history (`forensics.double-compression.global`, POSSIBLE,

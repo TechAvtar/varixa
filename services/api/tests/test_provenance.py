@@ -1108,3 +1108,56 @@ async def test_signed_upload_exposes_the_certificate(client: AsyncClient) -> Non
     by = {i["rule"]: i for i in ev["items"]}
     assert by["provenance.valid"]["data"]["certificate"]["subject"] == "C2PA Signer"
     assert "provenance.certificate.outside-validity" not in by
+
+
+# -- Phase 6: signed claim thumbnail ----------------------------------------------------------
+
+
+@needs_c2patool
+async def test_c2patool_extracts_the_claim_thumbnail(tmp_path: Path) -> None:
+    assert C2PATOOL is not None
+    raw = await C2paToolInspector(C2PATOOL, temp_dir=tmp_path).inspect(SIGNED, extension="jpg")
+    assert raw.claim_thumbnail and raw.claim_thumbnail[:3] == b"\xff\xd8\xff"  # a JPEG
+    assert raw.claim_thumbnail_format == "jpeg"
+    assert not list(tmp_path.glob("*"))  # the output directory and the temp asset are gone
+    plain = await C2paToolInspector(C2PATOOL, temp_dir=tmp_path).inspect(
+        make_image("JPEG"), extension="jpg"
+    )
+    assert plain.claim_thumbnail is None
+
+
+@needs_c2patool
+async def test_signed_upload_compares_the_claim_thumbnail(client: AsyncClient) -> None:
+    headers = await auth_headers(client)
+    r = await client.post(
+        "/analysis/image", headers=headers, files={"file": ("C.jpg", SIGNED, "image/jpeg")}
+    )
+    aid = r.json()["id"]
+    detail = (await client.get(f"/analysis/{aid}", headers=headers)).json()
+    step = next(s for s in detail["steps"] if s["name"] == "c2pa_thumbnail")
+    assert step["status"] == "completed" and step["details"]["data_hash_valid"] is True
+    body = (await client.get(f"/analysis/{aid}/forensics", headers=headers)).json()
+    ct = body["c2pa_thumbnail"]
+    assert ct["method"] == "c2pa_thumbnail" and ct["mismatch_global"] is False
+    assert ct["data_hash_valid"] is True and ct["correlation"] > 0.95
+    methods = {a["method"] for a in body["artifacts"]}
+    assert {"c2pa_thumbnail", "c2pa_thumbnail_embedded"} <= methods
+    ev = (await client.get(f"/analysis/{aid}/evidence", headers=headers)).json()
+    by = {i["rule"]: i for i in ev["items"]}
+    assert by["forensics.c2pa-thumbnail.consistent"]["level"] == "UNKNOWN"
+
+
+async def test_unsigned_upload_skips_the_claim_thumbnail_step(client: AsyncClient) -> None:
+    headers = await auth_headers(client)
+    r = await client.post(
+        "/analysis/image",
+        headers=headers,
+        files={"file": ("p.jpg", make_image("JPEG"), "image/jpeg")},
+    )
+    aid = r.json()["id"]
+    detail = (await client.get(f"/analysis/{aid}", headers=headers)).json()
+    step = next(s for s in detail["steps"] if s["name"] == "c2pa_thumbnail")
+    assert step["status"] == "skipped"
+    body = (await client.get(f"/analysis/{aid}/forensics", headers=headers)).json()
+    assert body["c2pa_thumbnail"] is None
+    assert any(s["method"] == "c2pa_thumbnail" for s in body["skipped"])

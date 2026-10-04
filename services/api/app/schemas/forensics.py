@@ -213,6 +213,14 @@ class ThumbnailFindingResponse(BaseModel):
     limitations: list[str]
 
 
+class C2paThumbnailFindingResponse(ThumbnailFindingResponse):
+    """Same comparison against the thumbnail signed into the C2PA manifest."""
+
+    method: Literal["c2pa_thumbnail"] = "c2pa_thumbnail"  # type: ignore[assignment]
+    # Whether the manifest (and so its data hash) validated; decides how a difference reads.
+    data_hash_valid: bool | None = None
+
+
 class GhostRegionResponse(BaseModel):
     """Bounding box in original image pixels; ``depth`` is the normalised dip depth."""
 
@@ -278,6 +286,7 @@ class ImageForensicsResponse(BaseModel):
     noise: NoiseFindingResponse | None
     copy_move: CopyMoveFindingResponse | None
     thumbnail: ThumbnailFindingResponse | None = None
+    c2pa_thumbnail: C2paThumbnailFindingResponse | None = None
     double_compression: DoubleCompressionFindingResponse | None = None
     skipped: list[ForensicSkipped]
     artifacts: list[ForensicArtifactResponse]

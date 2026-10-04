@@ -16,6 +16,7 @@ from app.repositories.analysis import AnalysisRepository
 from app.services.analysis.ai_step import AIDetectionStep
 from app.services.analysis.evidence_step import EvidenceStep
 from app.services.analysis.forensics_steps import (
+    C2paThumbnailStep,
     CompressionStep,
     CopyMoveStep,
     DoubleCompressionStep,
@@ -251,6 +252,8 @@ class InspectProvenanceStep:
         )
         await AnalysisRepository(ctx.session).replace_provenance(row)
         ctx.artifacts["provenance"] = normalized
+        # In-memory hand-off to the C2PA thumbnail comparison (never persisted as raw).
+        ctx.artifacts["claim_thumbnail"] = raw.claim_thumbnail
         return StepOutcome.ok(
             engine=raw.engine,
             engine_version=raw.engine_version,
@@ -274,6 +277,7 @@ def image_pipeline_steps() -> list[PipelineStep]:
         CompressionStep(),
         DoubleCompressionStep(),
         ThumbnailStep(),
+        C2paThumbnailStep(),
         ResamplingStep(),
         NoiseStep(),
         CopyMoveStep(),

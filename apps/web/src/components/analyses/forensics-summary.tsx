@@ -96,6 +96,22 @@ function rows(f: ImageForensicsResponse): Row[] {
     hasMap: maps.has("thumbnail"),
   });
 
+  const ct = f.c2pa_thumbnail;
+  out.push({
+    method: "c2pa_thumbnail",
+    label: "Signed thumbnail (C2PA)",
+    outcome: skipped.has("c2pa_thumbnail")
+      ? "not-applicable"
+      : !ct
+        ? "missing"
+        : ct.mismatch_global || ct.anomaly
+          ? "possible"
+          : "nothing",
+    confidence: ct?.confidence ?? null,
+    observation: skipped.get("c2pa_thumbnail") ?? ct?.observation ?? "",
+    hasMap: maps.has("c2pa_thumbnail"),
+  });
+
   const r = f.resampling;
   out.push({
     method: "resampling",

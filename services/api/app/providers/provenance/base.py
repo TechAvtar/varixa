@@ -44,6 +44,10 @@ class RawProvenance:
     trust_results: dict[str, Any] | None = None
     # `--certs`: PEM chain of the active manifest's signature, leaf first (public certs).
     certificates_pem: str | None = None
+    # The thumbnail assertion signed into the active manifest (`c2pa.thumbnail.claim.*`),
+    # extracted to memory for the comparison step; never stored in the raw row.
+    claim_thumbnail: bytes | None = field(default=None, repr=False)
+    claim_thumbnail_format: str | None = None
 
 
 class ProvenanceInspector(Protocol):

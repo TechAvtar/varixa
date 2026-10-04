@@ -768,3 +768,61 @@ def test_signing_outside_certificate_validity_is_a_possible_signal() -> None:
     assert "provenance.certificate.outside-validity" not in rules(
         build_evidence(Observations("image", provenance=row), T)
     )
+
+
+# -- T049: signed claim thumbnail rules -----------------------------------------------------------
+
+
+def _c2pa_thumb(**over: Any) -> dict[str, Any]:
+    base: dict[str, Any] = {
+        "method": "c2pa_thumbnail",
+        "version": "v1",
+        "applicable": True,
+        "correlation": 0.99,
+        "mismatch_global": False,
+        "anomaly": False,
+        "regions": [],
+        "observation": "matches",
+        "data_hash_valid": True,
+    }
+    base.update(over)
+    return base
+
+
+def test_claim_thumbnail_rules_and_reading() -> None:
+    f = Row(c2pa_thumbnail_json=_c2pa_thumb())
+    drafts = build_evidence(Observations("image", forensics=f), T)
+    assert by_rule(drafts, "forensics.c2pa-thumbnail.consistent").level == "UNKNOWN"
+
+    f = Row(c2pa_thumbnail_json=_c2pa_thumb(mismatch_global=True, correlation=0.2))
+    d = by_rule(
+        build_evidence(Observations("image", forensics=f), T), "forensics.c2pa-thumbnail.mismatch"
+    )
+    assert d.level == "POSSIBLE" and "unchanged since signing" in (d.detail or "")
+
+    region = {"x": 10, "y": 20, "width": 30, "height": 40, "blocks": 3, "mean_diff": 0.6}
+    f = Row(c2pa_thumbnail_json=_c2pa_thumb(anomaly=True, regions=[region], data_hash_valid=False))
+    d = by_rule(
+        build_evidence(Observations("image", forensics=f), T), "forensics.c2pa-thumbnail.region"
+    )
+    assert d.level == "POSSIBLE" and "change after signing" in (d.detail or "")
+    assert d.data["family"] == "thumbnail"
+
+    f = Row(c2pa_thumbnail_json={"method": "c2pa_thumbnail", "applicable": False, "reason": "none"})
+    d = by_rule(
+        build_evidence(Observations("image", forensics=f), T), "forensics.c2pa-thumbnail.na"
+    )
+    assert d.level == "UNKNOWN" and d.kind == "unknown"
+
+
+def test_both_thumbnail_methods_count_as_one_family() -> None:
+    exif = {
+        "method": "thumbnail", "version": "v1", "applicable": True, "mismatch_global": True,
+        "correlation": 0.1, "regions": [],
+    }  # fmt: skip
+    f = Row(thumbnail_json=exif, c2pa_thumbnail_json=_c2pa_thumb(mismatch_global=True))
+    drafts = build_evidence(Observations("image", forensics=f), T)
+    assert {"forensics.thumbnail.mismatch", "forensics.c2pa-thumbnail.mismatch"} <= set(
+        rules(drafts)
+    )
+    assert "forensics.multiple" not in rules(drafts)  # one family, never counted twice

@@ -30,6 +30,7 @@ from app.schemas.fingerprints import (
     TextFingerprintsValues,
 )
 from app.schemas.forensics import (
+    C2paThumbnailFindingResponse,
     CompressionFindingResponse,
     CopyMoveFindingResponse,
     DoubleCompressionFindingResponse,
@@ -372,6 +373,18 @@ async def get_analysis_forensics(
             skipped.append(
                 ForensicSkipped(method="thumbnail", reason=str(row.thumbnail_json.get("reason")))
             )
+    c2pa_thumbnail_finding: C2paThumbnailFindingResponse | None = None
+    if row.c2pa_thumbnail_json:
+        if row.c2pa_thumbnail_json.get("applicable"):
+            c2pa_thumbnail_finding = C2paThumbnailFindingResponse.model_validate(
+                row.c2pa_thumbnail_json
+            )
+        else:
+            skipped.append(
+                ForensicSkipped(
+                    method="c2pa_thumbnail", reason=str(row.c2pa_thumbnail_json.get("reason"))
+                )
+            )
     double_finding: DoubleCompressionFindingResponse | None = None
     if row.double_compression_json:
         if row.double_compression_json.get("applicable"):
@@ -404,6 +417,7 @@ async def get_analysis_forensics(
         noise=noise_finding,
         copy_move=copy_move_finding,
         thumbnail=thumbnail_finding,
+        c2pa_thumbnail=c2pa_thumbnail_finding,
         double_compression=double_finding,
         skipped=skipped,
         artifacts=artifacts,

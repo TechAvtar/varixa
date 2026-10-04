@@ -346,6 +346,7 @@ export default async function AnalysisPage({
                 <CompressionCard data={forensics} />
                 <DoubleCompressionCard data={forensics} />
                 <ThumbnailCard data={forensics} />
+                <ThumbnailCard data={forensics} variant="c2pa" />
                 <ResamplingCard data={forensics} />
                 <NoiseCard data={forensics} />
                 <CopyMoveCard data={forensics} />
