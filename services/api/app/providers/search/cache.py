@@ -60,11 +60,15 @@ class CachedImageSourceSearch:
         self._inner = inner
         self._cache = cache
         self.name = inner.name
+        self._scope = str(getattr(inner, "cache_scope", "*"))
 
     async def search_image(self, content: bytes, *, metadata: dict[str, Any]) -> SearchResult:
         chash = content_hash(content)
         key = cache_key(
-            provider=self.name, operation="search.image", model_version="*", content_hash=chash
+            provider=self.name,
+            operation="search.image",
+            model_version=self._scope,
+            content_hash=chash,
         )
         hit = await self._cache.get(key)
         if hit is not None:
@@ -72,6 +76,8 @@ class CachedImageSourceSearch:
                 deserialize_search(hit.payload), cached=True, latency_ms=0, estimated_cost=0.0
             )
         result = await self._inner.search_image(content, metadata=metadata)
+        if not result.complete:
+            return result
         await self._cache.set(
             key,
             serialize_search(result),
@@ -88,12 +94,16 @@ class CachedTextSourceSearch:
         self._inner = inner
         self._cache = cache
         self.name = inner.name
+        self._scope = str(getattr(inner, "cache_scope", "*"))
 
     async def search_text(self, text: str, *, phrases: list[str]) -> SearchResult:
         # The queried phrases fully determine the request, so they form the content identity.
         chash = content_hash("\n".join(phrases))
         key = cache_key(
-            provider=self.name, operation="search.text", model_version="*", content_hash=chash
+            provider=self.name,
+            operation="search.text",
+            model_version=self._scope,
+            content_hash=chash,
         )
         hit = await self._cache.get(key)
         if hit is not None:
@@ -101,6 +111,8 @@ class CachedTextSourceSearch:
                 deserialize_search(hit.payload), cached=True, latency_ms=0, estimated_cost=0.0
             )
         result = await self._inner.search_text(text, phrases=phrases)
+        if not result.complete:
+            return result
         await self._cache.set(
             key,
             serialize_search(result),

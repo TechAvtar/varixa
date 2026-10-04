@@ -593,3 +593,76 @@ async def test_sidecar_content_is_sniffed_not_trusted(client: AsyncClient) -> No
     r = await client.post("/analysis/image", headers=headers, files=files)
     assert r.status_code == 422 and r.json()["error"]["code"] == "INVALID_FILE"
     assert (await client.get("/analysis", headers=headers)).json()["total"] == 0
+
+
+# -- T051: real search backends --------------------------------------------------------------
+
+
+async def test_web_search_only_calls_its_configured_hosts_never_returned_urls() -> None:
+    """URLs a backend returns are stored as links; they are never fetched (SSRF, docs/09)."""
+    import httpx
+
+    from app.providers.search.web import OpenAlexBackend, WebTextSourceSearch, WikipediaBackend
+
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.host)
+        if request.url.host == "api.openalex.org":
+            return httpx.Response(
+                200,
+                json={
+                    "results": [
+                        {
+                            "id": "https://openalex.org/W1",
+                            "primary_location": {"landing_page_url": "http://169.254.169.254/x"},
+                        }
+                    ]
+                },
+            )
+        return httpx.Response(
+            200, json={"query": {"search": [{"title": "T", "snippet": "http://10.0.0.1/admin"}]}}
+        )
+
+    search = WebTextSourceSearch(
+        [WikipediaBackend("en"), OpenAlexBackend()],
+        results_per_phrase=3,
+        timeout_seconds=2,
+        transport=httpx.MockTransport(handler),
+    )
+    result = await search.search_text("t", phrases=["a phrase to look for"])
+    assert {m.url for m in result.matches} >= {"http://169.254.169.254/x"}
+    assert set(seen) == {"en.wikipedia.org", "api.openalex.org"}  # the link was not followed
+
+
+async def test_search_and_detector_keys_stay_out_of_urls_and_logs(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    import httpx
+
+    from app.providers.search.google_vision import GoogleVisionImageSearch
+
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(500, text="boom test-key-ABC")
+
+    search = GoogleVisionImageSearch(
+        api_key="test-key-ABC",
+        max_results=5,
+        timeout_seconds=2,
+        transport=httpx.MockTransport(handler),
+    )
+    with caplog.at_level(logging.DEBUG), pytest.raises(Exception) as err:
+        await search.search_image(b"img", metadata={})
+    assert "test-key-ABC" not in str(seen[0].url) and "test-key-ABC" not in str(err.value)
+    assert "test-key-ABC" not in caplog.text
+    settings = Settings(
+        _env_file=None,
+        source_search_provider="web",
+        outbound_allowed_hosts=["en.wikipedia.org", "api.openalex.org", "vision.googleapis.com"],
+        source_search_image_backend="google_vision",
+        google_vision_api_key="test-key-ABC",
+    )
+    assert "test-key-ABC" not in repr(settings) and "test-key-ABC" not in str(settings)

@@ -13,6 +13,7 @@ from app.api.v1.metrics import router as metrics_router
 from app.api.v1.router import api_router
 from app.config import Settings, get_settings
 from app.database import create_engine, create_session_factory
+from app.providers.ai import warm_ai_detector
 from app.providers.storage import build_storage
 from app.services.auth import AuthLimiters
 from app.utils.logredact import install_log_redaction
@@ -42,9 +43,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             sweeper = asyncio.create_task(
                 run_periodically(app.state.session_factory, app.state.storage, settings)
             )
+        warmup: asyncio.Task[None] | None = None
+        if settings.ai_detector_provider == "local" and settings.environment != "test":
+            warmup = asyncio.create_task(warm_ai_detector(settings))
         try:
             yield
         finally:
+            if warmup is not None:
+                warmup.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await warmup
             if sweeper is not None:
                 sweeper.cancel()
                 with contextlib.suppress(asyncio.CancelledError):

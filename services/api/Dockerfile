@@ -5,19 +5,29 @@ FROM python:3.12-slim AS build
 
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_NO_CACHE_DIR=1
 WORKDIR /build
+ARG INSTALL_ML=0
 COPY pyproject.toml ./
 COPY app ./app
 COPY alembic.ini ./
 COPY alembic ./alembic
+COPY scripts ./scripts
 # A self-contained venv is copied into the runtime stage without build tooling.
 RUN python -m venv /opt/venv && /opt/venv/bin/pip install --upgrade pip \
     && /opt/venv/bin/pip install ".[postgres,s3]"
+# Optional local AI detectors (INSTALL_ML=1): CPU-only torch, then the two pinned models
+# baked into /opt/models (the service never downloads a model). Adds about 2.5 GB.
+RUN mkdir -p /opt/models \
+    && if [ "$INSTALL_ML" = "1" ]; then \
+        /opt/venv/bin/pip install ".[ml]" \
+            --extra-index-url https://download.pytorch.org/whl/cpu \
+        && /opt/venv/bin/python scripts/fetch_detector_models.py --dir /opt/models; \
+    fi
 
 FROM python:3.12-slim AS runtime
 
 ARG C2PATOOL_VERSION=0.28.0
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PATH="/opt/venv/bin:$PATH" \
-    VERIXA_DATA_DIR=/var/lib/verixa
+    VERIXA_DATA_DIR=/var/lib/verixa VERIXA_AI_DETECTOR_MODEL_DIR=/opt/models HF_HUB_OFFLINE=1
 
 # ExifTool from Debian; c2patool from its GitHub release (pinned).
 RUN apt-get update \
@@ -34,6 +44,7 @@ RUN groupadd --system verixa && useradd --system --gid verixa --create-home veri
 
 WORKDIR /srv/verixa
 COPY --from=build /opt/venv /opt/venv
+COPY --from=build /opt/models /opt/models
 COPY --chown=verixa:verixa alembic.ini ./
 COPY --chown=verixa:verixa alembic ./alembic
 COPY --chown=verixa:verixa app ./app

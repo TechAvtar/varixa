@@ -116,6 +116,21 @@ Every package's `__init__.py` carries a one-line responsibility docstring.
 - New system dependencies of the API (binaries like ExifTool/c2patool) go into both the CI `api`
   job and the Dockerfile.
 
+## Real providers (T051)
+- `ai_detector_provider=local` (`providers/ai/local.py`): open-source models loaded **offline** from
+  `VERIXA_AI_DETECTOR_MODEL_DIR` (fetched once by `scripts/fetch_detector_models.py`, pinned to a
+  commit); the service never downloads models. `torch`/`transformers` are the optional `ml` extra
+  and imported lazily (`importlib`), so nothing else depends on them. One runtime per process;
+  loading has its own timeout; inference runs in a worker thread. Scores stay uncalibrated, so the
+  engine caps them at POSSIBLE; never present them as proof.
+- `source_search_provider=web`: text via `providers/search/web.py` (Wikipedia, OpenAlex, SearXNG),
+  images via `google_vision.py`. Backend hosts are checked against `outbound_allowed_hosts` when
+  `Settings` loads (fail fast); keys travel in headers, never in URLs; URLs a backend returns are
+  only stored as links. Wikipedia's timestamp is a last edit, never a `published_at`. A result with
+  failed queries is `complete=False` and not cached; every query failing raises.
+- Tests use `httpx.MockTransport` and a fake `ClassifierRuntime`; tests that need real models skip
+  when the `ml` extra or `data/models` is absent.
+
 ## Non-negotiables
 - Routes → Services → Repositories/Providers. No provider calls from routes.
 - Every schema change ships with an Alembic migration.

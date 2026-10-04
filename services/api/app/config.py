@@ -11,12 +11,20 @@ uses PostgreSQL and private S3-compatible object storage via the same settings.
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.utils.urlpolicy import DisallowedUrlError, assert_outbound_allowed
+
 StorageBackend = Literal["local", "s3"]
+TextBackendName = Literal["searxng", "wikipedia", "openalex"]
 _DEV_SECRET = "dev-only-insecure-secret-change-me"
+
+
+def _default_text_backends() -> list[TextBackendName]:
+    return ["wikipedia", "openalex"]
 
 
 class Settings(BaseSettings):
@@ -91,9 +99,30 @@ class Settings(BaseSettings):
     fingerprint_near_threshold: int = Field(default=10, ge=0, le=64)
 
     # AI-generation detector. "none" disables the step (report says UNKNOWN); "mock" is a
-    # deterministic stand-in for development. Real adapters register by name in providers/ai.
-    ai_detector_provider: Literal["none", "mock"] = "none"
+    # deterministic stand-in for development; "local" runs open-source classifiers on this
+    # machine (needs the `ml` extra and models fetched with scripts/fetch_detector_models.py;
+    # nothing is sent anywhere). Real adapters register by name in providers/ai.
+    ai_detector_provider: Literal["none", "mock", "local"] = "none"
     ai_detector_timeout_seconds: float = Field(default=30.0, ge=1, le=300)
+    # The first use of a local model loads it from disk (hundreds of MB); that is allowed
+    # longer than a single scoring call. The API also warms the models at startup.
+    ai_detector_load_timeout_seconds: float = Field(default=300.0, ge=1, le=3600)
+    # Where fetched models live (default: <data dir>/models). Loaded offline, never downloaded
+    # by the service.
+    ai_detector_model_dir: Path | None = None
+    ai_detector_image_model: str = Field(
+        default="haywoodsloan/ai-image-detector-deploy", min_length=3, max_length=128
+    )
+    # Exact label (in the model's own label set) that means "AI-generated".
+    ai_detector_image_ai_label: str = Field(default="artificial", min_length=1, max_length=64)
+    ai_detector_text_model: str = Field(
+        default="openai-community/roberta-base-openai-detector", min_length=3, max_length=128
+    )
+    ai_detector_text_ai_label: str = Field(default="Fake", min_length=1, max_length=64)
+    # Text is scored in windows of the model's context; fewer tokens than the minimum give no
+    # score (too little signal), and long text is capped at this many windows.
+    ai_detector_text_min_tokens: int = Field(default=50, ge=1, le=512)
+    ai_detector_text_max_chunks: int = Field(default=8, ge=1, le=64)
     # Score thresholds -> evidence levels (docs/07): >= high PROBABLE, >= medium POSSIBLE.
     ai_score_high: float = Field(default=0.85, ge=0.0, le=1.0)
     ai_score_medium: float = Field(default=0.6, ge=0.0, le=1.0)
@@ -181,10 +210,22 @@ class Settings(BaseSettings):
     # Persistent provider-result cache (content hash + provider/model/version). 0 disables.
     provider_cache_ttl_hours: int = Field(default=24 * 7, ge=0, le=24 * 365)
 
-    # Reverse-image / phrase source search. "none" skips the step; "mock" is a stand-in.
-    source_search_provider: Literal["none", "mock"] = "none"
+    # Reverse-image / phrase source search. "none" skips the step; "mock" is a stand-in;
+    # "web" queries the real backends below (their hosts must be on the outbound allowlist).
+    source_search_provider: Literal["none", "mock", "web"] = "none"
     source_search_timeout_seconds: float = Field(default=30.0, ge=1, le=300)
     text_search_max_phrases: int = Field(default=5, ge=1, le=20)
+    # Text backends for "web": a self-hosted SearXNG instance, Wikipedia and OpenAlex.
+    source_search_text_backends: list[TextBackendName] = Field(
+        default_factory=_default_text_backends
+    )
+    source_search_results_per_phrase: int = Field(default=5, ge=1, le=10)
+    searxng_base_url: str | None = None
+    wikipedia_language: str = Field(default="en", pattern=r"^[a-z]{2,3}$")
+    # Image backend for "web". Google Vision web detection sends the image to Google.
+    source_search_image_backend: Literal["none", "google_vision"] = "none"
+    google_vision_api_key: SecretStr | None = None
+    google_vision_max_results: int = Field(default=10, ge=1, le=50)
 
     # Text near-duplicate threshold: minimum estimated Jaccard similarity (0-1) of shingle sets.
     text_near_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
@@ -263,6 +304,51 @@ class Settings(BaseSettings):
         if self.ai_score_medium > self.ai_score_high:
             raise ValueError("VERIXA_AI_SCORE_MEDIUM must not exceed VERIXA_AI_SCORE_HIGH")
         return self
+
+    def web_search_endpoints(self) -> dict[str, str]:
+        """Endpoint each enabled real search backend will call (empty unless provider=web)."""
+        if self.source_search_provider != "web":
+            return {}
+        out: dict[str, str] = {}
+        for backend in self.source_search_text_backends:
+            if backend == "wikipedia":
+                out["wikipedia"] = f"https://{self.wikipedia_language}.wikipedia.org/w/api.php"
+            elif backend == "openalex":
+                out["openalex"] = "https://api.openalex.org/works"
+            elif backend == "searxng" and self.searxng_base_url:
+                out["searxng"] = self.searxng_base_url
+        if self.source_search_image_backend == "google_vision":
+            out["google_vision"] = "https://vision.googleapis.com/v1/images:annotate"
+        return out
+
+    @model_validator(mode="after")
+    def _web_search_is_configured(self) -> "Settings":
+        if self.source_search_provider != "web":
+            return self
+        if "searxng" in self.source_search_text_backends and not self.searxng_base_url:
+            raise ValueError("the searxng text backend needs VERIXA_SEARXNG_BASE_URL")
+        if self.source_search_image_backend == "google_vision" and not (
+            self.google_vision_api_key and self.google_vision_api_key.get_secret_value().strip()
+        ):
+            raise ValueError("the google_vision image backend needs VERIXA_GOOGLE_VISION_API_KEY")
+        for name, url in self.web_search_endpoints().items():
+            try:
+                assert_outbound_allowed(
+                    url,
+                    allowed_hosts=self.outbound_allowed_hosts,
+                    allow_insecure_localhost=self.environment != "production",
+                )
+            except DisallowedUrlError as exc:
+                host = urlsplit(url).hostname
+                raise ValueError(
+                    f"source search backend '{name}' is refused ({exc}); add '{host}' to "
+                    "VERIXA_OUTBOUND_ALLOWED_HOSTS"
+                ) from exc
+        return self
+
+    @property
+    def detector_model_dir(self) -> Path:
+        return self.ai_detector_model_dir or (self.data_dir / "models")
 
     @model_validator(mode="after")
     def _trust_files_are_local(self) -> "Settings":

@@ -58,6 +58,25 @@ Upgrades are the same command with the new commit checked out (or a new `VERIXA_
 images come from a registry). Migrations are forward-only and run before the new API replaces the
 old one.
 
+### Real AI detection and source search (optional)
+
+Both stay `none` until chosen. They are independent of each other and of the rest of the stack.
+
+- **Local AI detectors** (`VERIXA_AI_DETECTOR_PROVIDER=local`): open-source classifiers that run
+  inside the API container; nothing is sent anywhere. Build the API image with the models baked in:
+  `docker compose ... build --build-arg INSTALL_ML=1 migrate` (adds about 2.5 GB and needs CPU time:
+  several seconds per image). The models load once per process and are warmed at startup. CI's
+  images job builds the default image only, so the `INSTALL_ML=1` path is not exercised there:
+  build it once before relying on it. The scores are weak, uncalibrated signals.
+- **Web source search** (`VERIXA_SOURCE_SEARCH_PROVIDER=web`): Wikipedia and OpenAlex need no key;
+  add their hosts (`en.wikipedia.org`, `api.openalex.org`) to `VERIXA_OUTBOUND_ALLOWED_HOSTS`, or
+  the API refuses to start. A self-hosted SearXNG (`VERIXA_SEARXNG_BASE_URL`, JSON output enabled)
+  must be reachable over **https** in production (plain http is only accepted for localhost outside
+  production). Google Cloud Vision (`VERIXA_SOURCE_SEARCH_IMAGE_BACKEND=google_vision`) sends each
+  image to Google and bills per image after its free allowance; it needs
+  `VERIXA_GOOGLE_VISION_API_KEY` and `vision.googleapis.com` on the allowlist. Without it, image
+  source search is skipped and reported as UNKNOWN.
+
 ### Storage options
 
 - **Managed bucket (recommended)**: set `VERIXA_S3_ENDPOINT_URL`, region, bucket and keys in

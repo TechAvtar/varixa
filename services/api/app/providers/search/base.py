@@ -46,6 +46,9 @@ class SearchResult:
     cached: bool = False
     estimated_cost: float | None = None
     limitations: list[str] = field(default_factory=list)
+    # False when some backends failed: such a result is shown but never cached, so a later
+    # run can fill the gap.
+    complete: bool = True
 
 
 class ImageSourceSearch(Protocol):
