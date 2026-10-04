@@ -46,6 +46,7 @@ LEVEL_CEILING: dict[str, str] = {
     "provenance.invalid": EvidenceLevel.POSSIBLE,
     # A certificate chain to a published anchor is a cryptographic fact about *who* signed.
     "provenance.trusted": EvidenceLevel.VERIFIED,
+    "provenance.certificate.outside-validity": EvidenceLevel.POSSIBLE,
     # Signed declarations are the signer's statements: STRONG at most, never VERIFIED.
     "provenance.source-type": EvidenceLevel.STRONG,
     "provenance.training-mining": EvidenceLevel.STRONG,
@@ -426,6 +427,7 @@ def _provenance_rules(o: Observations, t: EvidenceThresholds) -> list[EvidenceDr
                     else {}
                 ),
                 **({"software_agents": agents} if agents else {}),
+                **_certificate_data(n),
             },
         )
     else:
@@ -447,8 +449,62 @@ def _provenance_rules(o: Observations, t: EvidenceThresholds) -> list[EvidenceDr
     return [
         head,
         *_trust_rules(p, n, src, refs, t),
+        *_certificate_rules(p, n, src, refs, t),
         *_provenance_declaration_rules(p, n, src, refs, t),
         *remote,
+    ]
+
+
+def _certificate_data(n: dict[str, Any]) -> dict[str, Any]:
+    """Leaf certificate facts for the valid-manifest record (who the certificate names)."""
+    leaf = (n.get("certificate") or {}).get("leaf") or {}
+    if not leaf:
+        return {}
+    return {
+        "certificate": {
+            "subject": leaf.get("subject_common_name"),
+            "organization": leaf.get("subject_organization"),
+            "issuer": leaf.get("issuer_common_name"),
+            "valid_from": leaf.get("not_before"),
+            "valid_to": leaf.get("not_after"),
+            "key": leaf.get("key_algorithm"),
+        }
+    }
+
+
+def _certificate_rules(
+    p: Any, n: dict[str, Any], src: str, refs: list[str], t: EvidenceThresholds
+) -> list[EvidenceDraft]:
+    """Only an inconsistency is a record: the stated signing time outside the certificate's
+    validity window. A certificate valid at signing is the normal case and adds nothing."""
+    cert = n.get("certificate") or {}
+    leaf = cert.get("leaf") or {}
+    if cert.get("valid_at_signing") is not False or not leaf:
+        return []
+    return [
+        EvidenceDraft(
+            rule="provenance.certificate.outside-validity",
+            category="provenance",
+            level=EvidenceLevel.POSSIBLE,
+            kind="signal",
+            claim="The manifest's signing time is outside the signing certificate's validity "
+            "period.",
+            source=src,
+            confidence=_conf(EvidenceLevel.POSSIBLE, t),
+            detail=f"Signed {p.signed_at}; certificate valid {leaf.get('not_before')} to "
+            f"{leaf.get('not_after')}.",
+            limitation="The signing time comes from the manifest (or its timestamp authority); "
+            "a wrong signer clock or a missing trusted timestamp produces this without any "
+            "tampering.",
+            refs=refs,
+            provider_version=p.engine_version,
+            data={
+                "signed_at": p.signed_at,
+                "valid_from": leaf.get("not_before"),
+                "valid_to": leaf.get("not_after"),
+                "subject": leaf.get("subject_common_name"),
+            },
+        )
     ]
 
 

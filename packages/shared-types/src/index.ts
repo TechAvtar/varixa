@@ -55,6 +55,8 @@ export type {
   NormalizedProvenance,
   ProvenanceAction,
   ProvenanceAssertions,
+  ProvenanceCertificate,
+  ProvenanceCertificateSummary,
   ProvenanceHashCoverage,
   ProvenanceIdentity,
   ProvenanceIngredient,

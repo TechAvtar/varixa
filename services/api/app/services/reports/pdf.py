@@ -89,7 +89,7 @@ def _trust_rows(p: dict[str, Any]) -> list[tuple[str, Any]]:
     """Signer trust (T047), kept apart from integrity; empty for rows without a trust run."""
     trust = p.get("trust") or {}
     if not trust.get("evaluated"):
-        return [("Signer trusted", "not evaluated")]
+        return [("Signer trusted", "not evaluated"), *_certificate_rows(p)]
     verdict = p.get("trusted")
     label = (
         "yes (on the trust list)"
@@ -99,7 +99,30 @@ def _trust_rows(p: dict[str, Any]) -> list[tuple[str, Any]]:
     listed = f"{trust.get('mode') or 'configured'}"
     if trust.get("list_version"):
         listed += f" · version {trust['list_version']}"
-    return [("Signer trusted", label), ("Trust list", listed)]
+    return [("Signer trusted", label), ("Trust list", listed), *_certificate_rows(p)]
+
+
+def _certificate_rows(p: dict[str, Any]) -> list[tuple[str, Any]]:
+    """Signing certificate (T048): subject, issuer, validity; empty when no chain was read."""
+    cert = p.get("certificate") or {}
+    leaf = cert.get("leaf") or {}
+    if not leaf:
+        return []
+    subject = " · ".join(
+        x for x in (leaf.get("subject_common_name"), leaf.get("subject_organization")) if x
+    )
+    validity = f"{str(leaf.get('not_before'))[:10]} to {str(leaf.get('not_after'))[:10]}"
+    at_signing = cert.get("valid_at_signing")
+    if at_signing is True:
+        validity += " (valid at signing)"
+    elif at_signing is False:
+        validity += " (signing time outside this period)"
+    return [
+        ("Certificate subject", subject or "—"),
+        ("Certificate issuer", leaf.get("issuer_common_name") or "—"),
+        ("Certificate validity", validity),
+        ("Certificate key", leaf.get("key_algorithm")),
+    ]
 
 
 def _provenance_depth_rows(p: dict[str, Any]) -> list[tuple[str, Any]]:

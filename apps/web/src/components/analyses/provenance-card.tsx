@@ -117,7 +117,79 @@ function Trust({ n }: { n: Normalized }) {
           </>
         ) : null}
       </dl>
+      <Certificate n={n} />
     </section>
+  );
+}
+
+/** The signing certificate as issued: who it names, who issued it, when it is valid. */
+function Certificate({ n }: { n: Normalized }) {
+  const leaf = n.certificate.leaf;
+  if (!leaf) return null;
+  const chain = n.certificate.chain ?? [];
+  const atSigning = n.certificate.valid_at_signing;
+  return (
+    <dl
+      className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 border-t pt-2 text-sm"
+      aria-label="Signing certificate"
+    >
+      <dt className="text-muted-foreground">Certificate subject</dt>
+      <dd>
+        {leaf.subject_common_name ?? "—"}
+        {leaf.subject_organization ? (
+          <span className="text-muted-foreground"> · {leaf.subject_organization}</span>
+        ) : null}
+        {leaf.subject_country ? (
+          <span className="text-muted-foreground"> · {leaf.subject_country}</span>
+        ) : null}
+      </dd>
+      <dt className="text-muted-foreground">Issued by</dt>
+      <dd>
+        {leaf.issuer_common_name ?? "—"}
+        {leaf.issuer_organization ? (
+          <span className="text-muted-foreground"> · {leaf.issuer_organization}</span>
+        ) : null}
+      </dd>
+      <dt className="text-muted-foreground">Valid</dt>
+      <dd className="font-mono text-xs">
+        {leaf.not_before.slice(0, 10)} to {leaf.not_after.slice(0, 10)}
+        {atSigning === true ? (
+          <span className="font-sans text-muted-foreground"> · valid at the signing time</span>
+        ) : atSigning === false ? (
+          <span className="font-sans text-amber-700 dark:text-amber-300">
+            {" "}
+            · signing time is outside this period
+          </span>
+        ) : null}
+      </dd>
+      <dt className="text-muted-foreground">Key</dt>
+      <dd className="font-mono text-xs">
+        {leaf.key_algorithm}
+        {leaf.signature_algorithm ? ` · ${leaf.signature_algorithm}` : ""}
+      </dd>
+      <dt className="text-muted-foreground">Serial / fingerprint</dt>
+      <dd className="break-all font-mono text-xs">
+        {leaf.serial_number} · sha256 {leaf.sha256_fingerprint.slice(0, 32)}…
+      </dd>
+      {chain.length > 1 ? (
+        <>
+          <dt className="text-muted-foreground">Chain</dt>
+          <dd>
+            <ol className="space-y-0.5 text-xs">
+              {chain.map((c, i) => (
+                <li key={`${c.subject_common_name ?? "cert"}-${i}`} className="font-mono">
+                  {i === 0 ? "" : "↳ "}
+                  {c.subject_common_name ?? c.subject_organization ?? "unnamed"}
+                  {c.self_signed ? (
+                    <span className="text-muted-foreground"> · self-signed root</span>
+                  ) : null}
+                </li>
+              ))}
+            </ol>
+          </dd>
+        </>
+      ) : null}
+    </dl>
   );
 }
 

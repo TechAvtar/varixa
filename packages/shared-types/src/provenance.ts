@@ -66,6 +66,40 @@ export interface NormalizedProvenance {
   /** Trust run: null = not evaluated / inconclusive; details in `trust`. */
   trusted: boolean | null;
   trust: ProvenanceTrust;
+  /** Signing certificate chain: leaf summary, chain and validity at the signing time. */
+  certificate: ProvenanceCertificate;
+}
+
+export interface ProvenanceCertificateSummary {
+  subject_common_name: string | null;
+  subject_organization: string | null;
+  subject_organizational_unit: string | null;
+  subject_country: string | null;
+  issuer_common_name: string | null;
+  issuer_organization: string | null;
+  serial_number: string;
+  not_before: string;
+  not_after: string;
+  key_algorithm: string;
+  signature_algorithm: string | null;
+  self_signed: boolean;
+  is_ca: boolean | null;
+  sha256_fingerprint: string;
+}
+
+export interface ProvenanceCertificate {
+  leaf?: ProvenanceCertificateSummary;
+  chain_length?: number;
+  chain?: Array<{
+    subject_common_name: string | null;
+    subject_organization: string | null;
+    issuer_common_name: string | null;
+    not_after: string;
+    self_signed: boolean;
+    is_ca: boolean | null;
+  }>;
+  /** null when the manifest has no parseable signing time. */
+  valid_at_signing?: boolean | null;
 }
 
 export interface ProvenanceTrust {

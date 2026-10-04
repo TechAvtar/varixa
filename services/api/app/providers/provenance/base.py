@@ -42,6 +42,8 @@ class RawProvenance:
     trust_state: str | None = None
     trust_status: list[dict[str, Any]] = field(default_factory=list)
     trust_results: dict[str, Any] | None = None
+    # `--certs`: PEM chain of the active manifest's signature, leaf first (public certs).
+    certificates_pem: str | None = None
 
 
 class ProvenanceInspector(Protocol):

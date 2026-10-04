@@ -29,6 +29,7 @@ log = logging.getLogger("verixa.providers.c2patool")
 _MAX_OUTPUT = 16 * 1024 * 1024
 _MAX_INFO = 4 * 1024
 _MAX_TREE = 64 * 1024
+_MAX_CERTS = 64 * 1024
 _NO_CLAIM_MARKERS = ("No claim found", "no claim found", "no manifest")
 # 0.28 with fetching disabled refuses a remote reference; without it, it would try the network.
 _REMOTE_MARKERS = (
@@ -282,6 +283,12 @@ class C2paToolInspector:
             if caps.has_flag("--tree"):
                 tree_out, _, _ = await self._run([*base, "--tree"])
                 tree = tree_out.decode("utf-8", "replace").strip()[:_MAX_TREE] or None
+            certificates_pem: str | None = None
+            if caps.has_flag("--certs"):
+                certs_out, _, _ = await self._run([*base, "--certs"])
+                certs_text = certs_out.decode("ascii", "replace")
+                if "-----BEGIN CERTIFICATE-----" in certs_text:
+                    certificates_pem = certs_text.replace("\r\n", "\n")[:_MAX_CERTS]
 
             warnings = [
                 line.strip()
@@ -339,6 +346,7 @@ class C2paToolInspector:
                 trust_state=trust_state,
                 trust_status=trust_status,
                 trust_results=trust_results,
+                certificates_pem=certificates_pem,
             )
         finally:
             await asyncio.to_thread(path.unlink, True)

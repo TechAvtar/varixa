@@ -1039,3 +1039,72 @@ def test_refresh_script_refuses_other_hosts() -> None:
         module.list_version("abc") == module.list_version("abc")
         and len(module.list_version("abc")) == 12
     )
+
+
+# -- Phase 5: certificate chain ---------------------------------------------------------------
+
+
+def test_normaliser_attaches_the_certificate_view() -> None:
+    pem = (FIXTURES / "sample_chain.pem").read_text("utf-8")
+    raw = raw_signed()
+    n = normalize_provenance(
+        RawProvenance(
+            engine="c2patool",
+            engine_version="0.28.0",
+            present=True,
+            summary=raw.summary,
+            detailed=raw.detailed,
+            validation_status=raw.validation_status,
+            certificates_pem=pem,
+        )
+    )
+    assert n.certificate["leaf"]["subject_common_name"] == "C2PA Signer"
+    assert n.certificate["chain_length"] == 3 and n.certificate["valid_at_signing"] is True
+    assert normalize_provenance(raw_signed()).certificate == {}
+
+
+def test_signing_time_outside_validity_is_noted() -> None:
+    pem = (FIXTURES / "sample_chain.pem").read_text("utf-8")
+    raw = raw_signed()
+    assert raw.summary is not None
+    raw.summary["manifests"]["urn:a"]["signature_info"]["time"] = "2040-01-01T00:00:00+00:00"
+    n = normalize_provenance(
+        RawProvenance(
+            engine="c2patool",
+            engine_version="0.28.0",
+            present=True,
+            summary=raw.summary,
+            detailed=raw.detailed,
+            validation_status=raw.validation_status,
+            certificates_pem=pem,
+        )
+    )
+    assert n.certificate["valid_at_signing"] is False
+    assert any("outside the signing certificate's validity" in x for x in provenance_limitations(n))
+
+
+@needs_c2patool
+async def test_c2patool_certs_are_captured(tmp_path: Path) -> None:
+    assert C2PATOOL is not None
+    raw = await C2paToolInspector(C2PATOOL, temp_dir=tmp_path).inspect(SIGNED, extension="jpg")
+    assert raw.certificates_pem and raw.certificates_pem.count("BEGIN CERTIFICATE") == 3
+    assert "\r" not in raw.certificates_pem
+    n = normalize_provenance(raw)
+    assert n.certificate["leaf"]["subject_organization"] == "C2PA Test Signing Cert"
+    assert n.certificate["valid_at_signing"] is True
+
+
+@needs_c2patool
+async def test_signed_upload_exposes_the_certificate(client: AsyncClient) -> None:
+    headers = await auth_headers(client)
+    r = await client.post(
+        "/analysis/image", headers=headers, files={"file": ("C.jpg", SIGNED, "image/jpeg")}
+    )
+    aid = r.json()["id"]
+    body = (await client.get(f"/analysis/{aid}/provenance", headers=headers)).json()
+    cert = body["normalized"]["certificate"]
+    assert cert["leaf"]["issuer_common_name"] == "Intermediate CA" and cert["chain_length"] == 3
+    ev = (await client.get(f"/analysis/{aid}/evidence", headers=headers)).json()
+    by = {i["rule"]: i for i in ev["items"]}
+    assert by["provenance.valid"]["data"]["certificate"]["subject"] == "C2PA Signer"
+    assert "provenance.certificate.outside-validity" not in by

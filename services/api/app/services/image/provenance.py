@@ -14,6 +14,7 @@ from typing import Any, Literal
 
 from app.providers.provenance.base import RawProvenance
 from app.services.image.provenance_depth import read_depth
+from app.services.provenance.certificates import certificate_view
 
 CodeFamily = Literal["integrity", "trust", "identity", "info"]
 
@@ -132,6 +133,8 @@ class NormalizedProvenance:
     # does not chain to the configured trust list. Details in `trust`.
     trusted: bool | None = None
     trust: dict[str, Any] = field(default_factory=dict)
+    # Signing certificate chain (T048): leaf summary, chain, validity at the signing time.
+    certificate: dict[str, Any] = field(default_factory=dict)
 
     def to_json(self) -> dict[str, Any]:
         return asdict(self)
@@ -376,6 +379,7 @@ def normalize_provenance(raw: RawProvenance) -> NormalizedProvenance:
     n.validation = _structured_validation(raw)
     n.trust = _trust_view(raw)
     n.trusted = n.trust.get("trusted")
+    n.certificate = certificate_view(raw.certificates_pem, n.signed_at)
     # Newer engines list only problems in the flat status; fold the structured codes in so
     # `validation_codes` is the complete picture whatever the engine generation.
     for family in ("success", "informational", "trust", "identity", "failure"):
@@ -450,6 +454,11 @@ def provenance_limitations(n: NormalizedProvenance) -> list[str]:
         notes.append(
             "Issuer trust (certificate chain against a trust list) was not evaluated for this "
             "analysis; 'signer' is the certificate's stated issuer, not a verified identity."
+        )
+    if (n.certificate or {}).get("valid_at_signing") is False:
+        notes.append(
+            "The manifest's signing time falls outside the signing certificate's validity "
+            "period. A wrong signer clock or a missing trusted timestamp can cause this."
         )
     if n.valid_signature is False:
         notes.append(

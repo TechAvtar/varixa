@@ -52,6 +52,8 @@ class NormalizedProvenanceResponse(BaseModel):
     # T047: trust run outcome (None = not evaluated / inconclusive) and its details.
     trusted: bool | None = None
     trust: dict[str, Any] = {}
+    # T048: signing certificate chain (leaf summary, chain, validity at signing time).
+    certificate: dict[str, Any] = {}
 
 
 class ImageProvenanceResponse(BaseModel):

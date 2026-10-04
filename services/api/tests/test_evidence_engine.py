@@ -727,3 +727,44 @@ def test_no_trust_record_when_not_evaluated() -> None:
     assert not {"provenance.trusted", "provenance.untrusted-signer"} & set(rules(drafts))
     assert "was not evaluated" in (by_rule(drafts, "provenance.valid").limitation or "")
     assert LEVEL_CEILING["provenance.trusted"] == "VERIFIED"
+
+
+# -- T048: signing certificate ------------------------------------------------------------------
+
+LEAF = {
+    "subject_common_name": "C2PA Signer",
+    "subject_organization": "Cam Co",
+    "issuer_common_name": "Intermediate CA",
+    "not_before": "2022-06-10T00:00:00+00:00",
+    "not_after": "2030-08-26T00:00:00+00:00",
+    "key_algorithm": "RSA 4096",
+}
+
+
+def test_certificate_facts_enrich_the_valid_record_only() -> None:
+    row = provenance_row(certificate={"leaf": LEAF, "chain_length": 3, "valid_at_signing": True})
+    drafts = build_evidence(Observations("image", provenance=row), T)
+    d = by_rule(drafts, "provenance.valid")
+    assert d.data["certificate"] == {
+        "subject": "C2PA Signer",
+        "organization": "Cam Co",
+        "issuer": "Intermediate CA",
+        "valid_from": "2022-06-10T00:00:00+00:00",
+        "valid_to": "2030-08-26T00:00:00+00:00",
+        "key": "RSA 4096",
+    }
+    assert "provenance.certificate.outside-validity" not in rules(drafts)
+
+
+def test_signing_outside_certificate_validity_is_a_possible_signal() -> None:
+    row = provenance_row(certificate={"leaf": LEAF, "chain_length": 1, "valid_at_signing": False})
+    drafts = build_evidence(Observations("image", provenance=row), T)
+    d = by_rule(drafts, "provenance.certificate.outside-validity")
+    assert d.level == "POSSIBLE" and d.kind == "signal"
+    assert "wrong signer clock" in (d.limitation or "") and d.data["subject"] == "C2PA Signer"
+    assert LEVEL_CEILING["provenance.certificate.outside-validity"] == "POSSIBLE"
+    # Unknown validity (no signing time) is not a record.
+    row = provenance_row(certificate={"leaf": LEAF, "chain_length": 1, "valid_at_signing": None})
+    assert "provenance.certificate.outside-validity" not in rules(
+        build_evidence(Observations("image", provenance=row), T)
+    )

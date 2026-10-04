@@ -239,7 +239,12 @@ class InspectProvenanceStep:
             ),
             normalized_json=normalized.to_json(),
             raw_json=(
-                {"summary": raw.summary, "detailed": raw.detailed, "tree": raw.tree}
+                {
+                    "summary": raw.summary,
+                    "detailed": raw.detailed,
+                    "tree": raw.tree,
+                    "certs": raw.certificates_pem,
+                }
                 if raw.present
                 else None
             ),
