@@ -666,3 +666,39 @@ async def test_search_and_detector_keys_stay_out_of_urls_and_logs(
         google_vision_api_key="test-key-ABC",
     )
     assert "test-key-ABC" not in repr(settings) and "test-key-ABC" not in str(settings)
+
+
+# -- Vercel Cron retention endpoint ---------------------------------------------------------
+
+
+async def test_retention_endpoint_does_not_exist_without_a_cron_secret(
+    client: AsyncClient,
+) -> None:
+    for headers in ({}, {"Authorization": "Bearer anything"}):
+        r = await client.get("/internal/retention", headers=headers)
+        assert r.status_code == 404
+
+
+async def test_retention_endpoint_needs_the_exact_cron_secret(
+    client: AsyncClient, migrated_settings: Settings
+) -> None:
+    from pydantic import SecretStr
+
+    migrated_settings.cron_secret = SecretStr("cron-secret-123")
+    for headers in (
+        {},
+        {"Authorization": "Bearer wrong"},
+        {"Authorization": "Basic cron-secret-123"},
+        {"Authorization": "Bearer cron-secret-1234"},
+    ):
+        r = await client.get("/internal/retention", headers=headers)
+        assert r.status_code == 401, headers
+        assert r.json()["error"]["code"] == "CRON_SECRET_REQUIRED"
+
+    ok = await client.get(
+        "/internal/retention", headers={"Authorization": "Bearer cron-secret-123"}
+    )
+    assert ok.status_code == 200
+    body = ok.json()
+    assert body["errors"] == [] and "content_expired" in body  # counts only, no content
+    assert "cron-secret-123" not in ok.text

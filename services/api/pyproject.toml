@@ -22,6 +22,10 @@ dependencies = [
   "reportlab>=4.2",
   "httpx>=0.27",
   "cryptography>=43",
+  # Production drivers. They are also available as the `postgres` and `s3` extras, but
+  # serverless installers (Vercel) read only this list, so they must be listed here.
+  "asyncpg>=0.29",
+  "boto3>=1.35",
 ]
 
 [project.optional-dependencies]

@@ -77,6 +77,47 @@ Both stay `none` until chosen. They are independent of each other and of the res
   `VERIXA_GOOGLE_VISION_API_KEY` and `vision.googleapis.com` on the allowlist. Without it, image
   source search is skipped and reported as UNKNOWN.
 
+### Vercel (one project, two services)
+
+`vercel.json` at the repository root deploys `apps/web` (Next.js) and `services/api` (FastAPI) as two
+services of one Vercel project: `/api/*` goes to the API, everything else to the web app, and the web
+service reaches the API through a service binding injected as `API_BASE_URL`.
+
+What the API does differently there (all automatic when Vercel's `VERCEL` variable is set, each can
+be overridden):
+
+- **Analyses run before the response** (`VERIXA_ANALYSIS_EXECUTION=inline`): a function instance may
+  be stopped once it has answered, so work after the response would be lost. An upload therefore
+  takes as long as the whole analysis (roughly 5 to 30 seconds, more with search or the language
+  model); `functions.maxDuration` for the API is 300 s, the most a plan with Fluid compute allows,
+  and your plan may allow less. If a function is killed mid-analysis, that analysis stays in
+  `processing`.
+- **Scratch files go to `/tmp/verixa`** (`VERIXA_DATA_DIR`): the only writable path, not durable.
+- **No in-process timers**: the retention sweeper is off; Vercel Cron calls
+  `GET /api/v1/internal/retention` daily at 03:00 UTC (Hobby allows one run per day; use an hourly
+  schedule on a plan that does). It requires `Authorization: Bearer $CRON_SECRET`, which Vercel sends
+  when the project has a `CRON_SECRET` variable; without one the endpoint is a 404. With a daily
+  sweep, raw content can outlive the 24-hour retention by up to a day.
+- **PostgreSQL and S3 drivers** (`asyncpg`, `boto3`) are core dependencies, because Vercel installs
+  only `[project].dependencies`.
+- **Not available**: `exiftool` and `c2patool` (metadata falls back to Pillow; Content Credentials are
+  skipped and reported as such), and the local AI detectors (use `none`).
+
+Project environment variables to set on Vercel: `VERIXA_ENVIRONMENT=production`,
+`VERIXA_DATABASE_URL` (PostgreSQL, `postgresql+asyncpg://...`; behind a transaction pooler add
+`?prepared_statement_cache_size=0`), `VERIXA_STORAGE_BACKEND=s3` with the bucket variables,
+`VERIXA_SECRET_KEY`, `VERIXA_METRICS_TOKEN` (or `VERIXA_METRICS_ENABLED=false`),
+`VERIXA_TRUST_PROXY_HEADERS=true`, `VERIXA_API_PUBLIC_URL` and `VERIXA_CORS_ORIGINS` (the site's
+https origin), `CRON_SECRET`, and for the web service `NEXT_PUBLIC_API_BASE_URL` (the site's public
+origin; the Next.js proxy has no service bindings and uses it to refresh sessions). Run
+`alembic upgrade head` against the production database from your machine or CI before the first
+deploy and before each release that has a migration; the functions never migrate.
+
+Not verified on Vercel itself (no CLI access when this was written): the `entrypoint` and
+`functions` keys inside a service, `crons` next to `services`, the shared `packages/shared-types`
+import from `apps/web` (needs source files outside the service root to be included), and the
+function duration your plan allows.
+
 ### Storage options
 
 - **Managed bucket (recommended)**: set `VERIXA_S3_ENDPOINT_URL`, region, bucket and keys in

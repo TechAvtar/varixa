@@ -563,7 +563,9 @@ All configuration is via environment variables; see the `.env.example` files. Ne
 | `VERIXA_MAX_UPLOAD_BYTES` | API | Upload size cap (default 26214400 = 25 MB); mirror it in `next.config.ts` `serverActions.bodySizeLimit` |
 | `VERIXA_MAX_IMAGE_PIXELS` | API | Width × height cap checked from the header (default 40 MP) |
 | `VERIXA_SIDECAR_UPLOAD_ENABLED` / `VERIXA_SIDECAR_MAX_BYTES` | API | Accept an optional C2PA sidecar (`.c2pa`) beside an image (default true) and its size cap (default 4194304 = 4 MB); mirror the cap in `IMAGE_UPLOAD.sidecarMaxBytes` |
-| `VERIXA_DATA_DIR` | API | Root for local runtime data (default `./data`, git-ignored) |
+| `VERIXA_DATA_DIR` | API | Root for local runtime data (default `./data`, git-ignored; `/tmp/verixa` on Vercel) |
+| `VERIXA_ANALYSIS_EXECUTION` | API | `background` (default: the analysis runs after the HTTP response) or `inline` (before it; the default on Vercel, where work after the response is not kept alive) |
+| `VERIXA_CRON_SECRET` / `CRON_SECRET` | API | Enables `GET /api/v1/internal/retention` (bearer secret, one retention sweep, counts only) for hosts that schedule it externally, e.g. Vercel Cron; unset means the endpoint is a 404 |
 | `VERIXA_DATABASE_URL` | API | SQLAlchemy URL. Default: SQLite at `${VERIXA_DATA_DIR}/verixa.db`. Use `postgresql+asyncpg://…` for PostgreSQL |
 | `VERIXA_STORAGE_BACKEND` | API | `local` (default, files under `${VERIXA_DATA_DIR}/storage`) or `s3` |
 | `VERIXA_STORAGE_LOCAL_PATH` | API | Override the local storage directory |

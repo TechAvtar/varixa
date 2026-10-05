@@ -8,12 +8,13 @@ filesystem storage directory so no external services are required. Production
 uses PostgreSQL and private S3-compatible object storage via the same settings.
 """
 
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import AliasChoices, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.utils.urlpolicy import DisallowedUrlError, assert_outbound_allowed
@@ -25,6 +26,25 @@ _DEV_SECRET = "dev-only-insecure-secret-change-me"
 
 def _default_text_backends() -> list[TextBackendName]:
     return ["wikipedia", "openalex"]
+
+
+def on_vercel() -> bool:
+    """True inside a Vercel function (it sets ``VERCEL``): read-only disk, no background work."""
+    return bool(os.environ.get("VERCEL"))
+
+
+def _default_data_dir() -> Path:
+    # The only writable path in a Vercel function is /tmp (and it is not shared or durable).
+    return Path("/tmp/verixa") if on_vercel() else Path("./data")
+
+
+def _default_sweep_minutes() -> int:
+    # No in-process timers on Vercel: retention runs from a cron call to /internal/retention.
+    return 0 if on_vercel() else 60
+
+
+def _default_execution() -> Literal["background", "inline"]:
+    return "inline" if on_vercel() else "background"
 
 
 class Settings(BaseSettings):
@@ -199,7 +219,18 @@ class Settings(BaseSettings):
     provider_response_retention_days: int = Field(default=30, ge=0, le=3650)
     deleted_record_grace_days: int = Field(default=7, ge=0, le=3650)
     analysis_retention_days: int = Field(default=0, ge=0, le=36500)
-    retention_sweep_interval_minutes: int = Field(default=60, ge=0, le=24 * 60)
+    retention_sweep_interval_minutes: int = Field(
+        default_factory=_default_sweep_minutes, ge=0, le=24 * 60
+    )
+    # Shared secret for the scheduled retention call (GET /api/v1/internal/retention with
+    # `Authorization: Bearer <secret>`); Vercel Cron sends the project's CRON_SECRET that way.
+    # Unset: the endpoint does not exist (404).
+    cron_secret: SecretStr | None = Field(
+        default=None, validation_alias=AliasChoices("VERIXA_CRON_SECRET", "CRON_SECRET")
+    )
+    # "background" runs a new analysis after the HTTP response (long-lived server); "inline"
+    # runs it before the response (serverless, where work after the response is not kept alive).
+    analysis_execution: Literal["background", "inline"] = Field(default_factory=_default_execution)
 
     # Usage limits per user (0 = unlimited): analyses per calendar month, bytes currently held,
     # and provider cost (USD) per calendar month after which paid steps are skipped.
@@ -241,7 +272,7 @@ class Settings(BaseSettings):
     sidecar_max_bytes: int = Field(default=4 * 1024 * 1024, ge=1024, le=64 * 1024 * 1024)
 
     # Root directory for all local, non-versioned runtime data (DB file, uploads).
-    data_dir: Path = Path("./data")
+    data_dir: Path = Field(default_factory=_default_data_dir)
 
     # SQLAlchemy URL. Defaults to SQLite under ``data_dir``; set to a
     # ``postgresql+asyncpg://`` URL for PostgreSQL.

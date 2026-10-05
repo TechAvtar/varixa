@@ -116,6 +116,16 @@ Every package's `__init__.py` carries a one-line responsibility docstring.
 - New system dependencies of the API (binaries like ExifTool/c2patool) go into both the CI `api`
   job and the Dockerfile.
 
+## Vercel (serverless)
+- `vercel.json` defines services `web` and `api`, rewrites `/api/*` to `api` and a binding that
+  injects the API address into `web` as `API_BASE_URL` (bindings do not exist in the Next proxy,
+  which falls back to `NEXT_PUBLIC_API_BASE_URL`). When `VERCEL` is set the API defaults to
+  `analysis_execution=inline` (the pipeline runs before the response; routes `await jobs.dispatch`),
+  `data_dir=/tmp/verixa` and no in-process retention timer; retention comes from Vercel Cron via
+  `GET /api/v1/internal/retention` (bearer `CRON_SECRET`, 404 without one).
+- Keep `asyncpg` and `boto3` in `[project].dependencies` (serverless installers ignore extras).
+- Unverified against a real Vercel deployment; see `infra/README.md`.
+
 ## Real providers (T051)
 - `ai_detector_provider=local` (`providers/ai/local.py`): open-source models loaded **offline** from
   `VERIXA_AI_DETECTOR_MODEL_DIR` (fetched once by `scripts/fetch_detector_models.py`, pinned to a

@@ -17,7 +17,7 @@ from app.services.reports.service import ReportService
 from app.services.usage import UsageService
 from app.utils import security
 from app.utils.errors import UnauthorizedError
-from app.workers import BackgroundTaskDispatcher, Dispatcher
+from app.workers import BackgroundTaskDispatcher, Dispatcher, InlineDispatcher
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -37,9 +37,11 @@ def get_dispatcher(
     request: Request, tasks: BackgroundTasks, storage: Storage, settings: AppSettings
 ) -> Dispatcher:
     override: Dispatcher | None = getattr(request.app.state, "dispatcher", None)
-    return override or BackgroundTaskDispatcher(
-        tasks, request.app.state.session_factory, storage, settings
-    )
+    if override:
+        return override
+    if settings.analysis_execution == "inline":
+        return InlineDispatcher(request.app.state.session_factory, storage, settings)
+    return BackgroundTaskDispatcher(tasks, request.app.state.session_factory, storage, settings)
 
 
 Jobs = Annotated[Dispatcher, Depends(get_dispatcher)]

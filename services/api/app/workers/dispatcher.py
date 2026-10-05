@@ -35,7 +35,7 @@ log = logging.getLogger("verixa.worker")
 
 
 class Dispatcher(Protocol):
-    def dispatch(self, analysis_id: uuid.UUID) -> None: ...
+    async def dispatch(self, analysis_id: uuid.UUID) -> None: ...
 
 
 class BackgroundTaskDispatcher:
@@ -53,10 +53,33 @@ class BackgroundTaskDispatcher:
         self._storage = storage
         self._settings = settings
 
-    def dispatch(self, analysis_id: uuid.UUID) -> None:
+    async def dispatch(self, analysis_id: uuid.UUID) -> None:
         self._tasks.add_task(
             run_analysis, analysis_id, self._session_factory, self._storage, self._settings
         )
+
+
+class InlineDispatcher:
+    """Runs the pipeline before the response is sent (serverless hosts).
+
+    A function instance may be frozen or stopped as soon as it has answered, so work scheduled
+    after the response would be lost. The request instead waits for the analysis (bounded by the
+    function's maximum duration); the analysis row is already committed, and ``run_analysis``
+    never raises, so the upload still answers 201 and the report shows the outcome.
+    """
+
+    def __init__(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+        storage: ObjectStorage,
+        settings: Settings,
+    ) -> None:
+        self._session_factory = session_factory
+        self._storage = storage
+        self._settings = settings
+
+    async def dispatch(self, analysis_id: uuid.UUID) -> None:
+        await run_analysis(analysis_id, self._session_factory, self._storage, self._settings)
 
 
 class NullDispatcher:
@@ -65,7 +88,7 @@ class NullDispatcher:
     def __init__(self) -> None:
         self.dispatched: list[uuid.UUID] = []
 
-    def dispatch(self, analysis_id: uuid.UUID) -> None:
+    async def dispatch(self, analysis_id: uuid.UUID) -> None:
         self.dispatched.append(analysis_id)
 
 

@@ -116,7 +116,7 @@ async def create_image_analysis(
     analysis = await analyses.create_image_analysis(
         user, data=data, filename=file.filename, title=title, sidecar=sidecar_data or None
     )
-    jobs.dispatch(analysis.id)
+    await jobs.dispatch(analysis.id)
     return AnalysisCreatedResponse(id=analysis.id, status=analysis.status, type=analysis.type)
 
 
@@ -126,7 +126,7 @@ async def create_text_analysis(
 ) -> AnalysisCreatedResponse:
     """Accept pasted text (JSON). The original is stored exactly as received."""
     analysis = await analyses.create_text_analysis(user, text=body.text, title=body.title)
-    jobs.dispatch(analysis.id)
+    await jobs.dispatch(analysis.id)
     return AnalysisCreatedResponse(id=analysis.id, status=analysis.status, type=analysis.type)
 
 
