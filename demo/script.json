@@ -1,0 +1,67 @@
+{
+  "title": "Verixa product demo",
+  "voice": {
+    "model_id": "eleven_multilingual_v2",
+    "language_code": "en",
+    "stability": 0.5,
+    "similarity_boost": 0.75,
+    "style": 0.15,
+    "speed": 0.98
+  },
+  "gap_after_seconds": 0.6,
+  "scenes": [
+    {
+      "id": "s01_welcome",
+      "text": "Welcome to Verixa: evidence-first content forensics for images and text. Verixa separates what can be verified, what the signals only suggest, and what simply remains unknown."
+    },
+    {
+      "id": "s02_account",
+      "text": "Getting started takes a few seconds. Create an account, and every analysis you run stays private to you."
+    },
+    {
+      "id": "s03_dashboard",
+      "text": "The dashboard shows your recent analyses and your usage at a glance. Let's start a new analysis."
+    },
+    {
+      "id": "s04_upload",
+      "text": "I'm uploading a photograph that carries Content Credentials, the open C2PA standard for signed provenance. If the credentials travel as a separate file, you can attach that sidecar here too."
+    },
+    {
+      "id": "s05_pipeline",
+      "text": "Verixa now runs its full image pipeline: hashes, metadata, Content Credentials, forensic checks, a local AI-generation detector, and a web source search."
+    },
+    {
+      "id": "s06_overview",
+      "text": "The overview leads with the evidence. Every finding carries a level: verified, strong, probable, possible, or unknown. And Verixa never overstates what it found."
+    },
+    {
+      "id": "s07_provenance",
+      "text": "On the Provenance tab, you can inspect the signed manifest: whether the signature is intact, who signed it, the signing certificate, and whether that signer is on the official C2PA trust list."
+    },
+    {
+      "id": "s08_forensics",
+      "text": "The Forensics tab overlays error level analysis, noise and compression maps on the image itself, so any flagged region is easy to see."
+    },
+    {
+      "id": "s09_ai",
+      "text": "AI-generation signals come from open-source detectors running locally. They are labelled as weak signals: a clue to weigh, never proof."
+    },
+    {
+      "id": "s10_text",
+      "text": "Text works the same way. Paste an article, and Verixa measures its statistics, runs the text detector, and searches distinctive phrases on Wikipedia and OpenAlex."
+    },
+    {
+      "id": "s11_matches",
+      "text": "The phrase search shows where the same wording already appears, with a link to each source. A match tells you where text was found, not who wrote it first."
+    },
+    {
+      "id": "s12_export",
+      "text": "When you are done, export the complete report as a PDF, ready to share with your team."
+    },
+    {
+      "id": "s13_outro",
+      "text": "Verixa. Evidence first, and never overstated."
+    }
+  ],
+  "demo_text": "The quick brown fox jumps over the lazy dog. This sentence is widely used as a typing test because it contains every letter of the English alphabet. A pangram is a sentence that uses every letter of an alphabet at least once, and the most famous example in English is the quick brown fox sentence. Typists have used it for more than a century to test keyboards and typewriters."
+}
